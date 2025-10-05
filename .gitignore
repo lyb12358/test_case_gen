@@ -320,8 +320,10 @@ interface_tests/
 *.xlsx
 *.xls
 
-# JSON test case files
-*.json
+# JSON test case files (only in specific directories)
+output/*.json
+references/*.json
+interface_tests/*.json
 
 # OS generated files
 .DS_Store
