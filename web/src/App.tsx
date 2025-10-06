@@ -48,7 +48,7 @@ import { authProvider } from "./authProvider";
 function App() {
   return (
     <BrowserRouter>
-      <GitHubBanner />
+      {/* <GitHubBanner /> */}
       <RefineKbarProvider>
         <ColorModeContextProvider>
           <AntdApp>

@@ -43,6 +43,30 @@ class Config:
         return os.getenv('REQUIREMENTS_PROMPT_PATH', 'prompts/requirements.md')
 
     @property
+    def business_type(self) -> str:
+        """Get business type from environment."""
+        return os.getenv('BUSINESS_TYPE', '')
+
+    @property
+    def prompts_dir(self) -> str:
+        """Get prompts directory path."""
+        return os.getenv('PROMPTS_DIR', 'prompts')
+
+    def get_requirements_prompt_path(self, business_type: Optional[str] = None) -> str:
+        """
+        Get requirements prompt file path, optionally for a specific business type.
+
+        Args:
+            business_type (Optional[str]): Business type (e.g., RCC, RFD, ZAB, ZBA)
+
+        Returns:
+            str: Path to requirements prompt file
+        """
+        if business_type:
+            return f'{self.prompts_dir}/requirements_{business_type.upper()}.md'
+        return self.requirements_prompt_path
+
+    @property
     def json_file_path(self) -> str:
         """Get JSON file path for interface test generation."""
         return os.getenv('JSON_FILE_PATH', '')
@@ -56,6 +80,27 @@ class Config:
     def interface_tests_dir(self) -> str:
         """Get interface tests directory path."""
         return os.getenv('INTERFACE_TESTS_DIR', 'interface_tests')
+
+    @property
+    def database_url(self) -> str:
+        """Get database URL from environment."""
+        database_url = os.getenv('DATABASE_URL', '')
+        if database_url:
+            return database_url
+
+        # Default to SQLite
+        database_path = os.getenv('DATABASE_PATH', 'data/test_cases.db')
+        # Ensure absolute path
+        if not os.path.isabs(database_path):
+            database_path = os.path.abspath(database_path)
+        return f'sqlite:///{database_path}'
+
+    @property
+    def database_path(self) -> str:
+        """Get database file path."""
+        if self.database_url.startswith('sqlite:///'):
+            return self.database_url.replace('sqlite:///', '')
+        return ''
 
     def validate_main_config(self) -> bool:
         """Validate that all required main configuration is present."""

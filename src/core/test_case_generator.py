@@ -5,11 +5,15 @@ Core test case generation functionality.
 import json
 from typing import Optional, Dict, Any
 
-from ..api.llm_client import LLMClient
+from ..llm.llm_client import LLMClient
 from ..utils.config import Config
 from ..utils.file_handler import load_text_file, save_json_file, ensure_directory_exists
+from ..utils.prompt_builder import PromptBuilder
 from ..core.json_extractor import JSONExtractor
 from ..core.excel_converter import ExcelConverter
+from ..database.database import DatabaseManager
+from ..database.operations import DatabaseOperations
+from ..database.models import BusinessType
 
 
 class TestCaseGenerator:
@@ -26,6 +30,11 @@ class TestCaseGenerator:
         self.llm_client = LLMClient(config)
         self.json_extractor = JSONExtractor()
         self.excel_converter = ExcelConverter()
+        self.prompt_builder = PromptBuilder(config)
+        self.db_manager = DatabaseManager(config)
+
+        # Create database tables if they don't exist
+        self.db_manager.create_tables()
 
     def load_prompts(self) -> tuple[Optional[str], Optional[str]]:
         """
@@ -167,4 +176,161 @@ class TestCaseGenerator:
 
         except Exception as e:
             print(f"Error in test case generation process: {e}")
+            return False
+
+    def generate_test_cases_for_business(self, business_type: str) -> Optional[Dict[str, Any]]:
+        """
+        Generate test cases for a specific business type.
+
+        Args:
+            business_type (str): Business type (e.g., RCC, RFD, ZAB, ZBA)
+
+        Returns:
+            Optional[Dict[str, Any]]: Generated test cases JSON or None if failed
+        """
+        try:
+            # Validate business type
+            try:
+                business_enum = BusinessType(business_type.upper())
+            except ValueError:
+                print(f"Error: Invalid business type '{business_type}'. Supported types: {[bt.value for bt in BusinessType]}")
+                return None
+
+            print(f"=== Generating Test Cases for {business_enum.value} ===")
+
+            # Build requirements prompt using PromptBuilder
+            requirements_prompt = self.prompt_builder.build_prompt(business_type)
+            if requirements_prompt is None:
+                print(f"Error: Could not build requirements prompt for {business_type}")
+                return None
+
+            # Load system prompt
+            system_prompt = load_text_file(self.config.system_prompt_path)
+            if system_prompt is None:
+                print("Error: Could not load system prompt")
+                return None
+
+            print(f"=== Prompt Built for {business_enum.value} ===")
+
+            # Generate test cases using LLM
+            response = self.llm_client.generate_test_cases(system_prompt, requirements_prompt)
+            if response is None:
+                print("Error: Failed to get response from LLM")
+                return None
+
+            print("=== Processing LLM Response ===")
+
+            # Extract JSON from response
+            json_result = self.json_extractor.extract_json_from_response(response)
+            if json_result is None:
+                print("Could not extract JSON from response")
+                print("Raw response:")
+                print(response)
+                return None
+
+            # Validate JSON structure
+            if not self.json_extractor.validate_json_structure(json_result):
+                print("Invalid JSON structure: missing 'test_cases' key")
+                return None
+
+            # Pretty print the JSON result
+            print("=== Extracted JSON ===")
+            print(json.dumps(json_result, indent=2, ensure_ascii=False))
+
+            return json_result
+
+        except Exception as e:
+            print(f"Error generating test cases for {business_type}: {e}")
+            return None
+
+    def save_to_database(self, test_cases_data: Dict[str, Any], business_type: str) -> bool:
+        """
+        Save test cases to database.
+
+        Args:
+            test_cases_data (Dict[str, Any]): Test cases data
+            business_type (str): Business type
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # Validate business type
+            business_enum = BusinessType(business_type.upper())
+
+            with self.db_manager.get_session() as db:
+                db_operations = DatabaseOperations(db)
+
+                # Delete existing test cases for this business type
+                deleted_count = db_operations.delete_test_cases_by_business_type(business_enum)
+                print(f"Deleted {deleted_count} existing test cases for {business_enum.value}")
+
+                # Create new test case record
+                test_case = db_operations.create_test_case(business_enum, test_cases_data)
+                print(f"Created new test case record for {business_enum.value} with ID: {test_case.id}")
+
+                return True
+
+        except Exception as e:
+            print(f"Error saving test cases to database: {e}")
+            return False
+
+    def get_test_cases_from_database(self, business_type: Optional[str] = None) -> Optional[list]:
+        """
+        Get test cases from database.
+
+        Args:
+            business_type (Optional[str]): Business type filter, None for all
+
+        Returns:
+            Optional[list]: List of test cases or None if failed
+        """
+        try:
+            with self.db_manager.get_session() as db:
+                db_operations = DatabaseOperations(db)
+
+                if business_type:
+                    business_enum = BusinessType(business_type.upper())
+                    test_cases = db_operations.get_test_cases_by_business_type(business_enum)
+                else:
+                    test_cases = db_operations.get_all_test_cases()
+
+                # Convert to list of dictionaries
+                result = []
+                for tc in test_cases:
+                    result.append({
+                        "id": tc.id,
+                        "business_type": tc.business_type.value,
+                        "test_data": json.loads(tc.test_data),
+                        "created_at": tc.created_at.isoformat(),
+                        "updated_at": tc.updated_at.isoformat()
+                    })
+
+                return result
+
+        except Exception as e:
+            print(f"Error retrieving test cases from database: {e}")
+            return None
+
+    def delete_test_cases_from_database(self, business_type: str) -> bool:
+        """
+        Delete test cases from database for a specific business type.
+
+        Args:
+            business_type (str): Business type
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            business_enum = BusinessType(business_type.upper())
+
+            with self.db_manager.get_session() as db:
+                db_operations = DatabaseOperations(db)
+                deleted_count = db_operations.delete_test_cases_by_business_type(business_enum)
+                print(f"Deleted {deleted_count} test cases for {business_enum.value}")
+                return True
+
+        except Exception as e:
+            print(f"Error deleting test cases from database: {e}")
             return False
