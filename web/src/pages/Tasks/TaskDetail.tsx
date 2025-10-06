@@ -28,19 +28,6 @@ import { taskService } from '../../services/taskService';
 
 const { Title, Text } = Typography;
 
-interface Task {
-  id: string;
-  task_type: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  progress?: number;
-  message?: string;
-  business_type?: string;
-  created_at: string;
-  updated_at?: string;
-  error_details?: string;
-  result_summary?: string;
-}
-
 interface TaskLog {
   timestamp: string;
   level: 'info' | 'warning' | 'error';
@@ -56,7 +43,7 @@ const TaskDetail: React.FC = () => {
     queryKey: ['taskStatus', id],
     queryFn: () => id ? taskService.getTaskStatus(id) : null,
     enabled: !!id,
-    refetchInterval: autoRefresh && task?.status === 'running' ? 2000 : false,
+    refetchInterval: autoRefresh ? 2000 : false,
   });
 
   useEffect(() => {
@@ -228,7 +215,7 @@ const TaskDetail: React.FC = () => {
             <Text code>#{task.id}</Text>
           </Descriptions.Item>
           <Descriptions.Item label="任务类型">
-            {getTaskTypeText(task.task_type)}
+            {getTaskTypeText(task.task_type || '')}
           </Descriptions.Item>
           <Descriptions.Item label="业务类型">
             {task.business_type ? getBusinessTypeFullName(task.business_type) : '-'}

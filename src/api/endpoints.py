@@ -4,6 +4,7 @@ Refactored to support business type parameters and database integration.
 """
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import asyncio
@@ -43,9 +44,9 @@ class TestCaseResponse(BaseModel):
     """Response model for test case data."""
     id: int
     business_type: str
-    test_data: Dict[str, Any]
+    test_cases: List[Dict[str, Any]] = []
     created_at: str
-    updated_at: str
+    updated_at: Optional[str] = None
 
 
 class TestCasesListResponse(BaseModel):
@@ -65,6 +66,15 @@ app = FastAPI(
     title="TSP Test Case Generator API",
     description="API for generating test cases using LLMs with business type support",
     version="2.0.0"
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:5175"],  # Frontend URLs
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Configuration and database
@@ -208,10 +218,14 @@ async def get_test_cases_by_business_type(business_type: str):
     # Convert to response format
     test_case_responses = []
     for tc in test_cases:
+        # Extract test_cases from test_data if it exists
+        test_data = tc["test_data"]
+        test_cases_list = test_data.get("test_cases", []) if isinstance(test_data, dict) else []
+
         test_case_responses.append(TestCaseResponse(
             id=tc["id"],
             business_type=tc["business_type"],
-            test_data=tc["test_data"],
+            test_cases=test_cases_list,
             created_at=tc["created_at"],
             updated_at=tc["updated_at"]
         ))
@@ -244,10 +258,14 @@ async def get_all_test_cases():
     # Convert to response format
     test_case_responses = []
     for tc in test_cases:
+        # Extract test_cases from test_data if it exists
+        test_data = tc["test_data"]
+        test_cases_list = test_data.get("test_cases", []) if isinstance(test_data, dict) else []
+
         test_case_responses.append(TestCaseResponse(
             id=tc["id"],
             business_type=tc["business_type"],
-            test_data=tc["test_data"],
+            test_cases=test_cases_list,
             created_at=tc["created_at"],
             updated_at=tc["updated_at"]
         ))

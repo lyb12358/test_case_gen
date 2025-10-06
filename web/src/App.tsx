@@ -40,8 +40,9 @@ const App: React.FC = () => {
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="test-cases">
                 <Route index element={<TestCaseList />} />
-                <Route path=":id" element={<TestCaseDetail />} />
+                <Route path="list" element={<TestCaseList />} />
                 <Route path="generate" element={<TestCaseGenerate />} />
+                <Route path=":id" element={<TestCaseDetail />} />
               </Route>
               <Route path="tasks">
                 <Route index element={<TaskList />} />

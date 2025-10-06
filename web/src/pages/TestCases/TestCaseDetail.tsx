@@ -21,7 +21,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { testCaseService } from '../../services/testCaseService';
-import { TestCase } from '../../types/testCases';
 
 const { Title, Text } = Typography;
 
@@ -36,7 +35,7 @@ const TestCaseDetail: React.FC = () => {
   });
 
   const handleBack = () => {
-    navigate('/testcases');
+    navigate('/test-cases');
   };
 
   const handleExport = () => {
@@ -89,31 +88,48 @@ const TestCaseDetail: React.FC = () => {
       render: (_: any, __: any, index: number) => index + 1,
     },
     {
-      title: '测试场景',
-      dataIndex: 'test_scenario',
-      key: 'test_scenario',
+      title: '用例名称',
+      dataIndex: 'name',
+      key: 'name',
       width: 200,
-      render: (scenario: string) => scenario || '-',
+      render: (name: string) => name || '-',
+    },
+    {
+      title: '所属模块',
+      dataIndex: 'module',
+      key: 'module',
+      width: 150,
+      render: (module: string) => module || '-',
     },
     {
       title: '前置条件',
       dataIndex: 'preconditions',
       key: 'preconditions',
       width: 200,
-      render: (conditions: string[]) => (
-        <div>
-          {conditions?.map((condition, index) => (
-            <div key={index} style={{ marginBottom: 4 }}>
-              • {condition}
+      render: (conditions: string | string[]) => {
+        if (!conditions) return '-';
+        if (Array.isArray(conditions)) {
+          return (
+            <div>
+              {conditions.map((condition, index) => (
+                <div key={index} style={{ marginBottom: 4 }}>
+                  • {condition}
+                </div>
+              ))}
             </div>
-          )) || '-'}
-        </div>
-      ),
+          );
+        }
+        return (
+          <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.4' }}>
+            {conditions}
+          </div>
+        );
+      },
     },
     {
       title: '测试步骤',
-      dataIndex: 'test_steps',
-      key: 'test_steps',
+      dataIndex: 'steps',
+      key: 'steps',
       width: 300,
       render: (steps: string[]) => (
         <div>
@@ -127,36 +143,49 @@ const TestCaseDetail: React.FC = () => {
     },
     {
       title: '预期结果',
-      dataIndex: 'expected_results',
-      key: 'expected_results',
+      dataIndex: 'expected_result',
+      key: 'expected_result',
       width: 250,
-      render: (results: string[]) => (
-        <div>
-          {results?.map((result, index) => (
-            <div key={index} style={{ marginBottom: 4 }}>
-              • {result}
+      render: (results: string | string[]) => {
+        if (!results) return '-';
+        if (Array.isArray(results)) {
+          return (
+            <div>
+              {results.map((result, index) => (
+                <div key={index} style={{ marginBottom: 4 }}>
+                  • {result}
+                </div>
+              ))}
             </div>
-          )) || '-'}
-        </div>
-      ),
+          );
+        }
+        return (
+          <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.4' }}>
+            {results}
+          </div>
+        );
+      },
     },
     {
-      title: '优先级',
-      dataIndex: 'priority',
-      key: 'priority',
-      width: 100,
-      render: (priority: string) => {
-        const colors: Record<string, string> = {
-          'High': 'red',
-          'Medium': 'orange',
-          'Low': 'green'
-        };
-        return priority ? (
-          <Tag color={colors[priority] || 'default'}>
-            {priority === 'High' ? '高' : priority === 'Medium' ? '中' : '低'}
-          </Tag>
-        ) : '-';
-      },
+      title: '功能模块',
+      dataIndex: 'functional_module',
+      key: 'functional_module',
+      width: 120,
+      render: (module: string) => module || '-',
+    },
+    {
+      title: '功能域',
+      dataIndex: 'functional_domain',
+      key: 'functional_domain',
+      width: 120,
+      render: (domain: string) => domain || '-',
+    },
+    {
+      title: '备注',
+      dataIndex: 'remarks',
+      key: 'remarks',
+      width: 200,
+      render: (remarks: string) => remarks || '-',
     },
   ];
 
@@ -248,7 +277,7 @@ const TestCaseDetail: React.FC = () => {
           <Table
             columns={testCasesColumns}
             dataSource={testCase.test_cases}
-            rowKey={(record, index) => `${testCase.id}-${index}`}
+            rowKey={(_, index) => `${testCase.id}-${index}`}
             pagination={{
               pageSize: 10,
               showSizeChanger: true,
@@ -270,8 +299,9 @@ const TestCaseDetail: React.FC = () => {
           description={
             <div>
               <p>• 可以通过上方"导出JSON"按钮下载完整的测试用例数据</p>
-              <p>• 测试用例按照场景分组，每个用例包含前置条件、测试步骤和预期结果</p>
-              <p>• 优先级标识了测试用例的重要程度：高(红色) > 中(橙色) > 低(绿色)</p>
+              <p>• 测试用例按照功能模块分组，每个用例包含前置条件、测试步骤和预期结果</p>
+              <p>• 用例名称、模块和功能域信息有助于快速定位和理解测试内容</p>
+              <p>• 备注字段包含接口路径等重要参考信息</p>
             </div>
           }
           type="info"

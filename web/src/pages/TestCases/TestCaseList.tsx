@@ -17,9 +17,7 @@ import {
 import {
   ReloadOutlined,
   DeleteOutlined,
-  EyeOutlined,
-  SearchOutlined,
-  FilterOutlined
+  EyeOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
@@ -39,15 +37,15 @@ const TestCaseList: React.FC = () => {
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
 
   // 获取测试用例列表
-  const { data: testCases = [], isLoading, refetch } = useQuery({
+  const { data: testCasesData, isLoading, refetch } = useQuery({
     queryKey: ['testCases'],
     queryFn: testCaseService.getAllTestCases,
     select: (data) => {
-      let filteredData = data;
+      let testCases = data.test_cases || [];
 
       // 按搜索文本过滤
       if (searchText) {
-        filteredData = filteredData.filter(item =>
+        testCases = testCases.filter(item =>
           Object.values(item).some(value =>
             String(value).toLowerCase().includes(searchText.toLowerCase())
           )
@@ -56,27 +54,30 @@ const TestCaseList: React.FC = () => {
 
       // 按业务类型过滤
       if (selectedBusinessType) {
-        filteredData = filteredData.filter(item => item.business_type === selectedBusinessType);
+        testCases = testCases.filter(item => item.business_type === selectedBusinessType);
       }
 
       // 按日期范围过滤
       if (dateRange && dateRange.length === 2) {
         const [start, end] = dateRange;
-        filteredData = filteredData.filter(item => {
+        testCases = testCases.filter(item => {
           const createdAt = dayjs(item.created_at);
           return createdAt.isAfter(start) && createdAt.isBefore(end);
         });
       }
 
-      return filteredData;
+      return testCases;
     }
   });
 
   // 获取业务类型列表
-  const { data: businessTypes = [] } = useQuery({
+  const { data: businessTypesData } = useQuery({
     queryKey: ['businessTypes'],
     queryFn: testCaseService.getBusinessTypes,
   });
+
+  // 提取业务类型数组
+  const businessTypes = businessTypesData?.business_types || [];
 
   // 删除测试用例
   const deleteMutation = useMutation({
@@ -122,12 +123,12 @@ const TestCaseList: React.FC = () => {
     return names[type] || type;
   };
 
-  const columns = [
+  const columns: any[] = [
     {
       title: '业务类型',
       dataIndex: 'business_type',
       key: 'business_type',
-      width: 150,
+      width: 120,
       render: (type: string) => (
         <Tag color={getBusinessTypeColor(type)}>
           {getBusinessTypeFullName(type)}
@@ -137,53 +138,94 @@ const TestCaseList: React.FC = () => {
         text: getBusinessTypeFullName(type),
         value: type,
       })),
-      onFilter: (value: string, record: TestCase) => record.business_type === value,
+      onFilter: (value: string | number | boolean, record: TestCase) => record.business_type === value,
     },
     {
-      title: '测试用例ID',
-      dataIndex: 'id',
-      key: 'id',
-      width: 120,
-      render: (id: number) => <span style={{ fontFamily: 'monospace' }}>#{id}</span>,
-    },
-    {
-      title: '生成时间',
-      dataIndex: 'created_at',
-      key: 'created_at',
-      width: 180,
-      render: (time: string) => dayjs(time).format('YYYY-MM-DD HH:mm:ss'),
-      sorter: (a: TestCase, b: TestCase) => dayjs(a.created_at).unix() - dayjs(b.created_at).unix(),
-    },
-    {
-      title: '测试用例数量',
+      title: '用例名称',
       dataIndex: 'test_cases',
-      key: 'test_cases',
-      width: 120,
-      render: (cases: any[]) => cases?.length || 0,
-    },
-    {
-      title: '包含场景',
-      dataIndex: 'test_cases',
-      key: 'scenarios',
+      key: 'case_name',
       width: 200,
       render: (cases: any[]) => {
         if (!cases || cases.length === 0) return '-';
-        const scenarios = [...new Set(cases.map(c => c.test_scenario).filter(Boolean))];
+        const names = cases.filter(c => c.name).slice(0, 2);
         return (
           <div>
-            {scenarios.slice(0, 2).map((scenario, index) => (
-              <div key={index} style={{ fontSize: '12px', color: '#666' }}>
-                {scenario}
+            {names.map((caseItem, index) => (
+              <div key={index} style={{ fontSize: '12px', marginBottom: 2 }}>
+                {caseItem.name}
               </div>
             ))}
-            {scenarios.length > 2 && (
+            {cases.length > 2 && (
               <div style={{ fontSize: '12px', color: '#999' }}>
-                +{scenarios.length - 2} 更多...
+                +{cases.length - 2} 更多...
               </div>
             )}
           </div>
         );
       },
+    },
+    {
+      title: '所属模块',
+      dataIndex: 'test_cases',
+      key: 'module',
+      width: 150,
+      render: (cases: any[]) => {
+        if (!cases || cases.length === 0) return '-';
+        const modules = [...new Set(cases.map(c => c.module).filter(Boolean))];
+        return (
+          <div>
+            {modules.slice(0, 2).map((module, index) => (
+              <div key={index} style={{ fontSize: '12px', marginBottom: 2 }}>
+                {module}
+              </div>
+            ))}
+            {modules.length > 2 && (
+              <div style={{ fontSize: '12px', color: '#999' }}>
+                +{modules.length - 2} 更多...
+              </div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      title: '功能模块',
+      dataIndex: 'test_cases',
+      key: 'functional_module',
+      width: 120,
+      render: (cases: any[]) => {
+        if (!cases || cases.length === 0) return '-';
+        const modules = [...new Set(cases.map(c => c.functional_module).filter(Boolean))];
+        return (
+          <div>
+            {modules.slice(0, 2).map((module, index) => (
+              <div key={index} style={{ fontSize: '12px', marginBottom: 2 }}>
+                {module}
+              </div>
+            ))}
+            {modules.length > 2 && (
+              <div style={{ fontSize: '12px', color: '#999' }}>
+                +{modules.length - 2} 更多...
+              </div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      title: '生成时间',
+      dataIndex: 'created_at',
+      key: 'created_at',
+      width: 140,
+      render: (time: string) => dayjs(time).format('YYYY-MM-DD HH:mm'),
+      sorter: (a: TestCase, b: TestCase) => dayjs(a.created_at).unix() - dayjs(b.created_at).unix(),
+    },
+    {
+      title: '用例数量',
+      dataIndex: 'test_cases',
+      key: 'test_cases_count',
+      width: 80,
+      render: (cases: any[]) => cases?.length || 0,
     },
     {
       title: '操作',
@@ -196,7 +238,7 @@ const TestCaseList: React.FC = () => {
               type="text"
               size="small"
               icon={<EyeOutlined />}
-              onClick={() => navigate(`/testcases/${record.id}`)}
+              onClick={() => navigate(`/test-cases/${record.id}`)}
             />
           </Tooltip>
           <Tooltip title="删除测试用例">
@@ -222,10 +264,13 @@ const TestCaseList: React.FC = () => {
   ];
 
   // 按业务类型分组数据
-  const groupedData = testCases.reduce((acc: any[], testCase) => {
+  const groupedData = testCasesData?.reduce((acc: any[], testCase) => {
     const existingGroup = acc.find(group => group.business_type === testCase.business_type);
     if (existingGroup) {
-      existingGroup.test_cases = [...existingGroup.test_cases, ...(testCase.test_cases || [])];
+      // Combine test cases from the same business type
+      const existingTestCases = existingGroup.test_cases || [];
+      const newTestCases = testCase.test_cases || [];
+      existingGroup.test_cases = [...existingTestCases, ...newTestCases];
     } else {
       acc.push({
         ...testCase,
@@ -233,7 +278,7 @@ const TestCaseList: React.FC = () => {
       });
     }
     return acc;
-  }, []);
+  }, []) || [];
 
   return (
     <div>
@@ -242,7 +287,7 @@ const TestCaseList: React.FC = () => {
         <Space>
           <Button
             type="primary"
-            onClick={() => navigate('/testcases/generate')}
+            onClick={() => navigate('/test-cases/generate')}
           >
             生成测试用例
           </Button>

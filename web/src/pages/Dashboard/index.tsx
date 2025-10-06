@@ -13,7 +13,6 @@ import {
   Tag,
   Alert,
   Progress,
-  Timeline,
 } from 'antd';
 import {
   FileTextOutlined,
@@ -25,7 +24,6 @@ import {
   EyeOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
-import { BUSINESS_TYPES } from '@/types/testCases';
 import { testCaseService } from '@/services/testCaseService';
 import { taskService } from '@/services/taskService';
 
@@ -48,27 +46,24 @@ const Dashboard: React.FC = () => {
     refetchInterval: 5000, // 5秒自动刷新
   });
 
-  // 获取业务类型
-  const { data: businessTypesData } = useQuery({
-    queryKey: ['businessTypes'],
-    queryFn: testCaseService.getBusinessTypes,
-  });
-
+  
   // 计算统计数据
   const stats = React.useMemo(() => {
     const testCases = testCasesData?.test_cases || [];
     const tasks = tasksData?.tasks || [];
 
-    // 按业务类型分组测试用例
+    // 按业务类型分组测试用例，计算实际测试用例数量
     const businessTypeStats = new Map<string, { count: number; latestUpdate?: string }>();
     testCases.forEach((testCase) => {
       const type = testCase.business_type;
+      const actualCount = testCase.test_cases?.length || 0; // 获取实际的测试用例数量
+
       if (!businessTypeStats.has(type)) {
-        businessTypeStats.set(type, { count: 0, latestUpdate: testCase.updated_at });
+        businessTypeStats.set(type, { count: actualCount, latestUpdate: testCase.updated_at });
       } else {
         const existing = businessTypeStats.get(type)!;
-        existing.count++;
-        if (existing.latestUpdate && testCase.updated_at > existing.latestUpdate) {
+        existing.count += actualCount; // 累加实际数量
+        if (existing.latestUpdate && testCase.updated_at && testCase.updated_at > existing.latestUpdate) {
           existing.latestUpdate = testCase.updated_at;
         }
       }
@@ -207,7 +202,7 @@ const Dashboard: React.FC = () => {
       title: '进度',
       dataIndex: 'progress',
       key: 'progress',
-      render: (progress?: number, record: any) => (
+      render: (progress: number | undefined, record: any) => (
         progress !== undefined && progress !== null ? (
           <Progress
             percent={progress}

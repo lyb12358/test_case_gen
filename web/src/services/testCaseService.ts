@@ -1,6 +1,5 @@
 import apiClient from './api';
 import {
-  TestCaseResponse,
   TestCasesListResponse,
   GenerateTestCaseRequest,
   GenerateResponse,

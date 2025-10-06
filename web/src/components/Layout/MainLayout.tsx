@@ -7,7 +7,6 @@ import {
   theme,
   Typography,
   Space,
-  Badge,
 } from 'antd';
 import {
   DashboardOutlined,
@@ -45,7 +44,7 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
       label: '测试用例管理',
       children: [
         {
-          key: '/test-cases',
+          key: '/test-cases/list',
           label: '测试用例列表',
         },
         {
@@ -74,7 +73,7 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
       if (pathname === '/test-cases/generate') {
         return ['/test-cases/generate'];
       }
-      return ['/test-cases'];
+      return ['/test-cases/list'];
     }
     if (pathname.startsWith('/tasks')) {
       return ['/tasks'];
@@ -88,7 +87,7 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
 
   return (
     <AntLayout style={{ minHeight: '100vh' }}>
-      <Sider trigger={null} collapsible collapsed={collapsed}>
+      <Sider trigger={null} collapsible collapsed={collapsed} theme="light">
         <div
           style={{
             height: 64,
@@ -104,12 +103,12 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
             <RocketOutlined style={{ fontSize: 24, color: '#1890ff' }} />
           ) : (
             <Title level={4} style={{ margin: 0, color: '#1890ff' }}>
-              TSP 测试用例生成器
+              测试用例生成
             </Title>
           )}
         </div>
         <Menu
-          theme="dark"
+          theme="light"
           mode="inline"
           selectedKeys={getSelectedKeys()}
           items={menuItems}

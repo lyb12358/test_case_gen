@@ -14,25 +14,68 @@ export interface GenerateResponse {
 
 export interface TaskStatusResponse {
   task_id: string;
+  id?: string;
   status: string;
   progress?: number;
   business_type?: string;
+  task_type?: string;
   error?: string;
+  error_details?: string;
+  message?: string;
+  result_summary?: string;
   test_case_id?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface TestCase {
+  id: number;
+  business_type: string;
+  test_cases: Array<{
+    id?: string;
+    name?: string;
+    module?: string;
+    preconditions?: string | string[];
+    remarks?: string;
+    steps?: string[];
+    expected_result?: string | string[];
+    functional_module?: string;
+    functional_domain?: string;
+  }>;
+  created_at: string;
+  updated_at?: string;
 }
 
 export interface TestCaseResponse {
   id: number;
   business_type: string;
-  test_data: Record<string, any>;
+  test_cases?: Array<{
+    id?: string;
+    name?: string;
+    module?: string;
+    preconditions?: string | string[];
+    remarks?: string;
+    steps?: string[];
+    expected_result?: string | string[];
+    functional_module?: string;
+    functional_domain?: string;
+  }>;
   created_at: string;
-  updated_at: string;
+  updated_at?: string;
 }
 
 export interface TestCasesListResponse {
   business_type?: string;
   count: number;
   test_cases: TestCaseResponse[];
+}
+
+export interface Task extends TaskStatusResponse {
+  id: string;
+  business_type: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  created_at: string;
+  updated_at?: string;
 }
 
 export interface BusinessTypeResponse {
@@ -46,6 +89,7 @@ export interface TaskListResponse {
     progress?: number;
     business_type?: string;
     error?: string;
+    created_at?: string;
   }>;
 }
 

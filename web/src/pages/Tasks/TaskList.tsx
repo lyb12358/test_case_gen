@@ -20,7 +20,6 @@ import {
   ReloadOutlined,
   EyeOutlined,
   DeleteOutlined,
-  SearchOutlined,
   ClockCircleOutlined,
   CheckCircleOutlined,
   ExclamationCircleOutlined,
@@ -30,21 +29,11 @@ import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { taskService } from '../../services/taskService';
+import { Task } from '../../types/testCases';
 
 const { Title } = Typography;
 const { Search } = Input;
 const { RangePicker } = DatePicker;
-
-interface Task {
-  id: string;
-  task_type: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  progress?: number;
-  message?: string;
-  business_type?: string;
-  created_at: string;
-  updated_at?: string;
-}
 
 const TaskList: React.FC = () => {
   const navigate = useNavigate();
@@ -56,16 +45,16 @@ const TaskList: React.FC = () => {
   const [detailModalVisible, setDetailModalVisible] = useState(false);
 
   // 获取任务列表
-  const { data: tasks = [], isLoading, refetch } = useQuery({
+  const { data: tasksData, isLoading, refetch } = useQuery({
     queryKey: ['tasks'],
     queryFn: taskService.getAllTasks,
     select: (data) => {
-      let filteredData = data;
+      let filteredData = data.tasks || [];
 
       // 按搜索文本过滤
       if (searchText) {
-        filteredData = filteredData.filter(item =>
-          Object.values(item).some(value =>
+        filteredData = filteredData.filter((item: any) =>
+          Object.values(item).some((value: any) =>
             String(value).toLowerCase().includes(searchText.toLowerCase())
           )
         );
@@ -73,19 +62,19 @@ const TaskList: React.FC = () => {
 
       // 按状态过滤
       if (selectedStatus) {
-        filteredData = filteredData.filter(item => item.status === selectedStatus);
+        filteredData = filteredData.filter((item: any) => item.status === selectedStatus);
       }
 
       // 按日期范围过滤
       if (dateRange && dateRange.length === 2) {
         const [start, end] = dateRange;
-        filteredData = filteredData.filter(item => {
+        filteredData = filteredData.filter((item: any) => {
           const createdAt = dayjs(item.created_at);
           return createdAt.isAfter(start) && createdAt.isBefore(end);
         });
       }
 
-      return filteredData.sort((a, b) => dayjs(b.created_at).unix() - dayjs(a.created_at).unix());
+      return filteredData.sort((a: any, b: any) => dayjs(b.created_at || '').unix() - dayjs(a.created_at || '').unix());
     }
   });
 
@@ -153,11 +142,11 @@ const TaskList: React.FC = () => {
     return names[type] || type;
   };
 
-  const columns = [
+  const columns: any[] = [
     {
       title: '任务ID',
-      dataIndex: 'id',
-      key: 'id',
+      dataIndex: 'task_id',
+      key: 'task_id',
       width: 120,
       render: (id: string) => <span style={{ fontFamily: 'monospace' }}>#{id}</span>,
     },
@@ -187,7 +176,7 @@ const TaskList: React.FC = () => {
         { text: '已完成', value: 'completed' },
         { text: '失败', value: 'failed' },
       ],
-      onFilter: (value: string, record: Task) => record.status === value,
+      onFilter: (value: string | number | boolean, record: Task) => record.status === value,
     },
     {
       title: '进度',
@@ -308,11 +297,11 @@ const TaskList: React.FC = () => {
 
         <Table
           columns={columns}
-          dataSource={tasks}
-          rowKey="id"
+          dataSource={tasksData}
+          rowKey="task_id"
           loading={isLoading}
           pagination={{
-            total: tasks.length,
+            total: tasksData?.length || 0,
             pageSize: 10,
             showSizeChanger: true,
             showQuickJumper: true,
@@ -345,7 +334,7 @@ const TaskList: React.FC = () => {
                 <span style={{ fontFamily: 'monospace' }}>#{selectedTask.id}</span>
               </Descriptions.Item>
               <Descriptions.Item label="任务类型">
-                {getTaskTypeText(selectedTask.task_type)}
+                {getTaskTypeText(selectedTask.task_type || '')}
               </Descriptions.Item>
               <Descriptions.Item label="业务类型">
                 {selectedTask.business_type ? getBusinessTypeFullName(selectedTask.business_type) : '-'}

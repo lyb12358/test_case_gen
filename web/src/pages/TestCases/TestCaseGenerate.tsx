@@ -11,10 +11,8 @@ import {
   Alert,
   Spin,
   Progress,
-  Space,
   Divider,
   Tag,
-  List,
   Descriptions,
   Result
 } from 'antd';
@@ -22,7 +20,6 @@ import {
   PlayCircleOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
-  WarningOutlined,
   ReloadOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
@@ -31,7 +28,6 @@ import { testCaseService } from '../../services/testCaseService';
 import { taskService } from '../../services/taskService';
 
 const { Title } = Typography;
-const { Step } = Steps;
 const { Option } = Select;
 
 interface GenerationTask {
@@ -51,21 +47,24 @@ const TestCaseGenerate: React.FC = () => {
   const [polling, setPolling] = useState(false);
 
   // 获取业务类型列表
-  const { data: businessTypes = [], isLoading: typesLoading } = useQuery({
+  const { data: businessTypesData, isLoading: typesLoading } = useQuery({
     queryKey: ['businessTypes'],
     queryFn: testCaseService.getBusinessTypes,
   });
+
+  // 提取业务类型数组
+  const businessTypes = businessTypesData?.business_types || [];
 
   // 生成测试用例
   const generateMutation = useMutation({
     mutationFn: testCaseService.generateTestCases,
     onSuccess: (data) => {
-      setCurrentTask({
-        id: data.task_id,
-        business_type: data.business_type,
-        status: 'pending',
-        created_at: new Date().toISOString()
-      });
+      if (currentTask) {
+        setCurrentTask({
+          ...currentTask,
+          id: data.task_id
+        });
+      }
       setPolling(true);
       form.resetFields();
     },
@@ -75,7 +74,7 @@ const TestCaseGenerate: React.FC = () => {
   });
 
   // 轮询任务状态
-  const { data: taskStatus, isLoading: statusLoading } = useQuery({
+  const { data: taskStatus } = useQuery({
     queryKey: ['taskStatus', currentTask?.id],
     queryFn: () => currentTask ? taskService.getTaskStatus(currentTask.id) : null,
     enabled: polling && !!currentTask?.id,
@@ -85,10 +84,12 @@ const TestCaseGenerate: React.FC = () => {
   // 监听任务状态变化
   useEffect(() => {
     if (taskStatus && currentTask) {
-      const updatedTask = {
-        ...currentTask,
-        ...taskStatus,
-        business_type: currentTask.business_type
+      const updatedTask: GenerationTask = {
+        id: currentTask.id,
+        business_type: currentTask.business_type,
+        status: taskStatus.status as 'pending' | 'running' | 'completed' | 'failed',
+        progress: taskStatus.progress,
+        created_at: currentTask.created_at
       };
 
       setCurrentTask(updatedTask);
@@ -104,12 +105,18 @@ const TestCaseGenerate: React.FC = () => {
   }, [taskStatus, currentTask, queryClient]);
 
   const handleGenerate = (values: { business_type: string }) => {
+    setCurrentTask({
+      id: '', // Will be set from response
+      business_type: values.business_type,
+      status: 'pending',
+      created_at: new Date().toISOString()
+    });
     generateMutation.mutate({ business_type: values.business_type });
   };
 
   const handleViewResults = () => {
     if (currentTask) {
-      navigate('/testcases');
+      navigate('/test-cases/list');
     }
   };
 
@@ -178,14 +185,16 @@ const TestCaseGenerate: React.FC = () => {
                 placeholder="请选择要生成测试用例的业务类型"
                 loading={typesLoading}
                 size="large"
+                optionLabelProp="label"
+                dropdownStyle={{ maxWidth: 400 }}
               >
                 {businessTypes.map(type => (
-                  <Option key={type} value={type}>
-                    <div>
-                      <div style={{ fontWeight: 'bold' }}>
+                  <Option key={type} value={type} label={getBusinessTypeFullName(type)}>
+                    <div style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                      <div style={{ fontWeight: 'bold', lineHeight: '1.4' }}>
                         {getBusinessTypeFullName(type)}
                       </div>
-                      <div style={{ fontSize: '12px', color: '#666', marginTop: 2 }}>
+                      <div style={{ fontSize: '12px', color: '#666', marginTop: 2, lineHeight: '1.3' }}>
                         {getBusinessTypeDescription(type)}
                       </div>
                     </div>
@@ -215,12 +224,12 @@ const TestCaseGenerate: React.FC = () => {
             description={
               <div>
                 <p>测试用例生成过程包括以下步骤：</p>
-                <ol>
-                  <li>分析业务需求和场景</li>
-                  <li>调用AI模型生成测试用例</li>
-                  <li>格式化和保存测试用例到数据库</li>
+                <ol style={{ paddingLeft: '20px', margin: '8px 0' }}>
+                  <li style={{ marginBottom: '4px' }}>分析业务需求和场景</li>
+                  <li style={{ marginBottom: '4px' }}>调用AI模型生成测试用例</li>
+                  <li style={{ marginBottom: '4px' }}>格式化和保存测试用例到数据库</li>
                 </ol>
-                <p>整个过程通常需要1-3分钟，请耐心等待。</p>
+                <p style={{ marginBottom: 0 }}>整个过程通常需要1-3分钟，请耐心等待。</p>
               </div>
             }
             type="info"
@@ -271,7 +280,7 @@ const TestCaseGenerate: React.FC = () => {
                     />
                   </div>
                   <p style={{ marginTop: 8, color: '#666' }}>
-                    {taskStatus?.message || '正在生成测试用例，请稍候...'}
+                    {taskStatus?.error || '正在生成测试用例，请稍候...'}
                   </p>
                 </div>
               )}
@@ -351,7 +360,6 @@ const TestCaseGenerate: React.FC = () => {
                 }
                 type="info"
                 showIcon
-                size="small"
               />
             </Card>
           </Col>
