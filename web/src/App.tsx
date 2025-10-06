@@ -11,6 +11,7 @@ import TestCaseDetail from '@/pages/TestCases/TestCaseDetail';
 import TestCaseGenerate from '@/pages/TestCases/TestCaseGenerate';
 import TaskList from '@/pages/Tasks/TaskList';
 import TaskDetail from '@/pages/Tasks/TaskDetail';
+import KnowledgeGraph from '@/pages/KnowledgeGraph';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -48,6 +49,7 @@ const App: React.FC = () => {
                 <Route index element={<TaskList />} />
                 <Route path=":id" element={<TaskDetail />} />
               </Route>
+              <Route path="knowledge-graph" element={<KnowledgeGraph />} />
             </Route>
           </Routes>
         </Router>
