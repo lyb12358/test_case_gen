@@ -15,6 +15,7 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   ReloadOutlined,
+  ShareAltOutlined,
 } from '@ant-design/icons';
 
 const { Header, Sider, Content } = AntLayout;
@@ -37,6 +38,11 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
       key: '/dashboard',
       icon: <DashboardOutlined />,
       label: '仪表板',
+    },
+    {
+      key: '/knowledge-graph',
+      icon: <ShareAltOutlined />,
+      label: 'TSP本体图谱',
     },
     {
       key: '/test-cases',
@@ -78,6 +84,9 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
     if (pathname.startsWith('/tasks')) {
       return ['/tasks'];
     }
+    if (pathname.startsWith('/knowledge-graph')) {
+      return ['/knowledge-graph'];
+    }
     return [pathname];
   };
 
@@ -100,11 +109,14 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
           }}
         >
           {collapsed ? (
-            <RocketOutlined style={{ fontSize: 24, color: '#1890ff' }} />
+            <img src="/logo.svg" alt="Logo" style={{ width: 24, height: 24 }} />
           ) : (
-            <Title level={4} style={{ margin: 0, color: '#1890ff' }}>
-              测试用例生成
-            </Title>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <img src="/logo.svg" alt="Logo" style={{ width: 20, height: 20 }} />
+              <Title level={4} style={{ margin: 0, color: '#1890ff' }}>
+                测试用例生成
+              </Title>
+            </div>
           )}
         </div>
         <Menu

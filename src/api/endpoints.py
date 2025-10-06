@@ -15,7 +15,8 @@ from ..core.test_case_generator import TestCaseGenerator
 from ..utils.config import Config
 from ..database.database import DatabaseManager
 from ..database.operations import DatabaseOperations
-from ..database.models import BusinessType, JobStatus
+from ..database.models import BusinessType, JobStatus, EntityType
+from ..core.business_data_extractor import BusinessDataExtractor
 
 
 class GenerateTestCaseRequest(BaseModel):
@@ -61,6 +62,61 @@ class BusinessTypeResponse(BaseModel):
     business_types: List[str]
 
 
+class GraphNode(BaseModel):
+    """Graph node model for knowledge graph."""
+    id: str
+    name: str
+    label: str
+    type: str
+    description: Optional[str] = None
+    businessType: Optional[str] = None
+
+
+class GraphEdge(BaseModel):
+    """Graph edge model for knowledge graph."""
+    source: str
+    target: str
+    label: str
+    type: str
+    businessType: Optional[str] = None
+
+
+class KnowledgeGraphResponse(BaseModel):
+    """Response model for knowledge graph data."""
+    nodes: List[GraphNode]
+    edges: List[GraphEdge]
+
+
+class GraphStatsResponse(BaseModel):
+    """Response model for graph statistics."""
+    total_entities: int
+    total_relations: int
+    business_entities: int
+    service_entities: int
+    interface_entities: int
+
+
+class GraphEntityResponse(BaseModel):
+    """Response model for graph entities."""
+    id: int
+    name: str
+    type: str
+    description: Optional[str] = None
+    business_type: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+    created_at: str
+
+
+class GraphRelationResponse(BaseModel):
+    """Response model for graph relations."""
+    id: int
+    subject: str
+    predicate: str
+    object: str
+    business_type: Optional[str] = None
+    created_at: str
+
+
 # Initialize FastAPI app
 app = FastAPI(
     title="TSP Test Case Generator API",
@@ -97,13 +153,19 @@ async def root():
     """Root endpoint."""
     return {
         "message": "TSP Test Case Generator API v2.0",
-        "description": "API for generating test cases using LLMs with business type support",
+        "description": "API for generating test cases using LLMs with business type support and knowledge graph",
         "endpoints": [
             "POST /generate-test-cases - Generate test cases for business type",
             "GET /test-cases/{business_type} - Get test cases by business type",
             "GET /test-cases - Get all test cases",
             "DELETE /test-cases/{business_type} - Delete test cases by business type",
-            "GET /business-types - List supported business types"
+            "GET /business-types - List supported business types",
+            "GET /knowledge-graph/data - Get knowledge graph data for visualization",
+            "GET /knowledge-graph/entities - Get knowledge graph entities",
+            "GET /knowledge-graph/relations - Get knowledge graph relations",
+            "GET /knowledge-graph/stats - Get knowledge graph statistics",
+            "POST /knowledge-graph/initialize - Initialize knowledge graph from business descriptions",
+            "DELETE /knowledge-graph/clear - Clear all knowledge graph data"
         ]
     }
 
@@ -412,6 +474,246 @@ async def generate_test_cases_background(task_id: str, business_type: str):
             "status": JobStatus.FAILED.value,
             "error": str(e)
         })
+
+
+# Knowledge Graph Endpoints
+
+@app.get("/knowledge-graph/data", response_model=KnowledgeGraphResponse)
+async def get_knowledge_graph_data(business_type: Optional[str] = None):
+    """
+    Get knowledge graph data for visualization.
+
+    Args:
+        business_type (Optional[str]): Filter by business type
+
+    Returns:
+        KnowledgeGraphResponse: Graph data in G6 format
+    """
+    try:
+        with db_manager.get_session() as db:
+            db_operations = DatabaseOperations(db)
+
+            # Parse business type if provided
+            business_enum = None
+            if business_type:
+                try:
+                    business_enum = BusinessType(business_type.upper())
+                except ValueError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid business type '{business_type}'. "
+                               f"Supported types: {[bt.value for bt in BusinessType]}"
+                    )
+
+            # Get graph data
+            graph_data = db_operations.get_knowledge_graph_data(business_enum)
+
+            # Convert to response format
+            nodes = [GraphNode(**node) for node in graph_data["nodes"]]
+            edges = [GraphEdge(**edge) for edge in graph_data["edges"]]
+
+            return KnowledgeGraphResponse(nodes=nodes, edges=edges)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get knowledge graph data: {str(e)}")
+
+
+@app.get("/knowledge-graph/entities", response_model=List[GraphEntityResponse])
+async def get_knowledge_entities(entity_type: Optional[str] = None, business_type: Optional[str] = None):
+    """
+    Get knowledge graph entities.
+
+    Args:
+        entity_type (Optional[str]): Filter by entity type (business, service, interface)
+        business_type (Optional[str]): Filter by business type
+
+    Returns:
+        List[GraphEntityResponse]: List of entities
+    """
+    try:
+        with db_manager.get_session() as db:
+            db_operations = DatabaseOperations(db)
+
+            # Parse filters
+            entity_enum = None
+            if entity_type:
+                try:
+                    entity_enum = EntityType(entity_type)
+                except ValueError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid entity type '{entity_type}'. "
+                               f"Supported types: {[et.value for et in EntityType]}"
+                    )
+
+            business_enum = None
+            if business_type:
+                try:
+                    business_enum = BusinessType(business_type.upper())
+                except ValueError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid business type '{business_type}'. "
+                               f"Supported types: {[bt.value for bt in BusinessType]}"
+                    )
+
+            # Get entities
+            if entity_enum and business_enum:
+                entities = db_operations.get_knowledge_entities_by_type(entity_enum)
+                entities = [e for e in entities if e.business_type == business_enum]
+            elif entity_enum:
+                entities = db_operations.get_knowledge_entities_by_type(entity_enum)
+            elif business_enum:
+                entities = db_operations.get_knowledge_entities_by_business_type(business_enum)
+            else:
+                entities = db_operations.get_all_knowledge_entities()
+
+            # Convert to response format
+            response = []
+            for entity in entities:
+                metadata_dict = None
+                if entity.extra_data:
+                    import json
+                    try:
+                        metadata_dict = json.loads(entity.extra_data)
+                    except:
+                        pass
+
+                response.append(GraphEntityResponse(
+                    id=entity.id,
+                    name=entity.name,
+                    type=entity.type.value,
+                    description=entity.description,
+                    business_type=entity.business_type.value if entity.business_type else None,
+                    metadata=metadata_dict,
+                    created_at=entity.created_at.isoformat()
+                ))
+
+            return response
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get entities: {str(e)}")
+
+
+@app.get("/knowledge-graph/relations", response_model=List[GraphRelationResponse])
+async def get_knowledge_relations(business_type: Optional[str] = None):
+    """
+    Get knowledge graph relations.
+
+    Args:
+        business_type (Optional[str]): Filter by business type
+
+    Returns:
+        List[GraphRelationResponse]: List of relations
+    """
+    try:
+        with db_manager.get_session() as db:
+            db_operations = DatabaseOperations(db)
+
+            # Parse business type
+            business_enum = None
+            if business_type:
+                try:
+                    business_enum = BusinessType(business_type.upper())
+                except ValueError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid business type '{business_type}'. "
+                               f"Supported types: {[bt.value for bt in BusinessType]}"
+                    )
+
+            # Get relations
+            if business_enum:
+                relations = db_operations.get_knowledge_relations_by_business_type(business_enum)
+            else:
+                relations = db_operations.get_all_knowledge_relations()
+
+            # Convert to response format
+            response = []
+            for relation in relations:
+                response.append(GraphRelationResponse(
+                    id=relation.id,
+                    subject=relation.subject.name,
+                    predicate=relation.predicate,
+                    object=relation.object.name,
+                    business_type=relation.business_type.value if relation.business_type else None,
+                    created_at=relation.created_at.isoformat()
+                ))
+
+            return response
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get relations: {str(e)}")
+
+
+@app.get("/knowledge-graph/stats", response_model=GraphStatsResponse)
+async def get_knowledge_graph_stats():
+    """
+    Get knowledge graph statistics.
+
+    Returns:
+        GraphStatsResponse: Graph statistics
+    """
+    try:
+        with db_manager.get_session() as db:
+            db_operations = DatabaseOperations(db)
+            stats = db_operations.get_knowledge_graph_stats()
+
+            return GraphStatsResponse(**stats)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get graph stats: {str(e)}")
+
+
+@app.post("/knowledge-graph/initialize")
+async def initialize_knowledge_graph():
+    """
+    Initialize knowledge graph data from business descriptions.
+
+    Returns:
+        Dict: Initialization result
+    """
+    try:
+        with db_manager.get_session() as db:
+            db_operations = DatabaseOperations(db)
+            extractor = BusinessDataExtractor(db_operations)
+
+            # Extract all business data
+            success = extractor.extract_all_business_data()
+
+            if success:
+                stats = extractor.get_extraction_summary()
+                return {
+                    "message": "Knowledge graph initialized successfully",
+                    "stats": stats
+                }
+            else:
+                raise HTTPException(status_code=500, detail="Failed to initialize knowledge graph")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to initialize knowledge graph: {str(e)}")
+
+
+@app.delete("/knowledge-graph/clear")
+async def clear_knowledge_graph():
+    """
+    Clear all knowledge graph data.
+
+    Returns:
+        Dict: Clear result
+    """
+    try:
+        with db_manager.get_session() as db:
+            db_operations = DatabaseOperations(db)
+            deleted_count = db_operations.clear_knowledge_graph()
+
+            return {
+                "message": f"Knowledge graph cleared successfully",
+                "deleted_count": deleted_count
+            }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to clear knowledge graph: {str(e)}")
 
 
 if __name__ == "__main__":

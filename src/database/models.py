@@ -4,8 +4,9 @@ SQLAlchemy database models for test case generation service.
 
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import Column, Integer, String, DateTime, Text, Enum
+from sqlalchemy import Column, Integer, String, DateTime, Text, Enum, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship
 import enum
 
 Base = declarative_base()
@@ -54,3 +55,45 @@ class GenerationJob(Base):
 
     def __repr__(self):
         return f"<GenerationJob(id={self.id}, business_type={self.business_type}, status={self.status})>"
+
+
+class EntityType(enum.Enum):
+    """Knowledge graph entity types."""
+    BUSINESS = "business"      # 业务类型 (RCC, RFD, etc.)
+    SERVICE = "service"        # 服务 (远程净化, 香氛控制, etc.)
+    INTERFACE = "interface"    # 接口 (/v1.0/remoteControl/control, etc.)
+
+
+class KnowledgeEntity(Base):
+    """Knowledge graph entity model."""
+    __tablename__ = "knowledge_entities"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False, unique=True, index=True)
+    type = Column(Enum(EntityType), nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    business_type = Column(Enum(BusinessType), nullable=True, index=True)  # 关联的业务类型
+    extra_data = Column(Text, nullable=True)  # JSON string for additional data
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    def __repr__(self):
+        return f"<KnowledgeEntity(id={self.id}, name={self.name}, type={self.type})>"
+
+
+class KnowledgeRelation(Base):
+    """Knowledge graph relation model (triples)."""
+    __tablename__ = "knowledge_relations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    subject_id = Column(Integer, ForeignKey("knowledge_entities.id"), nullable=False, index=True)
+    predicate = Column(String(50), nullable=False, index=True)  # has, calls, contains, etc.
+    object_id = Column(Integer, ForeignKey("knowledge_entities.id"), nullable=False, index=True)
+    business_type = Column(Enum(BusinessType), nullable=True, index=True)  # 关联的业务类型
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    subject = relationship("KnowledgeEntity", foreign_keys=[subject_id])
+    object = relationship("KnowledgeEntity", foreign_keys=[object_id])
+
+    def __repr__(self):
+        return f"<KnowledgeRelation(id={self.id}, {self.subject.name} {self.predicate} {self.object.name})>"

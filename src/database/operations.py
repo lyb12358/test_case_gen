@@ -8,7 +8,7 @@ from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import delete, and_
 
-from .models import TestCase, GenerationJob, BusinessType, JobStatus
+from .models import TestCase, GenerationJob, BusinessType, JobStatus, KnowledgeEntity, KnowledgeRelation, EntityType
 
 
 class DatabaseOperations:
@@ -204,3 +204,207 @@ class DatabaseOperations:
                 "jobs": job_count
             }
         return stats
+
+    # Knowledge Graph Operations
+    def create_knowledge_entity(
+        self,
+        name: str,
+        entity_type: EntityType,
+        description: Optional[str] = None,
+        business_type: Optional[BusinessType] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> KnowledgeEntity:
+        """
+        Create a new knowledge entity.
+
+        Args:
+            name (str): Entity name
+            entity_type (EntityType): Entity type
+            description (Optional[str]): Entity description
+            business_type (Optional[BusinessType]): Associated business type
+            metadata (Optional[Dict[str, Any]]): Additional metadata
+
+        Returns:
+            KnowledgeEntity: Created entity
+        """
+        entity = KnowledgeEntity(
+            name=name,
+            type=entity_type,
+            description=description,
+            business_type=business_type,
+            extra_data=json.dumps(metadata, ensure_ascii=False) if metadata else None
+        )
+        self.db.add(entity)
+        self.db.commit()
+        self.db.refresh(entity)
+        return entity
+
+    def create_knowledge_relation(
+        self,
+        subject_name: str,
+        predicate: str,
+        object_name: str,
+        business_type: Optional[BusinessType] = None
+    ) -> Optional[KnowledgeRelation]:
+        """
+        Create a new knowledge relation (triple).
+
+        Args:
+            subject_name (str): Subject entity name
+            predicate (str): Predicate (relationship type)
+            object_name (str): Object entity name
+            business_type (Optional[BusinessType]): Associated business type
+
+        Returns:
+            Optional[KnowledgeRelation]: Created relation or None if entities not found
+        """
+        # Find subject and object entities
+        subject = self.db.query(KnowledgeEntity).filter(KnowledgeEntity.name == subject_name).first()
+        object = self.db.query(KnowledgeEntity).filter(KnowledgeEntity.name == object_name).first()
+
+        if not subject or not object:
+            return None
+
+        relation = KnowledgeRelation(
+            subject_id=subject.id,
+            predicate=predicate,
+            object_id=object.id,
+            business_type=business_type
+        )
+        self.db.add(relation)
+        self.db.commit()
+        self.db.refresh(relation)
+        return relation
+
+    def get_all_knowledge_entities(self) -> List[KnowledgeEntity]:
+        """
+        Get all knowledge entities.
+
+        Returns:
+            List[KnowledgeEntity]: List of all entities
+        """
+        return self.db.query(KnowledgeEntity).all()
+
+    def get_knowledge_entities_by_type(self, entity_type: EntityType) -> List[KnowledgeEntity]:
+        """
+        Get knowledge entities by type.
+
+        Args:
+            entity_type (EntityType): Entity type
+
+        Returns:
+            List[KnowledgeEntity]: List of entities of the specified type
+        """
+        return self.db.query(KnowledgeEntity).filter(KnowledgeEntity.type == entity_type).all()
+
+    def get_knowledge_entities_by_business_type(self, business_type: BusinessType) -> List[KnowledgeEntity]:
+        """
+        Get knowledge entities by business type.
+
+        Args:
+            business_type (BusinessType): Business type
+
+        Returns:
+            List[KnowledgeEntity]: List of entities for the specified business type
+        """
+        return self.db.query(KnowledgeEntity).filter(KnowledgeEntity.business_type == business_type).all()
+
+    def get_all_knowledge_relations(self) -> List[KnowledgeRelation]:
+        """
+        Get all knowledge relations.
+
+        Returns:
+            List[KnowledgeRelation]: List of all relations
+        """
+        return self.db.query(KnowledgeRelation).all()
+
+    def get_knowledge_relations_by_business_type(self, business_type: BusinessType) -> List[KnowledgeRelation]:
+        """
+        Get knowledge relations by business type.
+
+        Args:
+            business_type (BusinessType): Business type
+
+        Returns:
+            List[KnowledgeRelation]: List of relations for the specified business type
+        """
+        return self.db.query(KnowledgeRelation).filter(KnowledgeRelation.business_type == business_type).all()
+
+    def get_knowledge_graph_data(self, business_type: Optional[BusinessType] = None) -> Dict[str, Any]:
+        """
+        Get knowledge graph data in G6 format.
+
+        Args:
+            business_type (Optional[BusinessType]): Filter by business type
+
+        Returns:
+            Dict[str, Any]: Graph data in G6 format
+        """
+        # Get entities
+        if business_type:
+            entities = self.get_knowledge_entities_by_business_type(business_type)
+            relations = self.get_knowledge_relations_by_business_type(business_type)
+        else:
+            entities = self.get_all_knowledge_entities()
+            relations = self.get_all_knowledge_relations()
+
+        # Convert to G6 format
+        nodes = []
+        edges = []
+
+        for entity in entities:
+            nodes.append({
+                "id": str(entity.id),
+                "name": entity.name,
+                "label": entity.name,
+                "type": entity.type.value,
+                "description": entity.description,
+                "businessType": entity.business_type.value if entity.business_type else None
+            })
+
+        for relation in relations:
+            edges.append({
+                "source": str(relation.subject_id),
+                "target": str(relation.object_id),
+                "label": relation.predicate,
+                "type": relation.predicate,
+                "businessType": relation.business_type.value if relation.business_type else None
+            })
+
+        return {
+            "nodes": nodes,
+            "edges": edges
+        }
+
+    def clear_knowledge_graph(self) -> int:
+        """
+        Clear all knowledge graph data.
+
+        Returns:
+            int: Number of deleted relations
+        """
+        # Delete all relations first
+        relations_count = self.db.query(KnowledgeRelation).count()
+        self.db.query(KnowledgeRelation).delete()
+
+        # Delete all entities
+        entities_count = self.db.query(KnowledgeEntity).count()
+        self.db.query(KnowledgeEntity).delete()
+
+        self.db.commit()
+        return relations_count + entities_count
+
+    def get_knowledge_graph_stats(self) -> Dict[str, int]:
+        """
+        Get knowledge graph statistics.
+
+        Returns:
+            Dict[str, int]: Statistics about the knowledge graph
+        """
+        return {
+            "total_entities": self.db.query(KnowledgeEntity).count(),
+            "total_relations": self.db.query(KnowledgeRelation).count(),
+            "business_entities": self.db.query(KnowledgeEntity).filter(KnowledgeEntity.type == EntityType.BUSINESS).count(),
+            "service_entities": self.db.query(KnowledgeEntity).filter(KnowledgeEntity.type == EntityType.SERVICE).count(),
+            "interface_entities": self.db.query(KnowledgeEntity).filter(KnowledgeEntity.type == EntityType.INTERFACE).count()
+        }
