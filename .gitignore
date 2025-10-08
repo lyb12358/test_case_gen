@@ -314,7 +314,6 @@ dist-ssr/
 output/
 references/
 interface_tests/
-data/
 
 # Excel files
 *.xlsx
