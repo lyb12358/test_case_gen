@@ -24,11 +24,12 @@ cd web && npm run dev
 
 ## Project Overview
 
-Comprehensive test case generation system with modern web frontend:
+Comprehensive test case generation system with modern web frontend and knowledge graph:
 
 1. **Backend**: Modular Python backend using LLMs with SQLite storage
 2. **Frontend**: Modern React app (TypeScript + Vite + Ant Design + React Query)
 3. **API**: RESTful endpoints for business type parameterized test case generation
+4. **Knowledge Graph**: TSP本体图谱 showing relationships between business types, services, and interfaces
 
 ## Project Structure
 
@@ -43,11 +44,14 @@ src/
 ├── api/endpoints.py          # FastAPI endpoints
 ├── database/                 # Database layer
 ├── utils/                    # Utilities and config
-└── models/                   # Data models
+├── models/                   # Data models
+└── core/
+    └── business_data_extractor.py  # Business data extraction for knowledge graph
 
 scripts/                     # Entry points
 ├── generate_test_cases.py        # Main script
-└── generate_interface_tests.py   # Interface tests
+├── generate_interface_tests.py   # Interface tests
+└── initialize_knowledge_graph.py # Knowledge graph initialization
 
 prompts/                     # Prompt templates
 ├── system.md                   # System prompt
@@ -63,8 +67,10 @@ web/
 │   ├── pages/                   # Page components
 │   │   ├── Dashboard/           # Statistics dashboard
 │   │   ├── TestCases/           # Test case management
-│   │   └── Tasks/               # Task monitoring
+│   │   ├── Tasks/               # Task monitoring
+│   │   └── KnowledgeGraph/      # TSP本体图谱 visualization
 │   ├── services/                # API service layers
+│   │   └── knowledgeGraphService.ts  # Knowledge graph API service
 │   ├── types/                   # TypeScript definitions
 │   └── App.tsx                  # Main app with routing
 ├── package.json                 # Dependencies
@@ -120,6 +126,9 @@ python scripts/generate_test_cases.py
 # Generate interface tests
 python scripts/generate_interface_tests.py
 
+# Initialize knowledge graph
+python scripts/initialize_knowledge_graph.py
+
 # Development server
 python -m src.api.endpoints --reload
 ```
@@ -162,14 +171,44 @@ Key environment variables (`.env`):
 - **Features**: Real-time monitoring, Chinese UI, advanced filtering
 - **UX**: Improved responsive design and user experience
 
+## Knowledge Graph Features
+
+The TSP本体图谱 provides interactive visualization of business relationships:
+
+### Key Features
+- **Visual Graph**: Interactive network graph showing entities and relationships
+- **Entity Types**: Business types, services, and interfaces
+- **Filtering**: Filter by business type (RCC, RFD, ZAB, ZBA)
+- **Statistics**: Real-time counts of entities and relations
+- **Management**: Initialize and clear graph data
+
+### Access Points
+- **Web Interface**: http://localhost:5173/knowledge-graph
+- **API Endpoints**: See API Documentation below
+
 ## API Documentation
 
 When API server is running, visit:
 - **Swagger UI**: http://localhost:8000/docs
 - **ReDoc**: http://localhost:8000/redoc
 
+### Knowledge Graph Endpoints
+- `GET /knowledge-graph/data` - Get graph visualization data
+- `GET /knowledge-graph/stats` - Get graph statistics
+- `GET /knowledge-graph/entities` - Get entity list
+- `GET /knowledge-graph/relations` - Get relation list
+- `POST /knowledge-graph/initialize` - Initialize knowledge graph
+- `DELETE /knowledge-graph/clear` - Clear all graph data
+
 ## Database Schema
 
+### Test Case Tables
 - **test_cases**: Generated test case data by business type
 - **generation_jobs**: Task status and metadata tracking
 - **Auto-cleanup**: Replaces existing data on new generation
+
+### Knowledge Graph Tables
+- **knowledge_entities**: Business types, services, and interfaces
+- **knowledge_relations**: Relationships between entities
+- **entity_types**: Entity type definitions (business, service, interface)
+- **relation_types**: Relation type definitions (has_service, provides_interface, etc.)

@@ -10,6 +10,7 @@ from typing import Optional, List, Dict, Any
 import asyncio
 import uuid
 import os
+from datetime import datetime
 
 from ..core.test_case_generator import TestCaseGenerator
 from ..utils.config import Config
@@ -137,15 +138,14 @@ app.add_middleware(
 config = Config()
 db_manager = DatabaseManager(config)
 
-# Global task storage (in production, use Redis or database)
-task_store: Dict[str, Dict[str, Any]] = {}
+# Task progress data (for additional metadata during execution)
+task_progress: Dict[str, Dict[str, Any]] = {}
 
 
-def get_db_operations() -> DatabaseOperations:
+def get_db_operations():
     """Dependency to get database operations."""
-    # This will be properly implemented with dependency injection
-    # For now, we'll create a new session each time
-    pass
+    # Create a new session for database operations
+    return db_manager.get_session().__enter__()
 
 
 @app.get("/")
@@ -198,12 +198,14 @@ async def generate_test_cases_for_business(
     # Generate task ID
     task_id = str(uuid.uuid4())
 
-    # Initialize task status
-    task_store[task_id] = {
-        "status": JobStatus.PENDING.value,
+    # Create job in database
+    with db_manager.get_session() as db:
+        db_operations = DatabaseOperations(db)
+        job = db_operations.create_generation_job(task_id, business_enum)
+
+    # Initialize task progress for real-time updates
+    task_progress[task_id] = {
         "progress": 0,
-        "business_type": business_enum.value,
-        "error": None,
         "test_case_id": None
     }
 
@@ -232,17 +234,24 @@ async def get_task_status(task_id: str):
     Returns:
         TaskStatusResponse: Task status information
     """
-    if task_id not in task_store:
+    # Get job from database
+    with db_manager.get_session() as db:
+        from ..database.models import GenerationJob
+        job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
+
+    if not job:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    task = task_store[task_id]
+    # Get additional progress info from memory if available
+    progress_info = task_progress.get(task_id, {})
+
     return TaskStatusResponse(
         task_id=task_id,
-        status=task["status"],
-        progress=task.get("progress"),
-        business_type=task.get("business_type"),
-        error=task.get("error"),
-        test_case_id=task.get("test_case_id")
+        status=job.status.value,
+        progress=progress_info.get("progress"),
+        business_type=job.business_type.value,
+        error=job.error_message,
+        test_case_id=progress_info.get("test_case_id")
     )
 
 
@@ -395,18 +404,27 @@ async def list_tasks():
     Returns:
         Dict: List of all tasks
     """
-    return {
-        "tasks": [
-            {
-                "task_id": task_id,
-                "status": task["status"],
-                "progress": task.get("progress"),
-                "business_type": task.get("business_type"),
-                "error": task.get("error")
-            }
-            for task_id, task in task_store.items()
-        ]
-    }
+    # Get all jobs from database
+    with db_manager.get_session() as db:
+        from ..database.models import GenerationJob
+        jobs = db.query(GenerationJob).all()
+
+    tasks = []
+    for job in jobs:
+        # Get additional progress info from memory if available
+        progress_info = task_progress.get(job.id, {})
+
+        tasks.append({
+            "task_id": job.id,
+            "status": job.status.value,
+            "progress": progress_info.get("progress"),
+            "business_type": job.business_type.value,
+            "error": job.error_message,
+            "created_at": job.created_at.isoformat() if job.created_at else None,
+            "completed_at": job.completed_at.isoformat() if job.completed_at else None
+        })
+
+    return {"tasks": tasks}
 
 
 @app.delete("/tasks/{task_id}")
@@ -420,10 +438,19 @@ async def delete_task(task_id: str):
     Returns:
         Dict: Deletion result
     """
-    if task_id not in task_store:
-        raise HTTPException(status_code=404, detail="Task not found")
+    # Delete from database
+    with db_manager.get_session() as db:
+        from ..database.models import GenerationJob
+        job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="Task not found")
+        db.delete(job)
+        db.commit()
 
-    del task_store[task_id]
+    # Clean up progress info
+    if task_id in task_progress:
+        del task_progress[task_id]
+
     return {"message": "Task deleted successfully"}
 
 
@@ -436,44 +463,63 @@ async def generate_test_cases_background(task_id: str, business_type: str):
         business_type: Business type for generation
     """
     try:
-        # Update status to running
-        task_store[task_id]["status"] = JobStatus.RUNNING.value
-        task_store[task_id]["progress"] = 10
+        # Update status to running in database
+        with db_manager.get_session() as db:
+            from ..database.models import GenerationJob, JobStatus
+            job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
+            if job:
+                job.status = JobStatus.RUNNING
+                db.commit()
+
+        # Update progress in memory
+        task_progress[task_id]["progress"] = 10
 
         # Initialize generator
         generator = TestCaseGenerator(config)
-        task_store[task_id]["progress"] = 30
+        task_progress[task_id]["progress"] = 30
 
         # Generate test cases
         test_cases_data = generator.generate_test_cases_for_business(business_type)
         if test_cases_data is None:
             raise Exception("Failed to generate test cases")
 
-        task_store[task_id]["progress"] = 70
+        task_progress[task_id]["progress"] = 70
 
         # Save to database (automatically deletes old data)
         if not generator.save_to_database(test_cases_data, business_type):
             raise Exception("Failed to save test cases to database")
 
-        task_store[task_id]["progress"] = 90
+        task_progress[task_id]["progress"] = 90
 
         # Get the created test case ID
         test_cases = generator.get_test_cases_from_database(business_type)
         if test_cases and len(test_cases) > 0:
-            task_store[task_id]["test_case_id"] = test_cases[0]["id"]
+            task_progress[task_id]["test_case_id"] = test_cases[0]["id"]
 
-        # Update completion status
-        task_store[task_id].update({
-            "status": JobStatus.COMPLETED.value,
-            "progress": 100,
-            "error": None
-        })
+        # Update completion status in database
+        with db_manager.get_session() as db:
+            from ..database.models import GenerationJob, JobStatus
+            job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
+            if job:
+                job.status = JobStatus.COMPLETED
+                job.completed_at = datetime.utcnow()
+                db.commit()
+
+        task_progress[task_id]["progress"] = 100
 
     except Exception as e:
-        task_store[task_id].update({
-            "status": JobStatus.FAILED.value,
-            "error": str(e)
-        })
+        # Update failed status in database
+        with db_manager.get_session() as db:
+            from ..database.models import GenerationJob, JobStatus
+            job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
+            if job:
+                job.status = JobStatus.FAILED
+                job.error_message = str(e)
+                db.commit()
+
+        # Clean up progress info
+        if task_id in task_progress:
+            del task_progress[task_id]
 
 
 # Knowledge Graph Endpoints
