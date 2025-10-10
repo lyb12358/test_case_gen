@@ -83,7 +83,7 @@ interface TestCaseNodeProps {
   density?: DensityLevel;
 }
 
-const TestCaseNode: React.FC<TestCaseNodeProps> = ({ id, data, density = 'spacious' }) => {
+const TestCaseNode: React.FC<TestCaseNodeProps> = ({ data, density = 'spacious' }) => {
   const [expanded, setExpanded] = useState(data.expanded || false);
   const { label, description, businessType, extra_data } = data;
 
@@ -515,6 +515,7 @@ const TestCaseNode: React.FC<TestCaseNodeProps> = ({ id, data, density = 'spacio
                   type="link"
                   size="small"
                   icon={<PlayCircleOutlined />}
+                  onClick={(e) => e.stopPropagation()}
                   style={{
                     padding: '0 8px',
                     height: '24px',
@@ -529,6 +530,7 @@ const TestCaseNode: React.FC<TestCaseNodeProps> = ({ id, data, density = 'spacio
                   type="link"
                   size="small"
                   icon={<EyeOutlined />}
+                  onClick={(e) => e.stopPropagation()}
                   style={{
                     padding: '0 8px',
                     height: '24px',
@@ -543,6 +545,7 @@ const TestCaseNode: React.FC<TestCaseNodeProps> = ({ id, data, density = 'spacio
                   type="link"
                   size="small"
                   icon={<EditOutlined />}
+                  onClick={(e) => e.stopPropagation()}
                   style={{
                     padding: '0 8px',
                     height: '24px',
@@ -557,6 +560,7 @@ const TestCaseNode: React.FC<TestCaseNodeProps> = ({ id, data, density = 'spacio
                   type="link"
                   size="small"
                   icon={<HistoryOutlined />}
+                  onClick={(e) => e.stopPropagation()}
                   style={{
                     padding: '0 8px',
                     height: '24px',

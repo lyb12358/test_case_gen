@@ -120,43 +120,13 @@ class BusinessDataExtractor:
                 business_type=business_type
             )
 
-            # Extract service and interface information
-            services = self._extract_services(description, business_type)
-
-            for service_data in services:
-                service_name = service_data["name"]
-                service_desc = service_data["description"]
-                interfaces = service_data["interfaces"]
-
-                # Get business entity as parent
-                business_entity = self.db_operations.get_knowledge_entity_by_name(business_display_name)
-                parent_id = business_entity.id if business_entity else None
-
-                # Create service entity
-                self.db_operations.create_knowledge_entity(
-                    name=service_name,
-                    entity_type=EntityType.SERVICE,
-                    description=service_desc,
-                    business_type=business_type,
-                    parent_id=parent_id,
-                    entity_order=1.0
-                )
-
-                # Create relation: business -> has -> service
-                self.db_operations.create_knowledge_relation(
-                    subject_name=business_display_name,
-                    predicate="has",
-                    object_name=service_name,
-                    business_type=business_type
-                )
-
-                # Create relation: service -> uses -> unified interface
-                self.db_operations.create_knowledge_relation(
-                    subject_name=service_name,
-                    predicate="uses",
-                    object_name="TSP远程控制接口",
-                    business_type=business_type
-                )
+            # Create relation: business -> uses -> unified interface
+            self.db_operations.create_knowledge_relation(
+                subject_name=business_display_name,
+                predicate="uses",
+                object_name="TSP远程控制接口",
+                business_type=business_type
+            )
 
             print(f"Successfully extracted data for {business_type.value}")
             return True
@@ -184,72 +154,7 @@ class BusinessDataExtractor:
 
         return "业务功能描述"
 
-    def _extract_services(self, content: str, business_type: BusinessType) -> List[Dict]:
-        """
-        Extract services from business description.
-
-        Args:
-            content (str): File content
-            business_type (BusinessType): Business type
-
-        Returns:
-            List[Dict]: List of services with their interfaces
-        """
-        services = []
-
-        # Define service mapping based on business type
-        service_mapping = {
-            BusinessType.RCC: {
-                "name": "远程净化服务",
-                "description": "远程控制座舱通风、空调、除霜等功能"
-            },
-            BusinessType.RFD: {
-                "name": "香氛控制服务",
-                "description": "远程控制车辆香氛系统"
-            },
-            BusinessType.ZAB: {
-                "name": "远程恒温座舱服务",
-                "description": "远程设置和保持座舱温度"
-            },
-            BusinessType.ZBA: {
-                "name": "水淹报警服务",
-                "description": "车辆水淹状态监测和报警"
-            }
-        }
-
-        # Extract interface endpoint from content
-        interface_pattern = r'`([^`]+)`'
-        interface_matches = re.findall(interface_pattern, content)
-
-        # Find the actual API endpoint (starts with POST and contains /)
-        api_endpoint = None
-        for match in interface_matches:
-            if match.startswith("POST"):
-                api_endpoint = match.replace("POST ", "").strip()
-                break
-
-        # Default endpoint if not found
-        if not api_endpoint:
-            api_endpoint = "/v1.0/remoteControl/control"
-
-        # Get service definition for this business type
-        service_def = service_mapping.get(business_type)
-        if service_def:
-            service_data = {
-                "name": service_def["name"],
-                "description": service_def["description"],
-                "interfaces": [
-                    {
-                        "name": f"{service_def['name']}接口",
-                        "description": f"POST {api_endpoint}",
-                        "endpoint": api_endpoint
-                    }
-                ]
-            }
-            services.append(service_data)
-
-        return services
-
+  
     def _create_tsp_scenario_entity(self) -> bool:
         """
         Create TSP remote control scenario entity.

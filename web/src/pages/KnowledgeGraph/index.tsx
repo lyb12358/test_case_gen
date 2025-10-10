@@ -110,15 +110,6 @@ const KnowledgeGraph: React.FC = () => {
         <Col span={4}>
           <Card>
             <Statistic
-              title="服务实体"
-              value={stats?.service_entities || 0}
-              valueStyle={{ color: '#52c41a' }}
-            />
-          </Card>
-        </Col>
-        <Col span={4}>
-          <Card>
-            <Statistic
               title="接口实体"
               value={stats?.interface_entities || 0}
               valueStyle={{ color: '#fa8c16' }}

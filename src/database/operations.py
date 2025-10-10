@@ -532,7 +532,6 @@ class DatabaseOperations:
             "total_relations": self.db.query(KnowledgeRelation).count(),
             "scenario_entities": self.db.query(KnowledgeEntity).filter(KnowledgeEntity.type == EntityType.SCENARIO).count(),
             "business_entities": self.db.query(KnowledgeEntity).filter(KnowledgeEntity.type == EntityType.BUSINESS).count(),
-            "service_entities": self.db.query(KnowledgeEntity).filter(KnowledgeEntity.type == EntityType.SERVICE).count(),
             "interface_entities": self.db.query(KnowledgeEntity).filter(KnowledgeEntity.type == EntityType.INTERFACE).count(),
             "test_case_entities": self.db.query(KnowledgeEntity).filter(KnowledgeEntity.type == EntityType.TEST_CASE).count()
         }

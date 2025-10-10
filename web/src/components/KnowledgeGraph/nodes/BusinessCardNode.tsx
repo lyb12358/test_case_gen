@@ -11,7 +11,6 @@ import {
 } from 'antd';
 import {
   DatabaseOutlined,
-  SettingOutlined,
   ApiOutlined,
   FileTextOutlined,
   ApartmentOutlined,
@@ -29,7 +28,7 @@ interface BusinessCardNodeProps {
   id: string;
   data: {
     label: string;
-    type: 'scenario' | 'business' | 'service' | 'interface' | 'test_case';
+    type: 'scenario' | 'business' | 'interface' | 'test_case';
     description?: string;
     businessType?: string;
     extra_data?: any;
@@ -39,10 +38,11 @@ interface BusinessCardNodeProps {
   density?: DensityLevel;
 }
 
-const BusinessCardNode: React.FC<BusinessCardNodeProps> = ({ id, data, density = 'spacious' }) => {
+const BusinessCardNode: React.FC<BusinessCardNodeProps> = ({ data, density = 'spacious' }) => {
   const [expanded, setExpanded] = useState(data.expanded || false);
   const { label, type, description, businessType, extra_data } = data;
 
+  
   // Get density-based sizing
   const getDensityConfig = (density: DensityLevel) => {
     switch (density) {
@@ -95,8 +95,6 @@ const BusinessCardNode: React.FC<BusinessCardNodeProps> = ({ id, data, density =
         return <ApartmentOutlined style={{ color: '#722ed1' }} />;
       case 'business':
         return <DatabaseOutlined style={{ color: '#1890ff' }} />;
-      case 'service':
-        return <SettingOutlined style={{ color: '#52c41a' }} />;
       case 'interface':
         return <ApiOutlined style={{ color: '#fa8c16' }} />;
       case 'test_case':
@@ -111,7 +109,6 @@ const BusinessCardNode: React.FC<BusinessCardNodeProps> = ({ id, data, density =
     switch (nodeType) {
       case 'scenario': return '#722ed1';
       case 'business': return '#1890ff';
-      case 'service': return '#52c41a';
       case 'interface': return '#fa8c16';
       case 'test_case': return '#13c2c2';
       default: return '#999';
@@ -149,8 +146,14 @@ const BusinessCardNode: React.FC<BusinessCardNodeProps> = ({ id, data, density =
     }}>
       <Space size={densityConfig.spacing}>
         <Avatar
-          size={densityConfig.avatarSize}
-          icon={getTypeIcon(type)}
+          size="small"
+          icon={
+            type === 'scenario' ? <ApartmentOutlined style={{ color: '#722ed1' }} /> :
+            type === 'business' ? <DatabaseOutlined style={{ color: '#1890ff' }} /> :
+            type === 'interface' ? <ApiOutlined style={{ color: '#fa8c16' }} /> :
+            type === 'test_case' ? <FileTextOutlined style={{ color: '#13c2c2' }} /> :
+            <InfoCircleOutlined style={{ color: '#999' }} />
+          }
           style={{
             backgroundColor: getTypeColor(type),
             border: 'none'
@@ -296,6 +299,7 @@ const BusinessCardNode: React.FC<BusinessCardNodeProps> = ({ id, data, density =
               <Button
                 type="link"
                 size="small"
+                onClick={(e) => e.stopPropagation()}
                 style={{
                   padding: density === 'compact' ? '0 4px' : '0 8px',
                   height: density === 'compact' ? '20px' : '24px',
@@ -309,6 +313,7 @@ const BusinessCardNode: React.FC<BusinessCardNodeProps> = ({ id, data, density =
               <Button
                 type="link"
                 size="small"
+                onClick={(e) => e.stopPropagation()}
                 style={{
                   padding: density === 'compact' ? '0 4px' : '0 8px',
                   height: density === 'compact' ? '20px' : '24px',

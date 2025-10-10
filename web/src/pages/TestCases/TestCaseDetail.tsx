@@ -42,7 +42,7 @@ const TestCaseDetail: React.FC = () => {
     if (!testCaseGroup) return;
 
     // Convert test_case_items to the old format for compatibility
-    const testCases = testCaseGroup.test_case_items.map(item => ({
+    const testCases = testCaseGroup.test_case_items.map((item: any) => ({
       id: item.test_case_id,
       name: item.name,
       description: item.description,

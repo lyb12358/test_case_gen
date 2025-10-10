@@ -2,7 +2,7 @@ export interface GraphNode {
   id: string;
   name: string;
   label: string;
-  type: 'scenario' | 'business' | 'service' | 'interface' | 'test_case';
+  type: 'scenario' | 'business' | 'interface' | 'test_case';
   description?: string;
   businessType?: string;
   parentId?: number;
@@ -28,7 +28,6 @@ export interface GraphStats {
   total_relations: number;
   scenario_entities: number;
   business_entities: number;
-  service_entities: number;
   interface_entities: number;
   test_case_entities: number;
 }

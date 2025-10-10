@@ -83,7 +83,7 @@ const TestCaseGenerate: React.FC = () => {
 
   // 监听任务状态变化
   useEffect(() => {
-    if (taskStatus && currentTask) {
+    if (taskStatus && currentTask && taskStatus.status !== currentTask.status) {
       const updatedTask: GenerationTask = {
         id: currentTask.id,
         business_type: currentTask.business_type,
@@ -102,7 +102,7 @@ const TestCaseGenerate: React.FC = () => {
         setPolling(false);
       }
     }
-  }, [taskStatus, currentTask, queryClient]);
+  }, [taskStatus?.status, taskStatus?.progress, currentTask?.status, queryClient]);
 
   const handleGenerate = (values: { business_type: string }) => {
     setCurrentTask({

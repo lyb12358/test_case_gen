@@ -57,7 +57,7 @@ interface ServiceNodeProps {
   density?: DensityLevel;
 }
 
-const ServiceNode: React.FC<ServiceNodeProps> = ({ id, data, density = 'spacious' }) => {
+const ServiceNode: React.FC<ServiceNodeProps> = ({ data, density = 'spacious' }) => {
   const [expanded, setExpanded] = useState(data.expanded || false);
   const { label, description, businessType, extra_data } = data;
 
@@ -408,6 +408,7 @@ const ServiceNode: React.FC<ServiceNodeProps> = ({ id, data, density = 'spacious
                   type="link"
                   size="small"
                   icon={<ReloadOutlined />}
+                  onClick={(e) => e.stopPropagation()}
                   style={{
                     padding: '0 8px',
                     height: '24px',
@@ -421,6 +422,7 @@ const ServiceNode: React.FC<ServiceNodeProps> = ({ id, data, density = 'spacious
                 <Button
                   type="link"
                   size="small"
+                  onClick={(e) => e.stopPropagation()}
                   style={{
                     padding: '0 8px',
                     height: '24px',
@@ -435,6 +437,7 @@ const ServiceNode: React.FC<ServiceNodeProps> = ({ id, data, density = 'spacious
                   type="link"
                   size="small"
                   icon={<SettingOutlined />}
+                  onClick={(e) => e.stopPropagation()}
                   style={{
                     padding: '0 8px',
                     height: '24px',

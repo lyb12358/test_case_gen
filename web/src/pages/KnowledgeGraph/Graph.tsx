@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { Card, Button, Drawer, Typography, Divider, Tag, Space, Tooltip, Select, Slider } from 'antd';
+import { Card, Button, Drawer, Typography, Divider, Tag, Space, Tooltip, Select } from 'antd';
 const { Option } = Select;
 import {
   ZoomInOutlined,
@@ -12,7 +12,9 @@ import {
   BorderOutlined,
   DeploymentUnitOutlined,
   AppstoreOutlined,
-  NodeIndexOutlined
+  NodeIndexOutlined,
+  CreditCardOutlined,
+  TagOutlined
 } from '@ant-design/icons';
 import { Graph, ExtensionCategory, register } from '@antv/g6';
 import { ReactNode } from '@antv/g6-extension-react';
@@ -20,10 +22,11 @@ import { KnowledgeGraphData, GraphNode, GraphRelation } from '../../types/knowle
 import { knowledgeGraphService } from '../../services/knowledgeGraphService';
 import {
   BusinessCardNode,
-  ServiceNode,
   InterfaceNode,
-  TestCaseNode
+  TestCaseNode,
+  BadgeNode
 } from '../../components/KnowledgeGraph';
+import NodeLegend from '../../components/KnowledgeGraph/NodeLegend';
 
 // 注册 React Node 扩展
 register(ExtensionCategory.NODE, 'react-node', ReactNode);
@@ -46,6 +49,9 @@ export type LayoutType = 'dagre' | 'circular' | 'radial' | 'concentric' | 'grid'
 // 密度设置类型
 export type DensityLevel = 'compact' | 'normal' | 'spacious';
 
+// 节点显示模式类型
+export type NodeDisplayMode = 'card' | 'badge';
+
 // 布局配置定义
 export interface LayoutConfig {
   type: LayoutType;
@@ -61,26 +67,37 @@ interface G6GraphProps {
   onNodeClick: (nodeData: any) => void;
   layoutType: LayoutType;
   density: DensityLevel;
+  nodeDisplayMode: NodeDisplayMode;
   onGraphReady: (graph: Graph) => void;
 }
 
-const G6Graph: React.FC<G6GraphProps> = ({ data, onNodeClick, layoutType, density, onGraphReady }) => {
+const G6Graph: React.FC<G6GraphProps> = ({ data, onNodeClick, layoutType, density, nodeDisplayMode, onGraphReady }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<Graph | null>(null);
 
-  // Get React component based on node type
+  // Get React component based on node type and display mode
   const getReactComponent = (nodeType: string) => {
-    switch (nodeType) {
-      case 'service':
-        return (nodeData: any) => <ServiceNode id={nodeData.id} data={nodeData.data} density={density} />;
-      case 'interface':
-        return (nodeData: any) => <InterfaceNode id={nodeData.id} data={nodeData.data} density={density} />;
-      case 'test_case':
-        return (nodeData: any) => <TestCaseNode id={nodeData.id} data={nodeData.data} density={density} />;
-      case 'scenario':
-      case 'business':
-      default:
-        return (nodeData: any) => <BusinessCardNode id={nodeData.id} data={nodeData.data} density={density} />;
+    if (nodeDisplayMode === 'badge') {
+      // Badge mode for all node types
+      return (nodeData: any) => (
+        <BadgeNode
+          id={nodeData.id}
+          data={nodeData.data || nodeData}
+          onClick={() => onNodeClick(nodeData)}
+        />
+      );
+    } else {
+      // Card mode (existing behavior)
+      switch (nodeType) {
+        case 'interface':
+          return (nodeData: any) => <InterfaceNode id={nodeData.id} data={nodeData.data || nodeData} density={density} />;
+        case 'test_case':
+          return (nodeData: any) => <TestCaseNode id={nodeData.id} data={nodeData.data || nodeData} density={density} />;
+        case 'scenario':
+        case 'business':
+        default:
+          return (nodeData: any) => <BusinessCardNode id={nodeData.id} data={nodeData.data || nodeData} density={density} />;
+      }
     }
   };
 
@@ -145,7 +162,22 @@ const G6Graph: React.FC<G6GraphProps> = ({ data, onNodeClick, layoutType, densit
         type: 'react-node',
         style: {
           component: (nodeData: any) => {
-            const component = getReactComponent(nodeData.data.type);
+            // 确保 type数据正确获取，从多个可能的来源获取
+            let nodeType = 'unknown';
+
+            // 尝试从不同位置获取node type
+            if (nodeData.data?.type) {
+              nodeType = nodeData.data.type;
+            } else if (nodeData.type) {
+              nodeType = nodeData.type;
+            } else if (nodeData._cfg?.model?.data?.type) {
+              nodeType = nodeData._cfg.model.data.type;
+            } else if (nodeData._cfg?.model?.type) {
+              nodeType = nodeData._cfg.model.type;
+            }
+
+  
+            const component = getReactComponent(nodeType);
             return component(nodeData);
           },
         },
@@ -240,7 +272,7 @@ const G6Graph: React.FC<G6GraphProps> = ({ data, onNodeClick, layoutType, densit
         graphRef.current = null;
       }
     };
-  }, [data, layoutType, density, onGraphReady]);
+  }, [data, layoutType, density, nodeDisplayMode, onGraphReady]);
 
   return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />;
 };
@@ -269,7 +301,6 @@ const calculateNodeSize = (nodeData: any): [number, number] => {
   const baseSizes = {
     scenario: [180, 120],
     business: [160, 100],
-    service: [140, 90],
     interface: [150, 95],
     test_case: [200, 110]
   };
@@ -295,7 +326,7 @@ const calculateNodeSize = (nodeData: any): [number, number] => {
 };
 
 // Enhanced layout configuration with dynamic spacing
-const getLayoutConfig = (type: LayoutType, density: DensityLevel = 'normal', nodes?: any[]) => {
+const getLayoutConfig = (type: LayoutType, density: DensityLevel = 'normal', _nodes?: any[]) => {
   const multipliers = getDensityMultipliers(density);
 
   switch (type) {
@@ -309,7 +340,6 @@ const getLayoutConfig = (type: LayoutType, density: DensityLevel = 'normal', nod
           const baseSpacing = {
             scenario: 160,
             business: 140,
-            service: 120,
             interface: 130,
             test_case: 150
           };
@@ -320,7 +350,6 @@ const getLayoutConfig = (type: LayoutType, density: DensityLevel = 'normal', nod
           const baseSpacing = {
             scenario: 240,
             business: 200,
-            service: 180,
             interface: 190,
             test_case: 220
           };
@@ -337,9 +366,6 @@ const getLayoutConfig = (type: LayoutType, density: DensityLevel = 'normal', nod
         type: 'd3-force',
         link: {
           distance: (d: any) => {
-            const sourceType = d.source?.data?.type || d.source?.type;
-            const targetType = d.target?.data?.type || d.target?.type;
-
             // Shorter distance within same business type
             if (d.source?.data?.businessType === d.target?.data?.businessType) {
               return 120 * multipliers.node;
@@ -360,7 +386,6 @@ const getLayoutConfig = (type: LayoutType, density: DensityLevel = 'normal', nod
             const strengths = {
               scenario: -150,
               business: -120,
-              service: -80,
               interface: -90,
               test_case: -100
             };
@@ -436,8 +461,8 @@ const getLayoutConfig = (type: LayoutType, density: DensityLevel = 'normal', nod
         sortBy: 'id',
         condense: false,
         nodeSize: (node: any) => calculateNodeSize(node),
-        width: (node: any) => calculateNodeSize(node)[0] * multipliers.size,
-        height: (node: any) => calculateNodeSize(node)[1] * multipliers.size,
+        width: 300 * multipliers.size,
+        height: 200 * multipliers.size,
       };
 
     case 'random':
@@ -466,8 +491,9 @@ const GraphComponent: React.FC<GraphComponentProps> = ({ data }) => {
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [layoutType, setLayoutType] = useState<LayoutType>('dagre');
+  const [layoutType, setLayoutType] = useState<LayoutType>('d3-force');
   const [density, setDensity] = useState<DensityLevel>('spacious');
+  const [nodeDisplayMode, setNodeDisplayMode] = useState<NodeDisplayMode>('badge');
   const graphRef = useRef<Graph | null>(null);
 
   // Handle graph ready callback
@@ -482,8 +508,6 @@ const GraphComponent: React.FC<GraphComponentProps> = ({ data }) => {
         return '#722ed1';
       case 'business':
         return '#1890ff';
-      case 'service':
-        return '#52c41a';
       case 'interface':
         return '#fa8c16';
       case 'test_case':
@@ -567,16 +591,43 @@ const GraphComponent: React.FC<GraphComponentProps> = ({ data }) => {
     localStorage.setItem('knowledge-graph-density', value);
   };
 
+  // 节点显示模式切换处理
+  const handleNodeDisplayModeChange = (value: NodeDisplayMode) => {
+    setNodeDisplayMode(value);
+    // 保存到localStorage
+    localStorage.setItem('knowledge-graph-node-display-mode', value);
+  };
+
   // 从localStorage恢复设置
   useEffect(() => {
     const savedLayout = localStorage.getItem('knowledge-graph-layout') as LayoutType;
     if (savedLayout && layoutOptions.find(opt => opt.type === savedLayout)) {
       setLayoutType(savedLayout);
     }
+    // 如果没有保存的布局设置，使用新的默认值 'd3-force'
+    else {
+      setLayoutType('d3-force');
+      localStorage.setItem('knowledge-graph-layout', 'd3-force');
+    }
 
     const savedDensity = localStorage.getItem('knowledge-graph-density') as DensityLevel;
     if (savedDensity && ['compact', 'normal', 'spacious'].includes(savedDensity)) {
       setDensity(savedDensity);
+    }
+    // 如果没有保存的密度设置，使用宽松模式
+    else {
+      setDensity('spacious');
+      localStorage.setItem('knowledge-graph-density', 'spacious');
+    }
+
+    const savedNodeDisplayMode = localStorage.getItem('knowledge-graph-node-display-mode') as NodeDisplayMode;
+    if (savedNodeDisplayMode && ['card', 'badge'].includes(savedNodeDisplayMode)) {
+      setNodeDisplayMode(savedNodeDisplayMode);
+    }
+    // 如果没有保存的节点显示模式设置，使用新的默认值 'badge'
+    else {
+      setNodeDisplayMode('badge');
+      localStorage.setItem('knowledge-graph-node-display-mode', 'badge');
     }
   }, [layoutOptions]);
 
@@ -838,6 +889,31 @@ const GraphComponent: React.FC<GraphComponentProps> = ({ data }) => {
               <Option value="spacious">宽松</Option>
             </Select>
           </Space>
+
+          <Divider type="vertical" />
+
+          <Space>
+            <span style={{ fontSize: '14px', color: '#666' }}>节点:</span>
+            <Select
+              value={nodeDisplayMode}
+              onChange={handleNodeDisplayModeChange}
+              style={{ width: 100 }}
+              size="small"
+            >
+              <Option value="card">
+                <Space size={4}>
+                  <CreditCardOutlined />
+                  <span>卡片</span>
+                </Space>
+              </Option>
+              <Option value="badge">
+                <Space size={4}>
+                  <TagOutlined />
+                  <span>徽章</span>
+                </Space>
+              </Option>
+            </Select>
+          </Space>
         </Space>
       }
       style={{
@@ -868,6 +944,7 @@ const GraphComponent: React.FC<GraphComponentProps> = ({ data }) => {
             onNodeClick={handleNodeClick}
             layoutType={layoutType}
             density={density}
+            nodeDisplayMode={nodeDisplayMode}
             onGraphReady={handleGraphReady}
           />
         ) : (
@@ -886,6 +963,9 @@ const GraphComponent: React.FC<GraphComponentProps> = ({ data }) => {
             <p>请先生成测试用例以初始化知识图谱</p>
           </div>
         )}
+
+        {/* 节点图例 */}
+        <NodeLegend />
       </div>
 
       {/* 节点详情抽屉 */}

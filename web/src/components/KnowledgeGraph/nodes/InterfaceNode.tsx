@@ -79,7 +79,7 @@ interface InterfaceNodeProps {
   density?: DensityLevel;
 }
 
-const InterfaceNode: React.FC<InterfaceNodeProps> = ({ id, data, density = 'spacious' }) => {
+const InterfaceNode: React.FC<InterfaceNodeProps> = ({ data, density = 'spacious' }) => {
   const [expanded, setExpanded] = useState(data.expanded || false);
   const [activeTab, setActiveTab] = useState('overview');
   const { label, description, businessType, extra_data } = data;

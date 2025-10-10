@@ -61,7 +61,6 @@ def main():
                 print(f"Total entities: {stats['total_entities']}")
                 print(f"Total relations: {stats['total_relations']}")
                 print(f"Business entities: {stats['business_entities']}")
-                print(f"Service entities: {stats['service_entities']}")
                 print(f"Interface entities: {stats['interface_entities']}")
 
                 print("\n=== Knowledge Graph Initialization Complete ===")

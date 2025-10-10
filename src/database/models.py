@@ -106,7 +106,6 @@ class EntityType(enum.Enum):
     """Knowledge graph entity types."""
     SCENARIO = "scenario"      # 场景 (TSP远控场景)
     BUSINESS = "business"      # 业务类型 (RCC, RFD, etc.)
-    SERVICE = "service"        # 服务 (远程净化, 香氛控制, etc.)
     INTERFACE = "interface"    # 接口 (/v1.0/remoteControl/control, etc.)
     TEST_CASE = "test_case"    # 测试用例
 
