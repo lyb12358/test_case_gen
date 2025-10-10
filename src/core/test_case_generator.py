@@ -259,6 +259,9 @@ class TestCaseGenerator:
             business_enum = BusinessType(business_type.upper())
             test_cases_list = test_cases_data.get('test_cases', [])
 
+            # Remove duplicate test case names, keep the first occurrence
+            test_cases_list = self._remove_duplicate_test_cases(test_cases_list)
+
             with self.db_manager.get_session() as db:
                 db_operations = DatabaseOperations(db)
 
@@ -466,3 +469,34 @@ class TestCaseGenerator:
         except Exception as e:
             print(f"Error deleting test cases from database: {e}")
             return False
+
+    def _remove_duplicate_test_cases(self, test_cases_list: list) -> list:
+        """
+        Remove duplicate test case names, keep the first occurrence.
+
+        Args:
+            test_cases_list (list): List of test case dictionaries
+
+        Returns:
+            list: List of test cases with unique names
+        """
+        seen_names = set()
+        unique_test_cases = []
+        duplicate_count = 0
+
+        for test_case in test_cases_list:
+            name = test_case.get('name', '').strip()
+            if not name:
+                continue
+
+            if name not in seen_names:
+                seen_names.add(name)
+                unique_test_cases.append(test_case)
+            else:
+                duplicate_count += 1
+                print(f"Removing duplicate test case: {name}")
+
+        if duplicate_count > 0:
+            print(f"Removed {duplicate_count} duplicate test case names. Kept {len(unique_test_cases)} unique test cases.")
+
+        return unique_test_cases

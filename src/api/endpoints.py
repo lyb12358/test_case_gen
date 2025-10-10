@@ -12,6 +12,7 @@ import uuid
 import os
 import json
 from datetime import datetime
+from sqlalchemy import func
 
 from ..core.test_case_generator import TestCaseGenerator
 from ..utils.config import Config
@@ -114,7 +115,6 @@ class GraphStatsResponse(BaseModel):
     total_relations: int
     scenario_entities: int
     business_entities: int
-    service_entities: int
     interface_entities: int
     test_case_entities: int
 
@@ -218,7 +218,8 @@ async def root():
             "GET /knowledge-graph/relations - Get knowledge graph relations",
             "GET /knowledge-graph/stats - Get knowledge graph statistics",
             "POST /knowledge-graph/initialize - Initialize knowledge graph from business descriptions",
-            "DELETE /knowledge-graph/clear - Clear all knowledge graph data"
+            "DELETE /knowledge-graph/clear - Clear all knowledge graph data",
+            "POST /knowledge-graph/fix-duplicate-test-cases - Fix duplicate test case names"
         ]
     }
 
@@ -1216,6 +1217,116 @@ async def get_entity_test_cases(entity_id: int):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get entity test cases: {str(e)}")
+
+
+@app.post("/knowledge-graph/fix-duplicate-test-cases")
+async def fix_duplicate_test_cases():
+    """
+    Fix duplicate test case names in the database by renaming duplicates with suffixes.
+    This resolves the discrepancy between Dashboard test case counts and Knowledge Graph node counts.
+
+    Returns:
+        Dict: Statistics about the fix operation
+    """
+    try:
+        with db_manager.get_session() as db:
+            from ..database.models import KnowledgeEntity, TestCaseEntity, TestCaseItem, EntityType
+
+            # Find duplicate test case entities (grouped by name and business_type)
+            duplicates_query = db.query(
+                KnowledgeEntity.name,
+                KnowledgeEntity.business_type,
+                func.count(KnowledgeEntity.id).label('count')
+            ).filter(
+                KnowledgeEntity.type == EntityType.TEST_CASE
+            ).group_by(
+                KnowledgeEntity.name,
+                KnowledgeEntity.business_type
+            ).having(
+                func.count(KnowledgeEntity.id) > 1
+            ).all()
+
+            if not duplicates_query:
+                return {
+                    "message": "No duplicate test case names found",
+                    "duplicate_groups_fixed": 0,
+                    "entities_renamed": 0
+                }
+
+            total_groups_fixed = 0
+            total_entities_renamed = 0
+
+            # Process each duplicate group
+            for duplicate in duplicates_query:
+                name = duplicate.name
+                business_type = duplicate.business_type
+
+                print(f"Processing duplicate group: '{name}' for {business_type.value}")
+
+                # Get all entities with this name and business_type, ordered by creation date
+                entities = db.query(KnowledgeEntity).filter(
+                    KnowledgeEntity.name == name,
+                    KnowledgeEntity.business_type == business_type,
+                    KnowledgeEntity.type == EntityType.TEST_CASE
+                ).order_by(KnowledgeEntity.created_at.asc()).all()
+
+                # Keep the first one as-is, rename the rest
+                for i, entity in enumerate(entities[1:], 1):  # Skip first entity
+                    new_name = f"{name}_{i}"
+                    print(f"  Renaming entity {entity.id}: '{name}' -> '{new_name}'")
+
+                    # Update the knowledge entity name
+                    entity.name = new_name
+
+                    # Update corresponding TestCaseEntity records
+                    tc_entities = db.query(TestCaseEntity).filter(
+                        TestCaseEntity.entity_id == entity.id
+                    ).all()
+
+                    for tc_entity in tc_entities:
+                        tc_entity.name = new_name
+
+                    # Update corresponding TestCaseItem records if needed
+                    # Check if this knowledge entity is linked to any TestCaseItem via extra_data
+                    if entity.extra_data:
+                        try:
+                            import json
+                            extra_data = json.loads(entity.extra_data)
+                            test_case_item_id = extra_data.get("test_case_item_id")
+                            if test_case_item_id:
+                                # Update the TestCaseItem name as well
+                                tc_item = db.query(TestCaseItem).filter(
+                                    TestCaseItem.id == test_case_item_id
+                                ).first()
+                                if tc_item:
+                                    tc_item.name = new_name
+                                    print(f"  Updated TestCaseItem {tc_item.id} name to '{new_name}'")
+                        except json.JSONDecodeError:
+                            pass
+
+                    total_entities_renamed += 1
+
+                total_groups_fixed += 1
+
+            # Commit all changes
+            db.commit()
+
+            return {
+                "message": f"Fixed duplicate test case names successfully",
+                "duplicate_groups_fixed": total_groups_fixed,
+                "entities_renamed": total_entities_renamed,
+                "details": [
+                    {
+                        "name": dup.name,
+                        "business_type": dup.business_type.value,
+                        "count": dup.count
+                    } for dup in duplicates_query
+                ]
+            }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to fix duplicate test cases: {str(e)}")
 
 
 if __name__ == "__main__":

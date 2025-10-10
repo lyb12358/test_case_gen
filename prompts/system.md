@@ -101,5 +101,6 @@
 8. steps与expected_result中的元素必须对应，一条step对应一条expected_result，并且使用数字序号
 9. 包含针对operationSucceeded=true和operationSucceeded=false两种情况的测试(如果用户提示词中有关于operationSucceeded的描述)
 10. 包含针对汽车远程控制服务的特殊考虑，如网络延迟、车辆离线等情况
+11. 确保所有测试用例的名称唯一，避免重复
 
 
