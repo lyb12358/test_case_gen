@@ -28,7 +28,7 @@ const TestCaseDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const { data: testCase, isLoading, error } = useQuery({
+  const { data: testCaseGroup, isLoading, error } = useQuery({
     queryKey: ['testCase', id],
     queryFn: () => testCaseService.getTestCaseById(Number(id)),
     enabled: !!id,
@@ -39,12 +39,26 @@ const TestCaseDetail: React.FC = () => {
   };
 
   const handleExport = () => {
-    if (!testCase) return;
+    if (!testCaseGroup) return;
+
+    // Convert test_case_items to the old format for compatibility
+    const testCases = testCaseGroup.test_case_items.map(item => ({
+      id: item.test_case_id,
+      name: item.name,
+      description: item.description,
+      module: item.module,
+      functional_module: item.functional_module,
+      functional_domain: item.functional_domain,
+      preconditions: item.preconditions || [],
+      steps: item.steps || [],
+      expected_result: item.expected_result || [],
+      remarks: item.remarks
+    }));
 
     const exportData = {
-      business_type: testCase.business_type,
-      generated_at: testCase.created_at,
-      test_cases: testCase.test_cases
+      business_type: testCaseGroup.business_type,
+      generated_at: testCaseGroup.created_at,
+      test_cases: testCases
     };
 
     const blob = new Blob([JSON.stringify(exportData, null, 2)], {
@@ -53,7 +67,7 @@ const TestCaseDetail: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `test_cases_${testCase.business_type}_${dayjs().format('YYYY-MM-DD')}.json`;
+    a.download = `test_cases_${testCaseGroup.business_type}_${dayjs().format('YYYY-MM-DD')}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -106,22 +120,15 @@ const TestCaseDetail: React.FC = () => {
       dataIndex: 'preconditions',
       key: 'preconditions',
       width: 200,
-      render: (conditions: string | string[]) => {
-        if (!conditions) return '-';
-        if (Array.isArray(conditions)) {
-          return (
-            <div>
-              {conditions.map((condition, index) => (
-                <div key={index} style={{ marginBottom: 4 }}>
-                  • {condition}
-                </div>
-              ))}
-            </div>
-          );
-        }
+      render: (conditions: string[]) => {
+        if (!conditions || !Array.isArray(conditions)) return '-';
         return (
-          <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.4' }}>
-            {conditions}
+          <div>
+            {conditions.map((condition, index) => (
+              <div key={index} style={{ marginBottom: 4 }}>
+                • {condition}
+              </div>
+            ))}
           </div>
         );
       },
@@ -131,37 +138,33 @@ const TestCaseDetail: React.FC = () => {
       dataIndex: 'steps',
       key: 'steps',
       width: 300,
-      render: (steps: string[]) => (
-        <div>
-          {steps?.map((step, index) => (
-            <div key={index} style={{ marginBottom: 4 }}>
-              {index + 1}. {step}
-            </div>
-          )) || '-'}
-        </div>
-      ),
+      render: (steps: string[]) => {
+        if (!steps || !Array.isArray(steps)) return '-';
+        return (
+          <div>
+            {steps.map((step, index) => (
+              <div key={index} style={{ marginBottom: 4 }}>
+                {index + 1}. {step}
+              </div>
+            ))}
+          </div>
+        );
+      },
     },
     {
       title: '预期结果',
       dataIndex: 'expected_result',
       key: 'expected_result',
       width: 250,
-      render: (results: string | string[]) => {
-        if (!results) return '-';
-        if (Array.isArray(results)) {
-          return (
-            <div>
-              {results.map((result, index) => (
-                <div key={index} style={{ marginBottom: 4 }}>
-                  • {result}
-                </div>
-              ))}
-            </div>
-          );
-        }
+      render: (results: string[]) => {
+        if (!results || !Array.isArray(results)) return '-';
         return (
-          <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.4' }}>
-            {results}
+          <div>
+            {results.map((result, index) => (
+              <div key={index} style={{ marginBottom: 4 }}>
+                • {result}
+              </div>
+            ))}
           </div>
         );
       },
@@ -198,7 +201,7 @@ const TestCaseDetail: React.FC = () => {
     );
   }
 
-  if (error || !testCase) {
+  if (error || !testCaseGroup) {
     return (
       <div>
         <Title level={2}>测试用例详情</Title>
@@ -247,19 +250,19 @@ const TestCaseDetail: React.FC = () => {
           column={2}
           size="small"
         >
-          <Descriptions.Item label="测试用例ID">
-            <Text code>#{testCase.id}</Text>
+          <Descriptions.Item label="测试用例组ID">
+            <Text code>#{testCaseGroup.id}</Text>
           </Descriptions.Item>
           <Descriptions.Item label="业务类型">
-            <Tag color={getBusinessTypeColor(testCase.business_type)}>
-              {getBusinessTypeFullName(testCase.business_type)}
+            <Tag color={getBusinessTypeColor(testCaseGroup.business_type)}>
+              {getBusinessTypeFullName(testCaseGroup.business_type)}
             </Tag>
           </Descriptions.Item>
           <Descriptions.Item label="生成时间">
-            {dayjs(testCase.created_at).format('YYYY-MM-DD HH:mm:ss')}
+            {dayjs(testCaseGroup.created_at).format('YYYY-MM-DD HH:mm:ss')}
           </Descriptions.Item>
           <Descriptions.Item label="测试用例数量">
-            {testCase.test_cases?.length || 0}
+            {testCaseGroup.test_case_items?.length || 0}
           </Descriptions.Item>
         </Descriptions>
 
@@ -269,15 +272,15 @@ const TestCaseDetail: React.FC = () => {
           <FileTextOutlined style={{ marginRight: 8 }} />
           <Text strong>测试用例详情</Text>
           <Tag style={{ marginLeft: 8 }} color="blue">
-            共 {testCase.test_cases?.length || 0} 个测试用例
+            共 {testCaseGroup.test_case_items?.length || 0} 个测试用例
           </Tag>
         </div>
 
-        {testCase.test_cases && testCase.test_cases.length > 0 ? (
+        {testCaseGroup.test_case_items && testCaseGroup.test_case_items.length > 0 ? (
           <Table
             columns={testCasesColumns}
-            dataSource={testCase.test_cases}
-            rowKey={(_, index) => `${testCase.id}-${index}`}
+            dataSource={testCaseGroup.test_case_items}
+            rowKey={(record) => `${testCaseGroup.id}-${record.id}`}
             pagination={{
               pageSize: 10,
               showSizeChanger: true,

@@ -18,11 +18,18 @@ const KnowledgeGraph: React.FC = () => {
     setLoading(true);
     setError('');
 
+    // 添加调试日志
+    console.log('Loading graph data with businessType:', businessType);
+
     try {
       const [dataResponse, statsResponse] = await Promise.all([
         knowledgeGraphService.getGraphData(businessType),
         knowledgeGraphService.getGraphStats()
       ]);
+
+      console.log('Graph data response:', dataResponse);
+      console.log('Data nodes count:', dataResponse?.nodes?.length);
+      console.log('Data edges count:', dataResponse?.edges?.length);
 
       setGraphData(dataResponse);
       setStats(statsResponse);
@@ -69,11 +76,11 @@ const KnowledgeGraph: React.FC = () => {
     <div style={{ padding: '24px' }}>
       <div style={{ marginBottom: '24px' }}>
         <h1>TSP本体图谱</h1>
-        <p>可视化展示业务类型、服务和接口之间的关系</p>
+        <p>为用例生成提供结构化元数据，为变更管理提供可解释的依据</p>
       </div>
 
       <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-        <Col span={6}>
+        <Col span={4}>
           <Card>
             <Statistic
               title="实体总数"
@@ -82,7 +89,16 @@ const KnowledgeGraph: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col span={4}>
+          <Card>
+            <Statistic
+              title="场景实体"
+              value={stats?.scenario_entities || 0}
+              valueStyle={{ color: '#722ed1' }}
+            />
+          </Card>
+        </Col>
+        <Col span={4}>
           <Card>
             <Statistic
               title="业务实体"
@@ -91,7 +107,7 @@ const KnowledgeGraph: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col span={4}>
           <Card>
             <Statistic
               title="服务实体"
@@ -100,12 +116,21 @@ const KnowledgeGraph: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col span={4}>
           <Card>
             <Statistic
               title="接口实体"
               value={stats?.interface_entities || 0}
               valueStyle={{ color: '#fa8c16' }}
+            />
+          </Card>
+        </Col>
+        <Col span={4}>
+          <Card>
+            <Statistic
+              title="用例实体"
+              value={stats?.test_case_entities || 0}
+              valueStyle={{ color: '#13c2c2' }}
             />
           </Card>
         </Col>
@@ -164,7 +189,7 @@ const KnowledgeGraph: React.FC = () => {
         />
       )}
 
-      <Card title="TSP本体图谱可视化" style={{ minHeight: '600px' }}>
+      <div style={{ minHeight: '600px' }}>
         {loading ? (
           <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '500px' }}>
             <Spin size="large" />
@@ -187,7 +212,7 @@ const KnowledgeGraph: React.FC = () => {
             </div>
           </div>
         )}
-      </Card>
+      </div>
     </div>
   );
 };

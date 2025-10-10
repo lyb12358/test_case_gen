@@ -28,46 +28,43 @@ export interface TaskStatusResponse {
   updated_at?: string;
 }
 
+export interface TestCaseItem {
+  id: number;
+  group_id: number;
+  test_case_id: string;
+  name: string;
+  description?: string;
+  module?: string;
+  functional_module?: string;
+  functional_domain?: string;
+  preconditions: string[];
+  steps: string[];
+  expected_result: string[];
+  remarks?: string;
+  entity_order?: number;
+  created_at: string;
+}
+
 export interface TestCase {
   id: number;
   business_type: string;
-  test_cases: Array<{
-    id?: string;
-    name?: string;
-    module?: string;
-    preconditions?: string | string[];
-    remarks?: string;
-    steps?: string[];
-    expected_result?: string | string[];
-    functional_module?: string;
-    functional_domain?: string;
-  }>;
+  test_cases?: any[]; // Legacy field for backward compatibility
   created_at: string;
-  updated_at?: string;
 }
 
-export interface TestCaseResponse {
+export interface TestCaseGroup {
   id: number;
   business_type: string;
-  test_cases?: Array<{
-    id?: string;
-    name?: string;
-    module?: string;
-    preconditions?: string | string[];
-    remarks?: string;
-    steps?: string[];
-    expected_result?: string | string[];
-    functional_module?: string;
-    functional_domain?: string;
-  }>;
+  generation_metadata?: Record<string, any>;
   created_at: string;
   updated_at?: string;
+  test_case_items: TestCaseItem[];
 }
 
 export interface TestCasesListResponse {
   business_type?: string;
   count: number;
-  test_cases: TestCaseResponse[];
+  test_case_groups: TestCaseGroup[];
 }
 
 export interface Task extends TaskStatusResponse {

@@ -35,6 +35,12 @@ class BusinessDataExtractor:
             self.db_operations.clear_knowledge_graph()
             print("Cleared existing knowledge graph data")
 
+            # Create TSP root scenario entity
+            self._create_tsp_scenario_entity()
+
+            # Create unified interface entity
+            self._create_unified_interface_entity()
+
             # Extract data for each business type
             for business_type in BusinessType:
                 success = self.extract_business_data(business_type)
@@ -84,11 +90,33 @@ class BusinessDataExtractor:
 
             business_display_name = business_names.get(business_name, business_name)
 
+            # Get TSP scenario entity as parent
+            tsp_entity = self.db_operations.get_knowledge_entity_by_name("TSP远控场景")
+            parent_id = tsp_entity.id if tsp_entity else None
+
+            # Store full business description in extra_data
+            import json
+            extra_data = json.dumps({
+                "full_description": description,
+                "business_code": business_name
+            }, ensure_ascii=False)
+
             # Create business entity
             self.db_operations.create_knowledge_entity(
                 name=business_display_name,
                 entity_type=EntityType.BUSINESS,
                 description=business_desc,
+                business_type=business_type,
+                parent_id=parent_id,
+                extra_data=extra_data,
+                entity_order=float(list(BusinessType).index(business_type) + 1)
+            )
+
+            # Create relation: TSP scenario -> contains -> business
+            self.db_operations.create_knowledge_relation(
+                subject_name="TSP远控场景",
+                predicate="contains",
+                object_name=business_display_name,
                 business_type=business_type
             )
 
@@ -100,12 +128,18 @@ class BusinessDataExtractor:
                 service_desc = service_data["description"]
                 interfaces = service_data["interfaces"]
 
+                # Get business entity as parent
+                business_entity = self.db_operations.get_knowledge_entity_by_name(business_display_name)
+                parent_id = business_entity.id if business_entity else None
+
                 # Create service entity
                 self.db_operations.create_knowledge_entity(
                     name=service_name,
                     entity_type=EntityType.SERVICE,
                     description=service_desc,
-                    business_type=business_type
+                    business_type=business_type,
+                    parent_id=parent_id,
+                    entity_order=1.0
                 )
 
                 # Create relation: business -> has -> service
@@ -116,27 +150,13 @@ class BusinessDataExtractor:
                     business_type=business_type
                 )
 
-                # Create interface entities and relations
-                for interface in interfaces:
-                    interface_name = interface["name"]
-                    interface_desc = interface["description"]
-
-                    # Create interface entity
-                    self.db_operations.create_knowledge_entity(
-                        name=interface_name,
-                        entity_type=EntityType.INTERFACE,
-                        description=interface_desc,
-                        business_type=business_type,
-                        metadata={"endpoint": interface.get("endpoint", "")}
-                    )
-
-                    # Create relation: service -> calls -> interface
-                    self.db_operations.create_knowledge_relation(
-                        subject_name=service_name,
-                        predicate="calls",
-                        object_name=interface_name,
-                        business_type=business_type
-                    )
+                # Create relation: service -> uses -> unified interface
+                self.db_operations.create_knowledge_relation(
+                    subject_name=service_name,
+                    predicate="uses",
+                    object_name="TSP远程控制接口",
+                    business_type=business_type
+                )
 
             print(f"Successfully extracted data for {business_type.value}")
             return True
@@ -229,6 +249,71 @@ class BusinessDataExtractor:
             services.append(service_data)
 
         return services
+
+    def _create_tsp_scenario_entity(self) -> bool:
+        """
+        Create TSP remote control scenario entity.
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # Create TSP scenario entity
+            self.db_operations.create_knowledge_entity(
+                name="TSP远控场景",
+                entity_type=EntityType.SCENARIO,
+                description="TSP远程控制业务场景，包含所有远程控制相关的业务类型、服务和接口",
+                parent_id=None,
+                entity_order=0.0
+            )
+            print("Created TSP远控场景 root entity")
+            return True
+        except Exception as e:
+            print(f"Error creating TSP scenario entity: {e}")
+            return False
+
+    def _create_unified_interface_entity(self) -> bool:
+        """
+        Create unified TSP remote control interface entity.
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # Get TSP scenario entity as parent
+            tsp_entity = self.db_operations.get_knowledge_entity_by_name("TSP远控场景")
+            parent_id = tsp_entity.id if tsp_entity else None
+
+            # Store interface metadata in extra_data
+            import json
+            interface_metadata = {
+                "endpoint": "/v1.0/remoteControl/control",
+                "method": "POST",
+                "description": "TSP远程控制统一接口，所有业务类型共用此接口"
+            }
+
+            # Create unified interface entity
+            self.db_operations.create_knowledge_entity(
+                name="TSP远程控制接口",
+                entity_type=EntityType.INTERFACE,
+                description="POST /v1.0/remoteControl/control - TSP远程控制统一接口",
+                parent_id=parent_id,
+                extra_data=json.dumps(interface_metadata, ensure_ascii=False),
+                entity_order=10.0
+            )
+
+            # Create relation: TSP scenario -> provides -> unified interface
+            self.db_operations.create_knowledge_relation(
+                subject_name="TSP远控场景",
+                predicate="provides",
+                object_name="TSP远程控制接口"
+            )
+
+            print("Created TSP远程控制接口 unified entity")
+            return True
+        except Exception as e:
+            print(f"Error creating unified interface entity: {e}")
+            return False
 
     def get_extraction_summary(self) -> Dict[str, int]:
         """

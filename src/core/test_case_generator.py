@@ -13,7 +13,7 @@ from ..core.json_extractor import JSONExtractor
 from ..core.excel_converter import ExcelConverter
 from ..database.database import DatabaseManager
 from ..database.operations import DatabaseOperations
-from ..database.models import BusinessType
+from ..database.models import BusinessType, TestCaseGroup, TestCaseItem, KnowledgeEntity, KnowledgeRelation, EntityType
 
 
 class TestCaseGenerator:
@@ -245,7 +245,7 @@ class TestCaseGenerator:
 
     def save_to_database(self, test_cases_data: Dict[str, Any], business_type: str) -> bool:
         """
-        Save test cases to database.
+        Save test cases to database using new TestCaseGroup + TestCaseItem structure.
 
         Args:
             test_cases_data (Dict[str, Any]): Test cases data
@@ -257,23 +257,154 @@ class TestCaseGenerator:
         try:
             # Validate business type
             business_enum = BusinessType(business_type.upper())
+            test_cases_list = test_cases_data.get('test_cases', [])
 
             with self.db_manager.get_session() as db:
                 db_operations = DatabaseOperations(db)
 
-                # Delete existing test cases for this business type
-                deleted_count = db_operations.delete_test_cases_by_business_type(business_enum)
-                print(f"Deleted {deleted_count} existing test cases for {business_enum.value}")
+                # Delete existing test case groups and items for this business type
+                deleted_count = db_operations.delete_test_case_groups_by_business_type(business_enum)
+                print(f"Deleted {deleted_count} existing test case groups for {business_enum.value}")
 
-                # Create new test case record
-                test_case = db_operations.create_test_case(business_enum, test_cases_data)
-                print(f"Created new test case record for {business_enum.value} with ID: {test_case.id}")
+                # Delete only test case entities (not business/service entities) to prevent UNIQUE constraint errors
+                deleted_entities_count = db_operations.db.query(KnowledgeEntity).filter(
+                    KnowledgeEntity.business_type == business_enum,
+                    KnowledgeEntity.type == EntityType.TEST_CASE
+                ).count()
+
+                db_operations.db.query(KnowledgeEntity).filter(
+                    KnowledgeEntity.business_type == business_enum,
+                    KnowledgeEntity.type == EntityType.TEST_CASE
+                ).delete()
+
+                db_operations.db.commit()
+                print(f"Deleted {deleted_entities_count} existing test case knowledge entities for {business_enum.value}")
+
+                # Ensure business entities exist before creating test case entities
+                self._ensure_business_entities_exist(db_operations, business_enum)
+
+                # Create new test case group
+                generation_metadata = {
+                    'generated_at': test_cases_data.get('generated_at'),
+                    'total_test_cases': len(test_cases_list),
+                    'generator_version': '2.0'
+                }
+
+                test_case_group = db_operations.create_test_case_group(
+                    business_enum,
+                    generation_metadata
+                )
+                print(f"Created new test case group for {business_enum.value} with ID: {test_case_group.id}")
+
+                # Create test case items in batch
+                test_case_items = db_operations.create_test_case_items_batch(
+                    test_case_group.id,
+                    test_cases_list
+                )
+                print(f"Created {len(test_case_items)} test case items for group {test_case_group.id}")
+
+                # Create knowledge graph entities for the new test case items
+                self._create_knowledge_entities_for_new_structure(
+                    db_operations,
+                    test_case_group,
+                    test_case_items,
+                    business_enum
+                )
 
                 return True
 
         except Exception as e:
             print(f"Error saving test cases to database: {e}")
             return False
+
+    def _create_knowledge_entities_for_new_structure(self, db_operations, test_case_group, test_case_items, business_type):
+        """
+        Create knowledge graph entities for the new test case structure.
+
+        Args:
+            db_operations: Database operations instance
+            test_case_group: TestCaseGroup instance
+            test_case_items: List of TestCaseItem instances
+            business_type: Business type enum
+        """
+        # Get the business entity to associate test cases with
+        business_entity = db_operations.db.query(KnowledgeEntity).filter(
+            KnowledgeEntity.business_type == business_type,
+            KnowledgeEntity.type == EntityType.BUSINESS
+        ).first()
+
+        if not business_entity:
+            print(f"No business entity found for {business_type.value}")
+            return
+
+        print(f"Found business entity: {business_entity.name} (ID: {business_entity.id})")
+
+        for item in test_case_items:
+            # Create test case knowledge entity
+            tc_entity = db_operations.create_knowledge_entity(
+                name=item.name,
+                entity_type=EntityType.TEST_CASE,
+                description=item.description,
+                business_type=business_type,
+                parent_id=business_entity.id,
+                entity_order=item.entity_order,
+                extra_data=json.dumps({
+                    'test_case_id': item.test_case_id,
+                    'module': item.module,
+                    'preconditions': json.loads(item.preconditions) if item.preconditions else [],
+                    'steps': json.loads(item.steps) if item.steps else [],
+                    'expected_result': json.loads(item.expected_result) if item.expected_result else [],
+                    'functional_module': item.functional_module,
+                    'functional_domain': item.functional_domain,
+                    'remarks': item.remarks,
+                    'test_case_item_id': item.id
+                }, ensure_ascii=False)
+            )
+
+            # Create test case entity mapping
+            db_operations.create_test_case_entity(
+                test_case_id=None,  # Legacy field not used
+                entity_id=tc_entity.id,
+                name=item.name,
+                description=item.description,
+                extra_metadata=json.dumps({'test_case_item_id': item.id}, ensure_ascii=False)
+            )
+
+            # Create relation: business has_test_case test_case_entity
+            db_operations.create_knowledge_relation(
+                subject_name=business_entity.name,
+                predicate="has_test_case",
+                object_name=tc_entity.name,
+                business_type=business_type
+            )
+
+        print(f"Created knowledge entities for {len(test_case_items)} test case items")
+
+    def _ensure_business_entities_exist(self, db_operations, business_type):
+        """
+        Ensure business and service entities exist for the given business type.
+        If they don't exist, create them using BusinessDataExtractor.
+
+        Args:
+            db_operations: Database operations instance
+            business_type: Business type enum
+        """
+        from .business_data_extractor import BusinessDataExtractor
+
+        # Check if business entity exists
+        business_entity = db_operations.db.query(KnowledgeEntity).filter(
+            KnowledgeEntity.business_type == business_type,
+            KnowledgeEntity.type == EntityType.BUSINESS
+        ).first()
+
+        if not business_entity:
+            print(f"Business entity not found for {business_type.value}, creating business entities...")
+            # Use BusinessDataExtractor to create missing entities
+            extractor = BusinessDataExtractor(db_operations)
+            extractor.extract_business_data(business_type)
+            print(f"Created business entities for {business_type.value}")
+        else:
+            print(f"Business entity exists for {business_type.value}: {business_entity.name}")
 
     def get_test_cases_from_database(self, business_type: Optional[str] = None) -> Optional[list]:
         """
@@ -328,7 +459,8 @@ class TestCaseGenerator:
             with self.db_manager.get_session() as db:
                 db_operations = DatabaseOperations(db)
                 deleted_count = db_operations.delete_test_cases_by_business_type(business_enum)
-                print(f"Deleted {deleted_count} test cases for {business_enum.value}")
+                deleted_entities_count = db_operations.delete_knowledge_entities_by_business_type(business_enum)
+                print(f"Deleted {deleted_count} test cases and {deleted_entities_count} knowledge entities for {business_enum.value}")
                 return True
 
         except Exception as e:

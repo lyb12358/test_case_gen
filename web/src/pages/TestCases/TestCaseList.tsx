@@ -6,7 +6,6 @@ import {
   Button,
   Space,
   Tag,
-  Modal,
   message,
   Tooltip,
   Popconfirm,
@@ -23,7 +22,7 @@ import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { testCaseService } from '../../services/testCaseService';
-import { TestCase } from '../../types/testCases';
+import { TestCaseGroup } from '../../types/testCases';
 
 const { Title } = Typography;
 const { Search } = Input;
@@ -41,32 +40,37 @@ const TestCaseList: React.FC = () => {
     queryKey: ['testCases'],
     queryFn: testCaseService.getAllTestCases,
     select: (data) => {
-      let testCases = data.test_cases || [];
+      let testCaseGroups = data.test_case_groups || [];
 
       // 按搜索文本过滤
       if (searchText) {
-        testCases = testCases.filter(item =>
-          Object.values(item).some(value =>
+        testCaseGroups = testCaseGroups.filter(group =>
+          Object.values(group).some(value =>
             String(value).toLowerCase().includes(searchText.toLowerCase())
+          ) ||
+          group.test_case_items?.some((item: any) =>
+            Object.values(item).some(value =>
+              String(value).toLowerCase().includes(searchText.toLowerCase())
+            )
           )
         );
       }
 
       // 按业务类型过滤
       if (selectedBusinessType) {
-        testCases = testCases.filter(item => item.business_type === selectedBusinessType);
+        testCaseGroups = testCaseGroups.filter(group => group.business_type === selectedBusinessType);
       }
 
       // 按日期范围过滤
       if (dateRange && dateRange.length === 2) {
         const [start, end] = dateRange;
-        testCases = testCases.filter(item => {
-          const createdAt = dayjs(item.created_at);
+        testCaseGroups = testCaseGroups.filter(group => {
+          const createdAt = dayjs(group.created_at);
           return createdAt.isAfter(start) && createdAt.isBefore(end);
         });
       }
 
-      return testCases;
+      return testCaseGroups;
     }
   });
 
@@ -92,15 +96,7 @@ const TestCaseList: React.FC = () => {
   });
 
   const handleDelete = (businessType: string) => {
-    Modal.confirm({
-      title: '确认删除',
-      content: `确定要删除所有 "${businessType}" 类型的测试用例吗？此操作不可恢复。`,
-      okText: '确定',
-      cancelText: '取消',
-      onOk: () => {
-        deleteMutation.mutate(businessType);
-      },
-    });
+    deleteMutation.mutate(businessType);
   };
 
   const getBusinessTypeColor = (type: string) => {
@@ -138,11 +134,11 @@ const TestCaseList: React.FC = () => {
         text: getBusinessTypeFullName(type),
         value: type,
       })),
-      onFilter: (value: string | number | boolean, record: TestCase) => record.business_type === value,
+      onFilter: (value: string | number | boolean, record: TestCaseGroup) => record.business_type === value,
     },
     {
       title: '用例名称',
-      dataIndex: 'test_cases',
+      dataIndex: 'test_case_items',
       key: 'case_name',
       width: 200,
       render: (cases: any[]) => {
@@ -166,7 +162,7 @@ const TestCaseList: React.FC = () => {
     },
     {
       title: '所属模块',
-      dataIndex: 'test_cases',
+      dataIndex: 'test_case_items',
       key: 'module',
       width: 150,
       render: (cases: any[]) => {
@@ -190,7 +186,7 @@ const TestCaseList: React.FC = () => {
     },
     {
       title: '功能模块',
-      dataIndex: 'test_cases',
+      dataIndex: 'test_case_items',
       key: 'functional_module',
       width: 120,
       render: (cases: any[]) => {
@@ -218,11 +214,11 @@ const TestCaseList: React.FC = () => {
       key: 'created_at',
       width: 140,
       render: (time: string) => dayjs(time).format('YYYY-MM-DD HH:mm'),
-      sorter: (a: TestCase, b: TestCase) => dayjs(a.created_at).unix() - dayjs(b.created_at).unix(),
+      sorter: (a: TestCaseGroup, b: TestCaseGroup) => dayjs(a.created_at).unix() - dayjs(b.created_at).unix(),
     },
     {
       title: '用例数量',
-      dataIndex: 'test_cases',
+      dataIndex: 'test_case_items',
       key: 'test_cases_count',
       width: 80,
       render: (cases: any[]) => cases?.length || 0,
@@ -231,7 +227,7 @@ const TestCaseList: React.FC = () => {
       title: '操作',
       key: 'actions',
       width: 200,
-      render: (_: any, record: TestCase) => (
+      render: (_: any, record: TestCaseGroup) => (
         <Space size="small">
           <Tooltip title="查看详情">
             <Button
@@ -263,22 +259,8 @@ const TestCaseList: React.FC = () => {
     },
   ];
 
-  // 按业务类型分组数据
-  const groupedData = testCasesData?.reduce((acc: any[], testCase) => {
-    const existingGroup = acc.find(group => group.business_type === testCase.business_type);
-    if (existingGroup) {
-      // Combine test cases from the same business type
-      const existingTestCases = existingGroup.test_cases || [];
-      const newTestCases = testCase.test_cases || [];
-      existingGroup.test_cases = [...existingTestCases, ...newTestCases];
-    } else {
-      acc.push({
-        ...testCase,
-        test_cases: testCase.test_cases || []
-      });
-    }
-    return acc;
-  }, []) || [];
+  // 直接使用测试用例组数据，无需分组
+  const groupedData = testCasesData || [];
 
   return (
     <div>

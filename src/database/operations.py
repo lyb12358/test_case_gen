@@ -8,7 +8,7 @@ from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import delete, and_
 
-from .models import TestCase, GenerationJob, BusinessType, JobStatus, KnowledgeEntity, KnowledgeRelation, EntityType
+from .models import TestCase, TestCaseGroup, TestCaseItem, GenerationJob, BusinessType, JobStatus, KnowledgeEntity, KnowledgeRelation, EntityType, TestCaseEntity
 
 
 class DatabaseOperations:
@@ -26,7 +26,7 @@ class DatabaseOperations:
     # Test Case Operations
     def create_test_case(self, business_type: BusinessType, test_data: Dict[str, Any]) -> TestCase:
         """
-        Create a new test case.
+        Create a new test case and corresponding knowledge graph entity.
 
         Args:
             business_type (BusinessType): Business type
@@ -42,7 +42,90 @@ class DatabaseOperations:
         self.db.add(test_case)
         self.db.commit()
         self.db.refresh(test_case)
+
+        # Create corresponding knowledge graph entity and test case entity
+        try:
+            self._create_test_case_knowledge_entities(test_case, test_data, business_type)
+        except Exception as e:
+            print(f"Error creating knowledge entities: {e}")
+            # Continue without knowledge entities if creation fails
+            # Don't roll back the main test case creation
+
         return test_case
+
+    def _create_test_case_knowledge_entities(self, test_case: TestCase, test_data: Dict[str, Any], business_type: BusinessType):
+        """
+        Create knowledge graph entities for each test case.
+
+        Args:
+            test_case (TestCase): Test case record
+            test_data (Dict[str, Any]): Test case data
+            business_type (BusinessType): Business type
+        """
+        from .models import EntityType
+
+        test_cases = test_data.get('test_cases', [])
+        print(f"Creating knowledge entities for {len(test_cases)} test cases for {business_type.value}")
+
+        # Get the business entity to associate test cases with
+        business_entity = self.db.query(KnowledgeEntity).filter(
+            KnowledgeEntity.business_type == business_type,
+            KnowledgeEntity.type == EntityType.BUSINESS
+        ).first()
+
+        if not business_entity:
+            print(f"No business entity found for {business_type.value}")
+            return
+
+        print(f"Found business entity: {business_entity.name} (ID: {business_entity.id})")
+
+        for index, tc in enumerate(test_cases):
+            # Create test case knowledge entity
+            tc_entity = self.create_knowledge_entity(
+                name=tc.get('name', f"测试用例{index + 1}"),
+                entity_type=EntityType.TEST_CASE,
+                description=tc.get('description', tc.get('module', '')),
+                business_type=business_type,
+                parent_id=business_entity.id,
+                entity_order=float(index + 1),
+                extra_data=json.dumps({
+                    'test_case_id': tc.get('id', f"TC{index + 1:03d}"),
+                    'module': tc.get('module', ''),
+                    'preconditions': tc.get('preconditions', []),
+                    'steps': tc.get('steps', []),
+                    'expected_result': tc.get('expected_result', []),
+                    'functional_module': tc.get('functional_module', ''),
+                    'functional_domain': tc.get('functional_domain', ''),
+                    'remarks': tc.get('remarks', '')
+                }, ensure_ascii=False)
+            )
+
+            # Create test case entity mapping
+            self.create_test_case_entity(
+                test_case_id=test_case.id,
+                entity_id=tc_entity.id,
+                name=tc.get('name', f"测试用例{index + 1}"),
+                description=tc.get('description', tc.get('module', '')),
+                tags=[tc.get('functional_module', ''), tc.get('functional_domain', '')],
+                extra_metadata={
+                    'test_case_id': tc.get('id', f"TC{index + 1:03d}"),
+                    'module': tc.get('module', ''),
+                    'preconditions': tc.get('preconditions', []),
+                    'steps': tc.get('steps', []),
+                    'expected_result': tc.get('expected_result', []),
+                    'functional_module': tc.get('functional_module', ''),
+                    'functional_domain': tc.get('functional_domain', ''),
+                    'remarks': tc.get('remarks', '')
+                }
+            )
+
+            # Create relation between business entity and test case entity
+            self.create_knowledge_relation(
+                subject_name=business_entity.name,
+                predicate='has_test_case',
+                object_name=tc_entity.name,
+                business_type=business_type
+            )
 
     def get_test_cases_by_business_type(self, business_type: BusinessType) -> List[TestCase]:
         """
@@ -79,6 +162,27 @@ class DatabaseOperations:
         result = self.db.execute(stmt)
         self.db.commit()
         return result.rowcount
+
+    def delete_knowledge_entities_by_business_type(self, business_type: BusinessType) -> int:
+        """
+        Delete all knowledge entities for a specific business type.
+
+        Args:
+            business_type (BusinessType): Business type
+
+        Returns:
+            int: Number of deleted records
+        """
+        # Delete relations first (foreign key constraint)
+        relations_stmt = delete(KnowledgeRelation).where(KnowledgeRelation.business_type == business_type)
+        relations_result = self.db.execute(relations_stmt)
+
+        # Then delete entities
+        entities_stmt = delete(KnowledgeEntity).where(KnowledgeEntity.business_type == business_type)
+        entities_result = self.db.execute(entities_stmt)
+
+        self.db.commit()
+        return entities_result.rowcount
 
     def get_test_case_by_id(self, test_case_id: int) -> Optional[TestCase]:
         """
@@ -212,7 +316,9 @@ class DatabaseOperations:
         entity_type: EntityType,
         description: Optional[str] = None,
         business_type: Optional[BusinessType] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        parent_id: Optional[int] = None,
+        entity_order: Optional[float] = None,
+        extra_data: Optional[str] = None
     ) -> KnowledgeEntity:
         """
         Create a new knowledge entity.
@@ -222,7 +328,9 @@ class DatabaseOperations:
             entity_type (EntityType): Entity type
             description (Optional[str]): Entity description
             business_type (Optional[BusinessType]): Associated business type
-            metadata (Optional[Dict[str, Any]]): Additional metadata
+            parent_id (Optional[int]): Parent entity ID for hierarchy
+            entity_order (Optional[float]): Order for sorting entities
+            extra_data (Optional[str]): Extra data as JSON string
 
         Returns:
             KnowledgeEntity: Created entity
@@ -232,7 +340,9 @@ class DatabaseOperations:
             type=entity_type,
             description=description,
             business_type=business_type,
-            extra_data=json.dumps(metadata, ensure_ascii=False) if metadata else None
+            parent_id=parent_id,
+            entity_order=entity_order,
+            extra_data=extra_data
         )
         self.db.add(entity)
         self.db.commit()
@@ -340,13 +450,18 @@ class DatabaseOperations:
         Returns:
             Dict[str, Any]: Graph data in G6 format
         """
+        # 添加调试日志
+        print(f"DB: get_knowledge_graph_data called with business_type: {business_type}")
+
         # Get entities
         if business_type:
             entities = self.get_knowledge_entities_by_business_type(business_type)
             relations = self.get_knowledge_relations_by_business_type(business_type)
+            print(f"DB: Filtered by business_type {business_type}: {len(entities)} entities, {len(relations)} relations")
         else:
             entities = self.get_all_knowledge_entities()
             relations = self.get_all_knowledge_relations()
+            print(f"DB: No filter: {len(entities)} entities, {len(relations)} relations")
 
         # Convert to G6 format
         nodes = []
@@ -362,19 +477,30 @@ class DatabaseOperations:
                 "businessType": entity.business_type.value if entity.business_type else None
             })
 
-        for relation in relations:
-            edges.append({
-                "source": str(relation.subject_id),
-                "target": str(relation.object_id),
-                "label": relation.predicate,
-                "type": relation.predicate,
-                "businessType": relation.business_type.value if relation.business_type else None
-            })
+        # Use a set to track unique edges
+        seen_edges = set()
 
-        return {
+        for relation in relations:
+            # Create unique edge identifier
+            edge_key = (str(relation.subject_id), str(relation.object_id), relation.predicate)
+
+            # Only add edge if not already seen
+            if edge_key not in seen_edges:
+                seen_edges.add(edge_key)
+                edges.append({
+                    "source": str(relation.subject_id),
+                    "target": str(relation.object_id),
+                    "label": relation.predicate,
+                    "type": relation.predicate,
+                    "businessType": relation.business_type.value if relation.business_type else None
+                })
+
+        result = {
             "nodes": nodes,
             "edges": edges
         }
+        print(f"DB: Returning graph data: {len(result['nodes'])} nodes, {len(result['edges'])} edges")
+        return result
 
     def clear_knowledge_graph(self) -> int:
         """
@@ -404,7 +530,421 @@ class DatabaseOperations:
         return {
             "total_entities": self.db.query(KnowledgeEntity).count(),
             "total_relations": self.db.query(KnowledgeRelation).count(),
+            "scenario_entities": self.db.query(KnowledgeEntity).filter(KnowledgeEntity.type == EntityType.SCENARIO).count(),
             "business_entities": self.db.query(KnowledgeEntity).filter(KnowledgeEntity.type == EntityType.BUSINESS).count(),
             "service_entities": self.db.query(KnowledgeEntity).filter(KnowledgeEntity.type == EntityType.SERVICE).count(),
-            "interface_entities": self.db.query(KnowledgeEntity).filter(KnowledgeEntity.type == EntityType.INTERFACE).count()
+            "interface_entities": self.db.query(KnowledgeEntity).filter(KnowledgeEntity.type == EntityType.INTERFACE).count(),
+            "test_case_entities": self.db.query(KnowledgeEntity).filter(KnowledgeEntity.type == EntityType.TEST_CASE).count()
         }
+
+    def get_knowledge_entity_by_name(self, name: str) -> Optional[KnowledgeEntity]:
+        """
+        Get knowledge entity by name.
+
+        Args:
+            name (str): Entity name
+
+        Returns:
+            Optional[KnowledgeEntity]: Entity or None if not found
+        """
+        return self.db.query(KnowledgeEntity).filter(KnowledgeEntity.name == name).first()
+
+    def get_knowledge_entity_by_id(self, entity_id: int) -> Optional[KnowledgeEntity]:
+        """
+        Get knowledge entity by ID.
+
+        Args:
+            entity_id (int): Entity ID
+
+        Returns:
+            Optional[KnowledgeEntity]: Entity or None if not found
+        """
+        return self.db.query(KnowledgeEntity).filter(KnowledgeEntity.id == entity_id).first()
+
+    def get_child_entities(self, parent_id: int) -> List[KnowledgeEntity]:
+        """
+        Get child entities of a parent entity.
+
+        Args:
+            parent_id (int): Parent entity ID
+
+        Returns:
+            List[KnowledgeEntity]: List of child entities
+        """
+        return self.db.query(KnowledgeEntity).filter(KnowledgeEntity.parent_id == parent_id).order_by(KnowledgeEntity.entity_order).all()
+
+    def create_test_case_entity(
+        self,
+        test_case_id: Optional[int] = None,
+        test_case_item_id: Optional[int] = None,
+        entity_id: Optional[int] = None,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        extra_metadata: Optional[Dict[str, Any]] = None
+    ) -> TestCaseEntity:
+        """
+        Create a test case entity.
+
+        Args:
+            test_case_id (Optional[int]): Legacy test case ID
+            test_case_item_id (Optional[int]): New test case item ID
+            entity_id (Optional[int]): Knowledge entity ID
+            name (Optional[str]): Test case name
+            description (Optional[str]): Test case description
+            tags (Optional[List[str]]): List of tags
+            extra_metadata (Optional[Dict[str, Any]]): Additional metadata
+
+        Returns:
+            TestCaseEntity: Created test case entity
+        """
+        test_case_entity = TestCaseEntity(
+            test_case_id=test_case_id,
+            test_case_item_id=test_case_item_id,
+            entity_id=entity_id,
+            name=name,
+            description=description,
+            tags=json.dumps(tags, ensure_ascii=False) if tags else None,
+            extra_metadata=json.dumps(extra_metadata, ensure_ascii=False) if extra_metadata else None
+        )
+        self.db.add(test_case_entity)
+        self.db.commit()
+        self.db.refresh(test_case_entity)
+        return test_case_entity
+
+    def get_test_case_entities_by_entity(self, entity_id: int) -> List[TestCaseEntity]:
+        """
+        Get test case entities by knowledge entity ID.
+
+        Args:
+            entity_id (int): Knowledge entity ID
+
+        Returns:
+            List[TestCaseEntity]: List of test case entities
+        """
+        return self.db.query(TestCaseEntity).filter(TestCaseEntity.entity_id == entity_id).all()
+
+    def get_related_entities(self, entity_id: int) -> List[KnowledgeEntity]:
+        """
+        Get entities related to a specific entity through relations.
+
+        Args:
+            entity_id (int): Entity ID
+
+        Returns:
+            List[KnowledgeEntity]: List of related entities
+        """
+        entity_id_str = str(entity_id)
+
+        # Get relations where this entity is the subject
+        subject_relations = self.db.query(KnowledgeRelation).filter(
+            KnowledgeRelation.subject_id == entity_id
+        ).all()
+
+        # Get relations where this entity is the object
+        object_relations = self.db.query(KnowledgeRelation).filter(
+            KnowledgeRelation.object_id == entity_id
+        ).all()
+
+        related_entity_ids = set()
+
+        # Collect related entity IDs
+        for relation in subject_relations:
+            related_entity_ids.add(relation.object_id)
+
+        for relation in object_relations:
+            related_entity_ids.add(relation.subject_id)
+
+        # Get the related entities
+        related_entities = []
+        for related_id in related_entity_ids:
+            entity = self.get_knowledge_entity_by_id(related_id)
+            if entity:
+                related_entities.append(entity)
+
+        return related_entities
+
+    def get_entity_relations(self, entity_id: int) -> List[KnowledgeRelation]:
+        """
+        Get all relations involving a specific entity.
+
+        Args:
+            entity_id (int): Entity ID
+
+        Returns:
+            List[KnowledgeRelation]: List of relations
+        """
+        # Get relations where this entity is the subject or object
+        relations = self.db.query(KnowledgeRelation).filter(
+            (KnowledgeRelation.subject_id == entity_id) |
+            (KnowledgeRelation.object_id == entity_id)
+        ).all()
+
+        return relations
+
+    # ========== New TestCaseGroup and TestCaseItem Operations ==========
+
+    def create_test_case_group(self, business_type: BusinessType, generation_metadata: Optional[Dict[str, Any]] = None) -> TestCaseGroup:
+        """
+        Create a new test case group.
+
+        Args:
+            business_type (BusinessType): Business type
+            generation_metadata (Optional[Dict[str, Any]]): Generation metadata
+
+        Returns:
+            TestCaseGroup: Created test case group
+        """
+        group = TestCaseGroup(
+            business_type=business_type,
+            generation_metadata=json.dumps(generation_metadata, ensure_ascii=False) if generation_metadata else None
+        )
+        self.db.add(group)
+        self.db.commit()
+        self.db.refresh(group)
+        return group
+
+    def create_test_case_item(self, group_id: int, test_case_data: Dict[str, Any], entity_order: Optional[float] = None) -> TestCaseItem:
+        """
+        Create a new test case item.
+
+        Args:
+            group_id (int): Test case group ID
+            test_case_data (Dict[str, Any]): Test case data
+            entity_order (Optional[float]): Order index
+
+        Returns:
+            TestCaseItem: Created test case item
+        """
+        item = TestCaseItem(
+            group_id=group_id,
+            test_case_id=test_case_data.get('id', ''),
+            name=test_case_data.get('name', ''),
+            description=test_case_data.get('description', ''),
+            module=test_case_data.get('module', ''),
+            functional_module=test_case_data.get('functional_module', ''),
+            functional_domain=test_case_data.get('functional_domain', ''),
+            preconditions=json.dumps(test_case_data.get('preconditions', []), ensure_ascii=False),
+            steps=json.dumps(test_case_data.get('steps', []), ensure_ascii=False),
+            expected_result=json.dumps(test_case_data.get('expected_result', []), ensure_ascii=False),
+            remarks=test_case_data.get('remarks', ''),
+            entity_order=entity_order
+        )
+        self.db.add(item)
+        self.db.commit()
+        self.db.refresh(item)
+        return item
+
+    def create_test_case_items_batch(self, group_id: int, test_cases_list: List[Dict[str, Any]]) -> List[TestCaseItem]:
+        """
+        Create multiple test case items in batch.
+
+        Args:
+            group_id (int): Test case group ID
+            test_cases_list (List[Dict[str, Any]]): List of test case data
+
+        Returns:
+            List[TestCaseItem]: Created test case items
+        """
+        items = []
+        for idx, tc_data in enumerate(test_cases_list):
+            item = self.create_test_case_item(group_id, tc_data, float(idx + 1))
+            items.append(item)
+        return items
+
+    def get_test_case_groups_by_business_type(self, business_type: BusinessType) -> List[TestCaseGroup]:
+        """
+        Get test case groups by business type.
+
+        Args:
+            business_type (BusinessType): Business type
+
+        Returns:
+            List[TestCaseGroup]: List of test case groups
+        """
+        return self.db.query(TestCaseGroup).filter(TestCaseGroup.business_type == business_type).all()
+
+    def get_test_case_items_by_group_id(self, group_id: int) -> List[TestCaseItem]:
+        """
+        Get test case items by group ID.
+
+        Args:
+            group_id (int): Group ID
+
+        Returns:
+            List[TestCaseItem]: List of test case items
+        """
+        return self.db.query(TestCaseItem).filter(TestCaseItem.group_id == group_id).order_by(TestCaseItem.entity_order).all()
+
+    def get_test_case_item_by_id(self, item_id: int) -> Optional[TestCaseItem]:
+        """
+        Get test case item by ID.
+
+        Args:
+            item_id (int): Test case item ID
+
+        Returns:
+            Optional[TestCaseItem]: Test case item or None
+        """
+        return self.db.query(TestCaseItem).filter(TestCaseItem.id == item_id).first()
+
+    def delete_test_case_groups_by_business_type(self, business_type: BusinessType) -> int:
+        """
+        Delete test case groups and their items by business type, including knowledge graph entities.
+
+        Args:
+            business_type (BusinessType): Business type
+
+        Returns:
+            int: Number of deleted groups
+        """
+        groups = self.get_test_case_groups_by_business_type(business_type)
+
+        for group in groups:
+            items = self.get_test_case_items_by_group_id(group.id)
+
+            # Delete knowledge graph entities and relations for each item
+            for item in items:
+                self.delete_test_case_knowledge_entities_for_item(item.id, business_type)
+
+                # Delete test case entity mappings
+                entities = self.db.query(TestCaseEntity).filter(TestCaseEntity.test_case_item_id == item.id).all()
+                for entity in entities:
+                    self.db.delete(entity)
+
+        # Delete the groups (cascade will delete items)
+        stmt = delete(TestCaseGroup).where(TestCaseGroup.business_type == business_type)
+        result = self.db.execute(stmt)
+        self.db.commit()
+        return result.rowcount
+
+    def delete_test_case_knowledge_entities_for_item(self, test_case_item_id: int, business_type: BusinessType):
+        """
+        Delete knowledge graph entities and relations for a specific test case item.
+
+        Args:
+            test_case_item_id (int): Test case item ID
+            business_type (BusinessType): Business type
+        """
+        # Find TEST_CASE type entities that have this item_id in their extra_data
+        knowledge_entities = self.db.query(KnowledgeEntity).filter(
+            KnowledgeEntity.type == EntityType.TEST_CASE,
+            KnowledgeEntity.business_type == business_type,
+            KnowledgeEntity.extra_data.like(f'%"test_case_item_id": {test_case_item_id}%')
+        ).all()
+
+        for entity in knowledge_entities:
+            # Delete relations involving this entity
+            self.delete_entity_and_relations(entity.id)
+
+    def delete_entity_and_relations(self, entity_id: int):
+        """
+        Delete a knowledge entity and all its relations.
+
+        Args:
+            entity_id (int): Entity ID
+        """
+        # Delete relations where this entity is subject or object
+        relations = self.db.query(KnowledgeRelation).filter(
+            (KnowledgeRelation.subject_id == entity_id) |
+            (KnowledgeRelation.object_id == entity_id)
+        ).all()
+
+        for relation in relations:
+            self.db.delete(relation)
+
+        # Delete the entity
+        entity = self.db.query(KnowledgeEntity).filter(KnowledgeEntity.id == entity_id).first()
+        if entity:
+            self.db.delete(entity)
+
+    def delete_test_case_knowledge_entities_by_business_type(self, business_type: BusinessType) -> tuple[int, int]:
+        """
+        Delete all test case knowledge entities and their relations for a business type.
+
+        Args:
+            business_type (BusinessType): Business type
+
+        Returns:
+            tuple[int, int]: (deleted_entities_count, deleted_relations_count)
+        """
+        deleted_entities_count = 0
+        deleted_relations_count = 0
+
+        # Find all test case entities for this business type
+        test_case_entities = self.db.query(KnowledgeEntity).filter(
+            KnowledgeEntity.type == EntityType.TEST_CASE,
+            KnowledgeEntity.business_type == business_type
+        ).all()
+
+        for entity in test_case_entities:
+            # Count relations before deletion
+            relations_count = self.db.query(KnowledgeRelation).filter(
+                (KnowledgeRelation.subject_id == entity.id) |
+                (KnowledgeRelation.object_id == entity.id)
+            ).count()
+
+            # Delete relations
+            self.db.query(KnowledgeRelation).filter(
+                (KnowledgeRelation.subject_id == entity.id) |
+                (KnowledgeRelation.object_id == entity.id)
+            ).delete()
+
+            deleted_relations_count += relations_count
+
+            # Delete entity
+            self.db.delete(entity)
+            deleted_entities_count += 1
+
+        self.db.commit()
+        return deleted_entities_count, deleted_relations_count
+
+    def update_test_case_item(self, item_id: int, test_case_data: Dict[str, Any]) -> Optional[TestCaseItem]:
+        """
+        Update a test case item.
+
+        Args:
+            item_id (int): Test case item ID
+            test_case_data (Dict[str, Any]): Updated test case data
+
+        Returns:
+            Optional[TestCaseItem]: Updated test case item or None
+        """
+        item = self.get_test_case_item_by_id(item_id)
+        if item:
+            item.test_case_id = test_case_data.get('id', item.test_case_id)
+            item.name = test_case_data.get('name', item.name)
+            item.description = test_case_data.get('description', item.description)
+            item.module = test_case_data.get('module', item.module)
+            item.functional_module = test_case_data.get('functional_module', item.functional_module)
+            item.functional_domain = test_case_data.get('functional_domain', item.functional_domain)
+            item.preconditions = json.dumps(test_case_data.get('preconditions', []), ensure_ascii=False)
+            item.steps = json.dumps(test_case_data.get('steps', []), ensure_ascii=False)
+            item.expected_result = json.dumps(test_case_data.get('expected_result', []), ensure_ascii=False)
+            item.remarks = test_case_data.get('remarks', item.remarks)
+            self.db.commit()
+            self.db.refresh(item)
+        return item
+
+    def delete_test_case_item(self, item_id: int) -> bool:
+        """
+        Delete a test case item and its related entities.
+
+        Args:
+            item_id (int): Test case item ID
+
+        Returns:
+            bool: True if deleted, False otherwise
+        """
+        item = self.get_test_case_item_by_id(item_id)
+        if item:
+            # Delete test case entities first
+            entities = self.db.query(TestCaseEntity).filter(TestCaseEntity.test_case_item_id == item_id).all()
+            for entity in entities:
+                self.db.delete(entity)
+
+            # Delete the item
+            self.db.delete(item)
+            self.db.commit()
+            return True
+        return False

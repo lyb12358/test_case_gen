@@ -19,15 +19,30 @@ export const testCaseService = {
     return response.data;
   },
 
-  // 根据ID获取单个测试用例
+  // 根据ID获取单个测试用例组
   getTestCaseById: async (id: number): Promise<any> => {
     const response = await apiClient.get(`/test-cases`);
-    const allTestCases = response.data.test_cases || [];
-    const testCase = allTestCases.find((tc: any) => tc.id === id);
-    if (!testCase) {
-      throw new Error(`Test case with ID ${id} not found`);
+    const allTestGroups = response.data.test_case_groups || [];
+    const testGroup = allTestGroups.find((tg: any) => tg.id === id);
+    if (!testGroup) {
+      throw new Error(`Test case group with ID ${id} not found`);
     }
-    return testCase;
+    return testGroup;
+  },
+
+  // 根据ID获取单个测试用例项
+  getTestCaseItemById: async (groupId: number, itemId: number): Promise<any> => {
+    const response = await apiClient.get(`/test-cases`);
+    const allTestGroups = response.data.test_case_groups || [];
+    const testGroup = allTestGroups.find((tg: any) => tg.id === groupId);
+    if (!testGroup) {
+      throw new Error(`Test case group with ID ${groupId} not found`);
+    }
+    const testItem = testGroup.test_case_items.find((item: any) => item.id === itemId);
+    if (!testItem) {
+      throw new Error(`Test case item with ID ${itemId} not found`);
+    }
+    return testItem;
   },
 
   // 生成测试用例
