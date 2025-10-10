@@ -694,7 +694,7 @@ async def generate_test_cases_background(task_id: str, business_type: str):
             job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
             if job:
                 job.status = JobStatus.COMPLETED
-                job.completed_at = datetime.utcnow()
+                job.completed_at = datetime.now()
                 db.commit()
 
         task_progress[task_id]["progress"] = 100

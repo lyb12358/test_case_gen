@@ -35,8 +35,8 @@ class TestCaseGroup(Base):
     id = Column(Integer, primary_key=True, index=True)
     business_type = Column(Enum(BusinessType), nullable=False, index=True)
     generation_metadata = Column(Text, nullable=True)  # JSON string for generation metadata
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
 
     # Relationships
     test_case_items = relationship("TestCaseItem", back_populates="group", cascade="all, delete-orphan")
@@ -62,7 +62,7 @@ class TestCaseItem(Base):
     expected_result = Column(Text, nullable=True)  # JSON string
     remarks = Column(Text, nullable=True)
     entity_order = Column(Float, nullable=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
 
     # Relationships
     group = relationship("TestCaseGroup", back_populates="test_case_items")
@@ -80,8 +80,8 @@ class TestCase(Base):
     id = Column(Integer, primary_key=True, index=True)
     business_type = Column(Enum(BusinessType), nullable=False, index=True)
     test_data = Column(Text, nullable=False)  # JSON string
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
 
     def __repr__(self):
         return f"<TestCase(id={self.id}, business_type={self.business_type}, created_at={self.created_at})>"
@@ -95,7 +95,7 @@ class GenerationJob(Base):
     business_type = Column(Enum(BusinessType), nullable=False, index=True)
     status = Column(Enum(JobStatus), default=JobStatus.PENDING, nullable=False)
     error_message = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
     completed_at = Column(DateTime, nullable=True)
 
     def __repr__(self):
@@ -122,7 +122,7 @@ class KnowledgeEntity(Base):
     parent_id = Column(Integer, ForeignKey("knowledge_entities.id"), nullable=True, index=True)  # 父实体ID
     extra_data = Column(Text, nullable=True)  # JSON string for additional data
     entity_order = Column(Float, nullable=True, index=True)  # 实体排序
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
 
     # Relationships
     parent = relationship("KnowledgeEntity", remote_side=[id], backref="children")
@@ -144,7 +144,7 @@ class KnowledgeRelation(Base):
     predicate = Column(String(50), nullable=False, index=True)  # has, calls, contains, etc.
     object_id = Column(Integer, ForeignKey("knowledge_entities.id"), nullable=False, index=True)
     business_type = Column(Enum(BusinessType), nullable=True, index=True)  # 关联的业务类型
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
 
     # Relationships
     subject = relationship("KnowledgeEntity", foreign_keys=[subject_id])
@@ -166,7 +166,7 @@ class TestCaseEntity(Base):
     description = Column(Text, nullable=True)
     tags = Column(Text, nullable=True)  # JSON string for tags
     extra_metadata = Column(Text, nullable=True)  # JSON string for additional metadata
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
 
     # Relationships
     test_case = relationship("TestCase", backref="knowledge_entity")

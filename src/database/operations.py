@@ -237,7 +237,7 @@ class DatabaseOperations:
             if error_message:
                 job.error_message = error_message
             if status == JobStatus.COMPLETED:
-                job.completed_at = datetime.utcnow()
+                job.completed_at = datetime.now()
             self.db.commit()
             self.db.refresh(job)
         return job
