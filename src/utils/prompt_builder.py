@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .file_handler import load_text_file
 from .config import Config
+from ..config.business_types import get_business_file_mapping, get_business_interface
 
 
 class PromptBuilder:
@@ -36,7 +37,9 @@ class PromptBuilder:
         shared_files = {
             "system_background": self.shared_dir / "system_background.md",
             "error_codes": self.shared_dir / "error_codes.md",
-            "swagger_api": self.shared_dir / "swagger_api.md"
+            "remote_control_api": self.shared_dir / "remote_control_api.md",
+            "ai_climate_inner_api": self.shared_dir / "ai_climate_inner_api.md",
+            "remote_control_inner_api": self.shared_dir / "remote_control_inner_api.md"
         }
 
         shared_content = {}
@@ -48,6 +51,19 @@ class PromptBuilder:
 
         return shared_content
 
+    def get_business_file_path(self, business_type: str) -> str:
+        """
+        Get business description file path, handling special cases.
+
+        Args:
+            business_type (str): Business type
+
+        Returns:
+            str: File path for the business description
+        """
+        filename = get_business_file_mapping(business_type)
+        return os.path.join(self.business_dir, filename)
+
     def load_business_description(self, business_type: str) -> Optional[str]:
         """
         Load business-specific description.
@@ -58,8 +74,8 @@ class PromptBuilder:
         Returns:
             Optional[str]: Business description content or None if failed
         """
-        business_file = self.business_dir / f"{business_type.upper()}.md"
-        return load_text_file(str(business_file))
+        file_path = self.get_business_file_path(business_type)
+        return load_text_file(file_path)
 
     def load_template(self) -> Optional[str]:
         """
@@ -69,6 +85,21 @@ class PromptBuilder:
             Optional[str]: Template content or None if failed
         """
         return load_text_file(str(self.template_path))
+
+    def get_interface_docs_for_business(self, business_type: str, shared_content: Dict[str, str]) -> str:
+        """
+        Get relevant interface documentation for a specific business type.
+
+        Args:
+            business_type (str): Business type
+            shared_content (Dict[str, str]): Loaded shared content
+
+        Returns:
+            str: Relevant interface documentation
+        """
+        # Get interface key from centralized configuration
+        interface_key = get_business_interface(business_type)
+        return shared_content.get(interface_key, "")
 
     def build_prompt(self, business_type: str) -> Optional[str]:
         """
@@ -94,11 +125,14 @@ class PromptBuilder:
             if business_description is None:
                 return None
 
+            # Get relevant interface documentation
+            interface_docs = self.get_interface_docs_for_business(business_type, shared_content)
+
             # Replace placeholders
             prompt = template.replace("{{SYSTEM_BACKGROUND}}", shared_content["system_background"])
             prompt = prompt.replace("{{BUSINESS_DESCRIPTION}}", business_description)
             prompt = prompt.replace("{{ERROR_CODES}}", shared_content["error_codes"])
-            prompt = prompt.replace("{{SWAGGER_API}}", shared_content["swagger_api"])
+            prompt = prompt.replace("{{INTERFACE_DOCS}}", interface_docs)
 
             return prompt
 

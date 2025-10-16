@@ -12,6 +12,7 @@ import TestCaseGenerate from '@/pages/TestCases/TestCaseGenerate';
 import TaskList from '@/pages/Tasks/TaskList';
 import TaskDetail from '@/pages/Tasks/TaskDetail';
 import KnowledgeGraph from '@/pages/KnowledgeGraph';
+import { TaskProvider } from '@/contexts/TaskContext';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -34,25 +35,27 @@ const App: React.FC = () => {
           },
         }}
       >
-        <Router>
-          <Routes>
-            <Route path="/" element={<MainLayout />}>
-              <Route index element={<Dashboard />} />
-              <Route path="dashboard" element={<Dashboard />} />
-              <Route path="test-cases">
-                <Route index element={<TestCaseList />} />
-                <Route path="list" element={<TestCaseList />} />
-                <Route path="generate" element={<TestCaseGenerate />} />
-                <Route path=":id" element={<TestCaseDetail />} />
+        <TaskProvider>
+          <Router>
+            <Routes>
+              <Route path="/" element={<MainLayout />}>
+                <Route index element={<Dashboard />} />
+                <Route path="dashboard" element={<Dashboard />} />
+                <Route path="test-cases">
+                  <Route index element={<TestCaseList />} />
+                  <Route path="list" element={<TestCaseList />} />
+                  <Route path="generate" element={<TestCaseGenerate />} />
+                  <Route path=":id" element={<TestCaseDetail />} />
+                </Route>
+                <Route path="tasks">
+                  <Route index element={<TaskList />} />
+                  <Route path=":id" element={<TaskDetail />} />
+                </Route>
+                <Route path="knowledge-graph" element={<KnowledgeGraph />} />
               </Route>
-              <Route path="tasks">
-                <Route index element={<TaskList />} />
-                <Route path=":id" element={<TaskDetail />} />
-              </Route>
-              <Route path="knowledge-graph" element={<KnowledgeGraph />} />
-            </Route>
-          </Routes>
-        </Router>
+            </Routes>
+          </Router>
+        </TaskProvider>
       </ConfigProvider>
     </QueryClientProvider>
   );

@@ -8,6 +8,12 @@ from typing import Dict, List, Optional, Tuple
 from ..database.models import BusinessType, EntityType
 from ..database.operations import DatabaseOperations
 from ..utils.file_handler import load_text_file
+from ..config.business_types import (
+    get_business_type_name,
+    get_business_type_description,
+    get_business_file_mapping,
+    get_business_interface_entity
+)
 
 
 class BusinessDataExtractor:
@@ -38,8 +44,8 @@ class BusinessDataExtractor:
             # Create TSP root scenario entity
             self._create_tsp_scenario_entity()
 
-            # Create unified interface entity
-            self._create_unified_interface_entity()
+            # Create three interface entities
+            self._create_interface_entities()
 
             # Extract data for each business type
             for business_type in BusinessType:
@@ -55,6 +61,19 @@ class BusinessDataExtractor:
             print(f"Error extracting business data: {e}")
             return False
 
+    def get_business_file_path(self, business_type: str) -> str:
+        """
+        Get business description file path, handling special cases.
+
+        Args:
+            business_type (str): Business type
+
+        Returns:
+            str: File path for the business description
+        """
+        filename = get_business_file_mapping(business_type)
+        return os.path.join(self.business_descriptions_dir, filename)
+
     def extract_business_data(self, business_type: BusinessType) -> bool:
         """
         Extract data for a specific business type.
@@ -66,8 +85,8 @@ class BusinessDataExtractor:
             bool: True if successful, False otherwise
         """
         try:
-            # Load business description file
-            file_path = os.path.join(self.business_descriptions_dir, f"{business_type.value.lower()}.md")
+            # Get business description file path
+            file_path = self.get_business_file_path(business_type.value)
             description = load_text_file(file_path)
 
             if description is None:
@@ -80,15 +99,8 @@ class BusinessDataExtractor:
             business_name = business_type.value
             business_desc = self._extract_business_description(description)
 
-            # Map business codes to names
-            business_names = {
-                "RCC": "远程净化",
-                "RFD": "香氛控制",
-                "ZAB": "远程恒温座舱设置",
-                "ZBA": "水淹报警"
-            }
-
-            business_display_name = business_names.get(business_name, business_name)
+            # Get business display name from centralized configuration
+            business_display_name = get_business_type_name(business_name)
 
             # Get TSP scenario entity as parent
             tsp_entity = self.db_operations.get_knowledge_entity_by_name("TSP远控场景")
@@ -120,11 +132,14 @@ class BusinessDataExtractor:
                 business_type=business_type
             )
 
-            # Create relation: business -> uses -> unified interface
+            # Determine which interface this business uses
+            interface_name = self._get_interface_for_business(business_name)
+
+            # Create relation: business -> uses -> specific interface
             self.db_operations.create_knowledge_relation(
                 subject_name=business_display_name,
                 predicate="uses",
-                object_name="TSP远程控制接口",
+                object_name=interface_name,
                 business_type=business_type
             )
 
@@ -134,6 +149,19 @@ class BusinessDataExtractor:
         except Exception as e:
             print(f"Error extracting data for {business_type.value}: {e}")
             return False
+
+    def _get_interface_for_business(self, business_type: str) -> str:
+        """
+        Get the interface entity name for a specific business type.
+
+        Args:
+            business_type (str): Business type code
+
+        Returns:
+            str: Interface entity name
+        """
+        # Get interface entity name from centralized configuration
+        return get_business_interface_entity(business_type)
 
     def _extract_business_description(self, content: str) -> str:
         """
@@ -177,9 +205,9 @@ class BusinessDataExtractor:
             print(f"Error creating TSP scenario entity: {e}")
             return False
 
-    def _create_unified_interface_entity(self) -> bool:
+    def _create_interface_entities(self) -> bool:
         """
-        Create unified TSP remote control interface entity.
+        Create three TSP interface entities.
 
         Returns:
             bool: True if successful, False otherwise
@@ -189,35 +217,68 @@ class BusinessDataExtractor:
             tsp_entity = self.db_operations.get_knowledge_entity_by_name("TSP远控场景")
             parent_id = tsp_entity.id if tsp_entity else None
 
-            # Store interface metadata in extra_data
             import json
-            interface_metadata = {
-                "endpoint": "/v1.0/remoteControl/control",
-                "method": "POST",
-                "description": "TSP远程控制统一接口，所有业务类型共用此接口"
-            }
 
-            # Create unified interface entity
-            self.db_operations.create_knowledge_entity(
-                name="TSP远程控制接口",
-                entity_type=EntityType.INTERFACE,
-                description="POST /v1.0/remoteControl/control - TSP远程控制统一接口",
-                parent_id=parent_id,
-                extra_data=json.dumps(interface_metadata, ensure_ascii=False),
-                entity_order=10.0
-            )
+            # Interface definitions
+            interfaces = [
+                {
+                    "name": "TSP远程控制接口",
+                    "endpoint": "/v1.0/remoteControl/control",
+                    "method": "POST",
+                    "description": "TSP远程控制统一接口，用于大多数业务类型",
+                    "related_business_types": ["RCC", "RFD", "ZAB", "ZBA", "PAB", "PAE", "PAI", "RCE", "RDL_RDU", "RDO_RDC", "RES", "RHL", "RPP", "RSM", "RWS", "ZAD", "ZAE", "ZAF", "ZAG", "ZAH", "ZAJ", "ZAM", "ZAN", "ZAS", "ZBB"],
+                    "entity_order": 10.0
+                },
+                {
+                    "name": "TSP智能空调接口",
+                    "endpoint": "/inner/v1.0/remoteControl/aiClimate",
+                    "method": "POST",
+                    "description": "智能空调远控接口，用于AI智能通风功能",
+                    "related_business_types": ["ZAV"],
+                    "entity_order": 11.0
+                },
+                {
+                    "name": "TSP内部远控接口",
+                    "endpoint": "/inner/v1.0/remoteControl/control",
+                    "method": "POST",
+                    "description": "内部远控接口，用于智驾唤醒、维修模式、vivo手表控制等功能",
+                    "related_business_types": ["ZAY", "WEIXIU_RSM", "VIVO_WATCH"],
+                    "entity_order": 12.0
+                }
+            ]
 
-            # Create relation: TSP scenario -> provides -> unified interface
-            self.db_operations.create_knowledge_relation(
-                subject_name="TSP远控场景",
-                predicate="provides",
-                object_name="TSP远程控制接口"
-            )
+            # Create each interface entity
+            for interface in interfaces:
+                # Store interface metadata in extra_data
+                interface_metadata = {
+                    "endpoint": interface["endpoint"],
+                    "method": interface["method"],
+                    "description": interface["description"],
+                    "related_business_types": interface["related_business_types"]
+                }
 
-            print("Created TSP远程控制接口 unified entity")
+                # Create interface entity
+                self.db_operations.create_knowledge_entity(
+                    name=interface["name"],
+                    entity_type=EntityType.INTERFACE,
+                    description=f"POST {interface['endpoint']} - {interface['description']}",
+                    parent_id=parent_id,
+                    extra_data=json.dumps(interface_metadata, ensure_ascii=False),
+                    entity_order=interface["entity_order"]
+                )
+
+                # Create relation: TSP scenario -> provides -> interface
+                self.db_operations.create_knowledge_relation(
+                    subject_name="TSP远控场景",
+                    predicate="provides",
+                    object_name=interface["name"]
+                )
+
+                print(f"Created {interface['name']} entity")
+
             return True
         except Exception as e:
-            print(f"Error creating unified interface entity: {e}")
+            print(f"Error creating interface entities: {e}")
             return False
 
     def get_extraction_summary(self) -> Dict[str, int]:

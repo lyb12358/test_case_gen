@@ -48,7 +48,6 @@ export interface TestCaseItem {
 export interface TestCase {
   id: number;
   business_type: string;
-  test_cases?: any[]; // Legacy field for backward compatibility
   created_at: string;
 }
 
@@ -79,6 +78,13 @@ export interface BusinessTypeResponse {
   business_types: string[];
 }
 
+export interface BusinessTypeMappingResponse {
+  business_types: Record<string, {
+    name: string;
+    description: string;
+  }>;
+}
+
 export interface TaskListResponse {
   tasks: Array<{
     task_id: string;
@@ -90,18 +96,6 @@ export interface TaskListResponse {
   }>;
 }
 
-export interface BusinessType {
-  value: string;
-  label: string;
-  description?: string;
-}
-
-export const BUSINESS_TYPES: BusinessType[] = [
-  { value: 'RCC', label: 'RCC - 远程净化', description: 'Remote Climate Control' },
-  { value: 'RFD', label: 'RFD - 香氛控制', description: 'Remote Fragrance Control' },
-  { value: 'ZAB', label: 'ZAB - 远程恒温座舱设置', description: 'Remote Cabin Temperature Setting' },
-  { value: 'ZBA', label: 'ZBA - 水淹报警', description: 'Water Flooding Alarm' }
-];
 
 export const JOB_STATUS = {
   PENDING: 'pending',

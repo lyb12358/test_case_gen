@@ -16,7 +16,8 @@ import {
 import {
   ReloadOutlined,
   DeleteOutlined,
-  EyeOutlined
+  EyeOutlined,
+  FileExcelOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
@@ -80,6 +81,12 @@ const TestCaseList: React.FC = () => {
     queryFn: testCaseService.getBusinessTypes,
   });
 
+  // 获取业务类型映射（包含中文名称和描述）
+  const { data: businessTypesMapping } = useQuery({
+    queryKey: ['businessTypesMapping'],
+    queryFn: testCaseService.getBusinessTypesMapping,
+  });
+
   // 提取业务类型数组
   const businessTypes = businessTypesData?.business_types || [];
 
@@ -95,6 +102,26 @@ const TestCaseList: React.FC = () => {
     },
   });
 
+  // 导出Excel
+  const exportMutation = useMutation({
+    mutationFn: testCaseService.exportToExcel,
+    onSuccess: () => {
+      message.success('Excel文件导出成功');
+    },
+    onError: (error: any) => {
+      message.error(`导出失败: ${error.message}`);
+    },
+  });
+
+  const handleExportAll = () => {
+    exportMutation.mutate(undefined);
+  };
+
+  const handleExportFiltered = () => {
+    // 如果有业务类型过滤，则导出当前选中的业务类型
+    exportMutation.mutate(selectedBusinessType);
+  };
+
   const handleDelete = (businessType: string) => {
     deleteMutation.mutate(businessType);
   };
@@ -104,19 +131,40 @@ const TestCaseList: React.FC = () => {
       'RCC': 'blue',
       'RFD': 'green',
       'ZAB': 'orange',
-      'ZBA': 'red'
+      'ZBA': 'red',
+      'PAB': 'purple',
+      'PAE': 'cyan',
+      'PAI': 'magenta',
+      'RCE': 'gold',
+      'RES': 'cyan',
+      'RHL': 'magenta',
+      'RPP': 'gold',
+      'RSM': 'lime',
+      'RWS': 'geekblue',
+      'ZAD': 'volcano',
+      'ZAE': 'purple',
+      'ZAF': 'cyan',
+      'ZAG': 'magenta',
+      'ZAH': 'gold',
+      'ZAJ': 'lime',
+      'ZAM': 'geekblue',
+      'ZAN': 'volcano',
+      'ZAS': 'purple',
+      'ZAV': 'cyan',
+      'ZAY': 'magenta',
+      'ZBB': 'gold',
+      'WEIXIU_RSM': 'lime',
+      'VIVO_WATCH': 'geekblue',
+      // Combined business types
+      'RDL_RDU': 'lime',
+      'RDO_RDC': 'geekblue'
     };
     return colors[type] || 'default';
   };
 
   const getBusinessTypeFullName = (type: string) => {
-    const names: Record<string, string> = {
-      'RCC': '远程净化',
-      'RFD': '香氛控制',
-      'ZAB': '远程恒温座舱设置',
-      'ZBA': '水淹报警'
-    };
-    return names[type] || type;
+    if (!businessTypesMapping?.business_types) return type;
+    return businessTypesMapping.business_types[type]?.name || type;
   };
 
   const columns: any[] = [
@@ -272,6 +320,13 @@ const TestCaseList: React.FC = () => {
             onClick={() => navigate('/test-cases/generate')}
           >
             生成测试用例
+          </Button>
+          <Button
+            icon={<FileExcelOutlined />}
+            onClick={selectedBusinessType ? handleExportFiltered : handleExportAll}
+            loading={exportMutation.isPending}
+          >
+            导出Excel
           </Button>
           <Button
             icon={<ReloadOutlined />}

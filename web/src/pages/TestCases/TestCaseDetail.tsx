@@ -144,7 +144,7 @@ const TestCaseDetail: React.FC = () => {
           <div>
             {steps.map((step, index) => (
               <div key={index} style={{ marginBottom: 4 }}>
-                {index + 1}. {step}
+                {step}
               </div>
             ))}
           </div>
@@ -162,7 +162,7 @@ const TestCaseDetail: React.FC = () => {
           <div>
             {results.map((result, index) => (
               <div key={index} style={{ marginBottom: 4 }}>
-                • {result}
+                {result}
               </div>
             ))}
           </div>

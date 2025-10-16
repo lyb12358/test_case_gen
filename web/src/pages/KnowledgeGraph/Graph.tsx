@@ -81,7 +81,6 @@ const G6Graph: React.FC<G6GraphProps> = ({ data, onNodeClick, layoutType, densit
       // Badge mode for all node types
       return (nodeData: any) => (
         <BadgeNode
-          id={nodeData.id}
           data={nodeData.data || nodeData}
           onClick={() => onNodeClick(nodeData)}
         />

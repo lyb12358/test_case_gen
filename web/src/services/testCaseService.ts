@@ -4,6 +4,7 @@ import {
   GenerateTestCaseRequest,
   GenerateResponse,
   BusinessTypeResponse,
+  BusinessTypeMappingResponse,
 } from '@/types/testCases';
 
 export const testCaseService = {
@@ -60,6 +61,55 @@ export const testCaseService = {
   getBusinessTypes: async (): Promise<BusinessTypeResponse> => {
     const response = await apiClient.get<BusinessTypeResponse>('/business-types');
     return response.data;
+  },
+
+  // 获取业务类型映射（包含中文名称和描述）
+  getBusinessTypesMapping: async (): Promise<BusinessTypeMappingResponse> => {
+    const response = await apiClient.get<BusinessTypeMappingResponse>('/business-types/mapping');
+    return response.data;
+  },
+
+  // 导出测试用例到Excel
+  exportToExcel: async (businessType?: string): Promise<void> => {
+    try {
+      const params = new URLSearchParams();
+      if (businessType) {
+        params.append('business_type', businessType);
+      }
+
+      const url = `/test-cases/export${params.toString() ? '?' + params.toString() : ''}`;
+
+      const response = await apiClient.get(url, {
+        responseType: 'blob',
+      });
+
+      // 从响应头获取文件名
+      const contentDisposition = response.headers['content-disposition'];
+      let filename = 'test_cases.xlsx';
+
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+        if (filenameMatch) {
+          filename = filenameMatch[1];
+        }
+      }
+
+      // 创建下载链接
+      const blob = new Blob([response.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (error: any) {
+      throw new Error(`导出失败: ${error.message}`);
+    }
   },
 };
 

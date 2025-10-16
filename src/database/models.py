@@ -14,10 +14,40 @@ Base = declarative_base()
 
 class BusinessType(enum.Enum):
     """Supported business types."""
+    # Original business types
     RCC = "RCC"
     RFD = "RFD"
     ZAB = "ZAB"
     ZBA = "ZBA"
+
+    # New individual business types
+    PAB = "PAB"
+    PAE = "PAE"
+    PAI = "PAI"
+    RCE = "RCE"
+    RES = "RES"
+    RHL = "RHL"
+    RPP = "RPP"
+    RSM = "RSM"
+    RWS = "RWS"
+    ZAD = "ZAD"
+    ZAE = "ZAE"
+    ZAF = "ZAF"
+    ZAG = "ZAG"
+    ZAH = "ZAH"
+    ZAJ = "ZAJ"
+    ZAM = "ZAM"
+    ZAN = "ZAN"
+    ZAS = "ZAS"
+    ZAV = "ZAV"
+    ZAY = "ZAY"
+    ZBB = "ZBB"
+    WEIXIU_RSM = "WEIXIU_RSM"
+    VIVO_WATCH = "VIVO_WATCH"
+
+    # Combined business types (for UI and generation)
+    RDL_RDU = "RDL_RDU"  # 车门锁定解锁
+    RDO_RDC = "RDO_RDC"  # 车门开关
 
 
 class JobStatus(enum.Enum):
@@ -73,18 +103,6 @@ class TestCaseItem(Base):
 
 
 # Keep TestCase for backward compatibility during migration
-class TestCase(Base):
-    """Legacy test case model for backward compatibility."""
-    __tablename__ = "test_cases"
-
-    id = Column(Integer, primary_key=True, index=True)
-    business_type = Column(Enum(BusinessType), nullable=False, index=True)
-    test_data = Column(Text, nullable=False)  # JSON string
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
-
-    def __repr__(self):
-        return f"<TestCase(id={self.id}, business_type={self.business_type}, created_at={self.created_at})>"
 
 
 class GenerationJob(Base):
@@ -159,8 +177,7 @@ class TestCaseEntity(Base):
     __tablename__ = "test_case_entities"
 
     id = Column(Integer, primary_key=True, index=True)
-    test_case_id = Column(Integer, ForeignKey("test_cases.id"), nullable=True, index=True)  # Legacy support
-    test_case_item_id = Column(Integer, ForeignKey("test_case_items.id"), nullable=True, index=True)  # New structure
+    test_case_item_id = Column(Integer, ForeignKey("test_case_items.id"), nullable=False, index=True)
     entity_id = Column(Integer, ForeignKey("knowledge_entities.id"), nullable=False, index=True)
     name = Column(String(200), nullable=False, index=True)
     description = Column(Text, nullable=True)
@@ -169,12 +186,8 @@ class TestCaseEntity(Base):
     created_at = Column(DateTime, default=datetime.now, nullable=False)
 
     # Relationships
-    test_case = relationship("TestCase", backref="knowledge_entity")
     test_case_item = relationship("TestCaseItem", back_populates="knowledge_entities")
     entity = relationship("KnowledgeEntity", back_populates="test_cases")
 
     def __repr__(self):
-        if self.test_case_item_id:
-            return f"<TestCaseEntity(id={self.id}, name={self.name}, test_case_item_id={self.test_case_item_id})>"
-        else:
-            return f"<TestCaseEntity(id={self.id}, name={self.name}, test_case_id={self.test_case_id})>"
+        return f"<TestCaseEntity(id={self.id}, name={self.name}, test_case_item_id={self.test_case_item_id})>"

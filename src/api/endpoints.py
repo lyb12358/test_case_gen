@@ -5,12 +5,14 @@ Refactored to support business type parameters and database integration.
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import asyncio
 import uuid
 import os
 import json
+import io
 from datetime import datetime
 from sqlalchemy import func
 
@@ -20,6 +22,8 @@ from ..database.database import DatabaseManager
 from ..database.operations import DatabaseOperations
 from ..database.models import BusinessType, JobStatus, EntityType
 from ..core.business_data_extractor import BusinessDataExtractor
+from ..core.excel_converter import ExcelConverter
+from ..config.business_types import get_business_type_mapping
 
 
 class GenerateTestCaseRequest(BaseModel):
@@ -82,6 +86,11 @@ class TestCasesListResponse(BaseModel):
 class BusinessTypeResponse(BaseModel):
     """Response model for business types."""
     business_types: List[str]
+
+
+class BusinessTypeMappingResponse(BaseModel):
+    """Response model for business type mapping with names and descriptions."""
+    business_types: Dict[str, Dict[str, str]]
 
 
 class GraphNode(BaseModel):
@@ -212,14 +221,15 @@ async def root():
             "GET /test-cases/{business_type} - Get test cases by business type",
             "GET /test-cases - Get all test cases",
             "DELETE /test-cases/{business_type} - Delete test cases by business type",
+            "GET /test-cases/export - Export test cases to Excel file",
             "GET /business-types - List supported business types",
+            "GET /business-types/mapping - Get business type mapping with names and descriptions",
             "GET /knowledge-graph/data - Get knowledge graph data for visualization",
             "GET /knowledge-graph/entities - Get knowledge graph entities",
             "GET /knowledge-graph/relations - Get knowledge graph relations",
             "GET /knowledge-graph/stats - Get knowledge graph statistics",
             "POST /knowledge-graph/initialize - Initialize knowledge graph from business descriptions",
-            "DELETE /knowledge-graph/clear - Clear all knowledge graph data",
-            "POST /knowledge-graph/fix-duplicate-test-cases - Fix duplicate test case names"
+            "DELETE /knowledge-graph/clear - Clear all knowledge graph data"
         ]
     }
 
@@ -307,6 +317,134 @@ async def get_task_status(task_id: str):
             error=job.error_message,
             test_case_id=progress_info.get("test_case_id")
         )
+
+
+@app.get("/test-cases/export")
+async def export_test_cases_to_excel(business_type: Optional[str] = None):
+    """
+    Export test cases to Excel file with optional business type filtering.
+
+    Args:
+        business_type (Optional[str]): Filter by business type (RCC, RFD, ZAB, ZBA)
+
+    Returns:
+        StreamingResponse: Excel file download
+    """
+    try:
+        # Parse business type if provided
+        business_enum = None
+        if business_type:
+            try:
+                business_enum = BusinessType(business_type.upper())
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid business type '{business_type}'. "
+                           f"Supported types: {[bt.value for bt in BusinessType]}"
+                )
+
+        # Get test case data from database
+        with db_manager.get_session() as db:
+            from ..database.models import TestCaseGroup, TestCaseItem
+
+            # Filter by business type if specified
+            if business_enum:
+                groups = db.query(TestCaseGroup).filter(
+                    TestCaseGroup.business_type == business_enum
+                ).order_by(TestCaseGroup.created_at.desc()).all()
+            else:
+                groups = db.query(TestCaseGroup).order_by(TestCaseGroup.created_at.desc()).all()
+
+            if not groups:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No test cases found" + (f" for business type {business_enum.value}" if business_enum else "")
+                )
+
+            # Convert test case items to TestCase objects
+            test_cases = []
+            for group in groups:
+                items = db.query(TestCaseItem).filter(
+                    TestCaseItem.group_id == group.id
+                ).order_by(TestCaseItem.entity_order.asc()).all()
+
+                for item in items:
+                    # Parse JSON fields
+                    preconditions = json.loads(item.preconditions) if item.preconditions else []
+                    steps = json.loads(item.steps) if item.steps else []
+                    expected_result = json.loads(item.expected_result) if item.expected_result else []
+
+                    # Create TestCase object
+                    test_case = TestCase(
+                        id=item.test_case_id,
+                        name=item.name,
+                        module=item.module or "",
+                        preconditions=preconditions if isinstance(preconditions, list) else str(preconditions),
+                        remarks=item.remarks or "",
+                        steps=steps if isinstance(steps, list) else [str(steps)],
+                        expected_result=expected_result if isinstance(expected_result, list) else str(expected_result),
+                        functional_module=item.functional_module or "",
+                        functional_domain=item.functional_domain or ""
+                    )
+                    test_cases.append(test_case)
+
+        if not test_cases:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No test case items found" + (f" for business type {business_enum.value}" if business_enum else "")
+            )
+
+        # Convert to Excel rows using existing ExcelConverter
+        excel_rows = ExcelConverter.test_cases_to_excel_rows(test_cases)
+
+        # Create Excel file in memory
+        output = io.BytesIO()
+        data = [row.model_dump() for row in excel_rows]
+
+        import pandas as pd
+        import xlsxwriter
+
+        # Create DataFrame and save to Excel in memory
+        df = pd.DataFrame(data)
+
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='TestCases')
+
+            # Get the workbook and worksheet objects for formatting
+            workbook = writer.book
+            worksheet = writer.sheets['TestCases']
+
+            # Create a text wrap format
+            wrap_format = workbook.add_format({'text_wrap': True, 'valign': 'top'})
+
+            # Apply text wrap format to columns that need it
+            worksheet.set_column('D:D', 30, wrap_format)  # 前置条件
+            worksheet.set_column('F:F', 30, wrap_format)  # 步骤描述
+            worksheet.set_column('G:G', 30, wrap_format)  # 预期结果
+
+            # Auto-adjust row heights for better visibility
+            for i in range(len(df) + 1):  # +1 for header row
+                worksheet.set_row(i, 30)  # Set row height to 30 pixels
+
+        # Prepare file for download
+        output.seek(0)
+
+        # Generate filename with timestamp and business type
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        business_suffix = f"_{business_enum.value}" if business_enum else ""
+        filename = f"test_cases{business_suffix}_{timestamp}.xlsx"
+
+        # Return file as streaming response
+        return StreamingResponse(
+            io.BytesIO(output.read()),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to export test cases: {str(e)}")
 
 
 @app.get("/test-cases/{business_type}", response_model=TestCasesListResponse)
@@ -581,6 +719,23 @@ async def get_business_types():
     """
     business_types = [bt.value for bt in BusinessType]
     return BusinessTypeResponse(business_types=business_types)
+
+
+@app.get("/business-types/mapping", response_model=BusinessTypeMappingResponse)
+async def get_business_types_mapping():
+    """
+    Get business type mapping with names and descriptions.
+
+    Returns:
+        BusinessTypeMappingResponse: Dictionary of business type mappings with names and descriptions
+    """
+    try:
+        # Get business type mapping from centralized configuration
+        business_mapping = get_business_type_mapping()
+        return BusinessTypeMappingResponse(business_types=business_mapping)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get business types mapping: {str(e)}")
 
 
 @app.get("/tasks")
@@ -1001,37 +1156,26 @@ async def get_entity_details(entity_id: int):
             # Prepare test cases data
             test_cases_data = []
             for tc_entity in test_case_entities:
-                # Handle both legacy test_case and new test_case_item relationships
-                if tc_entity.test_case_item:
-                    # New structure - get data from TestCaseItem
-                    item = tc_entity.test_case_item
-                    test_cases_data.append({
-                        "id": item.id,
-                        "name": tc_entity.name,
-                        "description": tc_entity.description,
-                        "test_data": {
-                            "id": item.test_case_id,
-                            "name": item.name,
-                            "description": item.description,
-                            "module": item.module,
-                            "functional_module": item.functional_module,
-                            "functional_domain": item.functional_domain,
-                            "preconditions": json.loads(item.preconditions) if item.preconditions else [],
-                            "steps": json.loads(item.steps) if item.steps else [],
-                            "expected_result": json.loads(item.expected_result) if item.expected_result else [],
-                            "remarks": item.remarks
-                        },
-                        "created_at": item.created_at.isoformat()
-                    })
-                elif tc_entity.test_case:
-                    # Legacy structure - get data from TestCase
-                    test_cases_data.append({
-                        "id": tc_entity.test_case.id,
-                        "name": tc_entity.name,
-                        "description": tc_entity.description,
-                        "test_data": json.loads(tc_entity.test_case.test_data) if tc_entity.test_case.test_data else {},
-                        "created_at": tc_entity.test_case.created_at.isoformat()
-                    })
+                # Get data from TestCaseItem
+                item = tc_entity.test_case_item
+                test_cases_data.append({
+                    "id": item.id,
+                    "name": tc_entity.name,
+                    "description": tc_entity.description,
+                    "test_data": {
+                        "id": item.test_case_id,
+                        "name": item.name,
+                        "description": item.description,
+                        "module": item.module,
+                        "functional_module": item.functional_module,
+                        "functional_domain": item.functional_domain,
+                        "preconditions": json.loads(item.preconditions) if item.preconditions else [],
+                        "steps": json.loads(item.steps) if item.steps else [],
+                        "expected_result": json.loads(item.expected_result) if item.expected_result else [],
+                        "remarks": item.remarks
+                    },
+                    "created_at": item.created_at.isoformat()
+                })
 
             # Build children data
             children_data = []
@@ -1175,37 +1319,26 @@ async def get_entity_test_cases(entity_id: int):
             # Prepare test cases data
             test_cases_data = []
             for tc_entity in test_case_entities:
-                # Handle both legacy test_case and new test_case_item relationships
-                if tc_entity.test_case_item:
-                    # New structure - get data from TestCaseItem
-                    item = tc_entity.test_case_item
-                    test_cases_data.append({
-                        "id": item.id,
-                        "name": tc_entity.name,
-                        "description": tc_entity.description,
-                        "test_data": {
-                            "id": item.test_case_id,
-                            "name": item.name,
-                            "description": item.description,
-                            "module": item.module,
-                            "functional_module": item.functional_module,
-                            "functional_domain": item.functional_domain,
-                            "preconditions": json.loads(item.preconditions) if item.preconditions else [],
-                            "steps": json.loads(item.steps) if item.steps else [],
-                            "expected_result": json.loads(item.expected_result) if item.expected_result else [],
-                            "remarks": item.remarks
-                        },
-                        "created_at": item.created_at.isoformat()
-                    })
-                elif tc_entity.test_case:
-                    # Legacy structure - get data from TestCase
-                    test_cases_data.append({
-                        "id": tc_entity.test_case.id,
-                        "name": tc_entity.name,
-                        "description": tc_entity.description,
-                        "test_data": json.loads(tc_entity.test_case.test_data) if tc_entity.test_case.test_data else {},
-                        "created_at": tc_entity.test_case.created_at.isoformat()
-                    })
+                # Get data from TestCaseItem
+                item = tc_entity.test_case_item
+                test_cases_data.append({
+                    "id": item.id,
+                    "name": tc_entity.name,
+                    "description": tc_entity.description,
+                    "test_data": {
+                        "id": item.test_case_id,
+                        "name": item.name,
+                        "description": item.description,
+                        "module": item.module,
+                        "functional_module": item.functional_module,
+                        "functional_domain": item.functional_domain,
+                        "preconditions": json.loads(item.preconditions) if item.preconditions else [],
+                        "steps": json.loads(item.steps) if item.steps else [],
+                        "expected_result": json.loads(item.expected_result) if item.expected_result else [],
+                        "remarks": item.remarks
+                    },
+                    "created_at": item.created_at.isoformat()
+                })
 
             return EntityTestCasesResponse(
                 entity_id=entity.id,
@@ -1219,114 +1352,6 @@ async def get_entity_test_cases(entity_id: int):
         raise HTTPException(status_code=500, detail=f"Failed to get entity test cases: {str(e)}")
 
 
-@app.post("/knowledge-graph/fix-duplicate-test-cases")
-async def fix_duplicate_test_cases():
-    """
-    Fix duplicate test case names in the database by renaming duplicates with suffixes.
-    This resolves the discrepancy between Dashboard test case counts and Knowledge Graph node counts.
-
-    Returns:
-        Dict: Statistics about the fix operation
-    """
-    try:
-        with db_manager.get_session() as db:
-            from ..database.models import KnowledgeEntity, TestCaseEntity, TestCaseItem, EntityType
-
-            # Find duplicate test case entities (grouped by name and business_type)
-            duplicates_query = db.query(
-                KnowledgeEntity.name,
-                KnowledgeEntity.business_type,
-                func.count(KnowledgeEntity.id).label('count')
-            ).filter(
-                KnowledgeEntity.type == EntityType.TEST_CASE
-            ).group_by(
-                KnowledgeEntity.name,
-                KnowledgeEntity.business_type
-            ).having(
-                func.count(KnowledgeEntity.id) > 1
-            ).all()
-
-            if not duplicates_query:
-                return {
-                    "message": "No duplicate test case names found",
-                    "duplicate_groups_fixed": 0,
-                    "entities_renamed": 0
-                }
-
-            total_groups_fixed = 0
-            total_entities_renamed = 0
-
-            # Process each duplicate group
-            for duplicate in duplicates_query:
-                name = duplicate.name
-                business_type = duplicate.business_type
-
-                print(f"Processing duplicate group: '{name}' for {business_type.value}")
-
-                # Get all entities with this name and business_type, ordered by creation date
-                entities = db.query(KnowledgeEntity).filter(
-                    KnowledgeEntity.name == name,
-                    KnowledgeEntity.business_type == business_type,
-                    KnowledgeEntity.type == EntityType.TEST_CASE
-                ).order_by(KnowledgeEntity.created_at.asc()).all()
-
-                # Keep the first one as-is, rename the rest
-                for i, entity in enumerate(entities[1:], 1):  # Skip first entity
-                    new_name = f"{name}_{i}"
-                    print(f"  Renaming entity {entity.id}: '{name}' -> '{new_name}'")
-
-                    # Update the knowledge entity name
-                    entity.name = new_name
-
-                    # Update corresponding TestCaseEntity records
-                    tc_entities = db.query(TestCaseEntity).filter(
-                        TestCaseEntity.entity_id == entity.id
-                    ).all()
-
-                    for tc_entity in tc_entities:
-                        tc_entity.name = new_name
-
-                    # Update corresponding TestCaseItem records if needed
-                    # Check if this knowledge entity is linked to any TestCaseItem via extra_data
-                    if entity.extra_data:
-                        try:
-                            import json
-                            extra_data = json.loads(entity.extra_data)
-                            test_case_item_id = extra_data.get("test_case_item_id")
-                            if test_case_item_id:
-                                # Update the TestCaseItem name as well
-                                tc_item = db.query(TestCaseItem).filter(
-                                    TestCaseItem.id == test_case_item_id
-                                ).first()
-                                if tc_item:
-                                    tc_item.name = new_name
-                                    print(f"  Updated TestCaseItem {tc_item.id} name to '{new_name}'")
-                        except json.JSONDecodeError:
-                            pass
-
-                    total_entities_renamed += 1
-
-                total_groups_fixed += 1
-
-            # Commit all changes
-            db.commit()
-
-            return {
-                "message": f"Fixed duplicate test case names successfully",
-                "duplicate_groups_fixed": total_groups_fixed,
-                "entities_renamed": total_entities_renamed,
-                "details": [
-                    {
-                        "name": dup.name,
-                        "business_type": dup.business_type.value,
-                        "count": dup.count
-                    } for dup in duplicates_query
-                ]
-            }
-
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to fix duplicate test cases: {str(e)}")
 
 
 if __name__ == "__main__":

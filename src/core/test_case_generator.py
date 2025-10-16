@@ -13,7 +13,7 @@ from ..core.json_extractor import JSONExtractor
 from ..core.excel_converter import ExcelConverter
 from ..database.database import DatabaseManager
 from ..database.operations import DatabaseOperations
-from ..database.models import BusinessType, TestCaseGroup, TestCaseItem, KnowledgeEntity, KnowledgeRelation, EntityType
+from ..database.models import BusinessType, TestCaseGroup, TestCaseItem, KnowledgeEntity, KnowledgeRelation, TestCaseEntity, EntityType
 
 
 class TestCaseGenerator:
@@ -260,7 +260,10 @@ class TestCaseGenerator:
             test_cases_list = test_cases_data.get('test_cases', [])
 
             # Remove duplicate test case names, keep the first occurrence
+            original_count = len(test_cases_list)
             test_cases_list = self._remove_duplicate_test_cases(test_cases_list)
+            dedup_count = len(test_cases_list)
+            print(f"Deduplication: {original_count} -> {dedup_count} test cases")
 
             with self.db_manager.get_session() as db:
                 db_operations = DatabaseOperations(db)
@@ -314,6 +317,9 @@ class TestCaseGenerator:
                     business_enum
                 )
 
+                # Verify data consistency
+                self._verify_data_consistency(test_case_group, test_case_items, business_enum, db_operations)
+
                 return True
 
         except Exception as e:
@@ -366,7 +372,7 @@ class TestCaseGenerator:
 
             # Create test case entity mapping
             db_operations.create_test_case_entity(
-                test_case_id=None,  # Legacy field not used
+                test_case_item_id=item.id,
                 entity_id=tc_entity.id,
                 name=item.name,
                 description=item.description,
@@ -500,3 +506,46 @@ class TestCaseGenerator:
             print(f"Removed {duplicate_count} duplicate test case names. Kept {len(unique_test_cases)} unique test cases.")
 
         return unique_test_cases
+
+    def _verify_data_consistency(self, test_case_group, test_case_items, business_type, db_operations):
+        """
+        Verify data consistency between TestCaseItems and KnowledgeEntities.
+
+        Args:
+            test_case_group: TestCaseGroup instance
+            test_case_items: List of TestCaseItem instances
+            business_type: Business type enum
+            db_operations: Database operations instance
+        """
+        try:
+            # Count knowledge entities for this business type
+            knowledge_entities_count = db_operations.db.query(KnowledgeEntity).filter(
+                KnowledgeEntity.business_type == business_type,
+                KnowledgeEntity.type == EntityType.TEST_CASE
+            ).count()
+
+            # Count test case entities (mappings) for this group
+            test_case_entities_count = db_operations.db.query(TestCaseEntity).join(
+                KnowledgeEntity, TestCaseEntity.entity_id == KnowledgeEntity.id
+            ).filter(
+                KnowledgeEntity.business_type == business_type,
+                KnowledgeEntity.type == EntityType.TEST_CASE
+            ).count()
+
+            print(f"Data consistency check for {business_type.value}:")
+            print(f"  - TestCaseItems: {len(test_case_items)}")
+            print(f"  - KnowledgeEntities (TEST_CASE): {knowledge_entities_count}")
+            print(f"  - TestCaseEntity mappings: {test_case_entities_count}")
+
+            # Check for inconsistencies
+            if len(test_case_items) != knowledge_entities_count:
+                print(f"WARNING: TestCaseItems count ({len(test_case_items)}) != KnowledgeEntities count ({knowledge_entities_count})")
+
+            if len(test_case_items) != test_case_entities_count:
+                print(f"WARNING: TestCaseItems count ({len(test_case_items)}) != TestCaseEntity mappings count ({test_case_entities_count})")
+
+            if len(test_case_items) == knowledge_entities_count == test_case_entities_count:
+                print("✓ Data consistency verified: All counts match")
+
+        except Exception as e:
+            print(f"Error during data consistency verification: {e}")

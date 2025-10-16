@@ -7,6 +7,9 @@ import {
   theme,
   Typography,
   Space,
+  Badge,
+  Progress,
+  Tooltip,
 } from 'antd';
 import {
   DashboardOutlined,
@@ -16,7 +19,9 @@ import {
   MenuUnfoldOutlined,
   ReloadOutlined,
   ShareAltOutlined,
+  ClockCircleOutlined,
 } from '@ant-design/icons';
+import { useTask } from '@/contexts/TaskContext';
 
 const { Header, Sider, Content } = AntLayout;
 const { Title } = Typography;
@@ -29,6 +34,7 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const { state: taskState } = useTask();
   const {
     token: { colorBgContainer, borderRadiusLG },
   } = theme.useToken();
@@ -149,7 +155,52 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
               height: 64,
             }}
           />
+
           <Space>
+            {/* 任务状态显示 */}
+            {taskState.currentTask && (
+              <Tooltip
+                title={
+                  <div>
+                    <div>任务ID: #{taskState.currentTask.id}</div>
+                    <div>业务类型: {taskState.currentTask.business_type}</div>
+                    <div>状态: {taskState.currentTask.status === 'completed' ? '已完成' :
+                           taskState.currentTask.status === 'running' ? '进行中' :
+                           taskState.currentTask.status === 'failed' ? '失败' : '等待中'}</div>
+                  </div>
+                }
+              >
+                <Badge
+                  status={
+                    taskState.currentTask.status === 'completed' ? 'success' :
+                    taskState.currentTask.status === 'running' ? 'processing' :
+                    taskState.currentTask.status === 'failed' ? 'error' : 'default'
+                  }
+                >
+                  <Button
+                    type="text"
+                    icon={<ClockCircleOutlined />}
+                    onClick={() => navigate('/test-cases/generate')}
+                    style={{
+                      color: taskState.currentTask.status === 'running' ? '#1890ff' : undefined
+                    }}
+                  >
+                    {taskState.isPolling && (
+                      <Progress
+                        percent={taskState.currentTask.progress || 0}
+                        size="small"
+                        style={{ width: 100, marginRight: 8 }}
+                        format={() => `${taskState.currentTask.progress || 0}%`}
+                      />
+                    )}
+                    {taskState.currentTask.status === 'completed' ? '任务完成' :
+                     taskState.currentTask.status === 'running' ? '生成中...' :
+                     taskState.currentTask.status === 'failed' ? '任务失败' : '处理中'}
+                  </Button>
+                </Badge>
+              </Tooltip>
+            )}
+
             <Button
               type="text"
               icon={<ReloadOutlined />}

@@ -8,7 +8,7 @@ from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import delete, and_
 
-from .models import TestCase, TestCaseGroup, TestCaseItem, GenerationJob, BusinessType, JobStatus, KnowledgeEntity, KnowledgeRelation, EntityType, TestCaseEntity
+from .models import TestCaseGroup, TestCaseItem, GenerationJob, BusinessType, JobStatus, KnowledgeEntity, KnowledgeRelation, EntityType, TestCaseEntity
 
 
 class DatabaseOperations:
@@ -23,179 +23,7 @@ class DatabaseOperations:
         """
         self.db = db
 
-    # Test Case Operations
-    def create_test_case(self, business_type: BusinessType, test_data: Dict[str, Any]) -> TestCase:
-        """
-        Create a new test case and corresponding knowledge graph entity.
-
-        Args:
-            business_type (BusinessType): Business type
-            test_data (Dict[str, Any]): Test case data
-
-        Returns:
-            TestCase: Created test case
-        """
-        test_case = TestCase(
-            business_type=business_type,
-            test_data=json.dumps(test_data, ensure_ascii=False)
-        )
-        self.db.add(test_case)
-        self.db.commit()
-        self.db.refresh(test_case)
-
-        # Create corresponding knowledge graph entity and test case entity
-        try:
-            self._create_test_case_knowledge_entities(test_case, test_data, business_type)
-        except Exception as e:
-            print(f"Error creating knowledge entities: {e}")
-            # Continue without knowledge entities if creation fails
-            # Don't roll back the main test case creation
-
-        return test_case
-
-    def _create_test_case_knowledge_entities(self, test_case: TestCase, test_data: Dict[str, Any], business_type: BusinessType):
-        """
-        Create knowledge graph entities for each test case.
-
-        Args:
-            test_case (TestCase): Test case record
-            test_data (Dict[str, Any]): Test case data
-            business_type (BusinessType): Business type
-        """
-        from .models import EntityType
-
-        test_cases = test_data.get('test_cases', [])
-        print(f"Creating knowledge entities for {len(test_cases)} test cases for {business_type.value}")
-
-        # Get the business entity to associate test cases with
-        business_entity = self.db.query(KnowledgeEntity).filter(
-            KnowledgeEntity.business_type == business_type,
-            KnowledgeEntity.type == EntityType.BUSINESS
-        ).first()
-
-        if not business_entity:
-            print(f"No business entity found for {business_type.value}")
-            return
-
-        print(f"Found business entity: {business_entity.name} (ID: {business_entity.id})")
-
-        for index, tc in enumerate(test_cases):
-            # Create test case knowledge entity
-            tc_entity = self.create_knowledge_entity(
-                name=tc.get('name', f"测试用例{index + 1}"),
-                entity_type=EntityType.TEST_CASE,
-                description=tc.get('description', tc.get('module', '')),
-                business_type=business_type,
-                parent_id=business_entity.id,
-                entity_order=float(index + 1),
-                extra_data=json.dumps({
-                    'test_case_id': tc.get('id', f"TC{index + 1:03d}"),
-                    'module': tc.get('module', ''),
-                    'preconditions': tc.get('preconditions', []),
-                    'steps': tc.get('steps', []),
-                    'expected_result': tc.get('expected_result', []),
-                    'functional_module': tc.get('functional_module', ''),
-                    'functional_domain': tc.get('functional_domain', ''),
-                    'remarks': tc.get('remarks', '')
-                }, ensure_ascii=False)
-            )
-
-            # Create test case entity mapping
-            self.create_test_case_entity(
-                test_case_id=test_case.id,
-                entity_id=tc_entity.id,
-                name=tc.get('name', f"测试用例{index + 1}"),
-                description=tc.get('description', tc.get('module', '')),
-                tags=[tc.get('functional_module', ''), tc.get('functional_domain', '')],
-                extra_metadata={
-                    'test_case_id': tc.get('id', f"TC{index + 1:03d}"),
-                    'module': tc.get('module', ''),
-                    'preconditions': tc.get('preconditions', []),
-                    'steps': tc.get('steps', []),
-                    'expected_result': tc.get('expected_result', []),
-                    'functional_module': tc.get('functional_module', ''),
-                    'functional_domain': tc.get('functional_domain', ''),
-                    'remarks': tc.get('remarks', '')
-                }
-            )
-
-            # Create relation between business entity and test case entity
-            self.create_knowledge_relation(
-                subject_name=business_entity.name,
-                predicate='has_test_case',
-                object_name=tc_entity.name,
-                business_type=business_type
-            )
-
-    def get_test_cases_by_business_type(self, business_type: BusinessType) -> List[TestCase]:
-        """
-        Get all test cases for a specific business type.
-
-        Args:
-            business_type (BusinessType): Business type
-
-        Returns:
-            List[TestCase]: List of test cases
-        """
-        return self.db.query(TestCase).filter(TestCase.business_type == business_type).all()
-
-    def get_all_test_cases(self) -> List[TestCase]:
-        """
-        Get all test cases.
-
-        Returns:
-            List[TestCase]: List of all test cases
-        """
-        return self.db.query(TestCase).all()
-
-    def delete_test_cases_by_business_type(self, business_type: BusinessType) -> int:
-        """
-        Delete all test cases for a specific business type.
-
-        Args:
-            business_type (BusinessType): Business type
-
-        Returns:
-            int: Number of deleted records
-        """
-        stmt = delete(TestCase).where(TestCase.business_type == business_type)
-        result = self.db.execute(stmt)
-        self.db.commit()
-        return result.rowcount
-
-    def delete_knowledge_entities_by_business_type(self, business_type: BusinessType) -> int:
-        """
-        Delete all knowledge entities for a specific business type.
-
-        Args:
-            business_type (BusinessType): Business type
-
-        Returns:
-            int: Number of deleted records
-        """
-        # Delete relations first (foreign key constraint)
-        relations_stmt = delete(KnowledgeRelation).where(KnowledgeRelation.business_type == business_type)
-        relations_result = self.db.execute(relations_stmt)
-
-        # Then delete entities
-        entities_stmt = delete(KnowledgeEntity).where(KnowledgeEntity.business_type == business_type)
-        entities_result = self.db.execute(entities_stmt)
-
-        self.db.commit()
-        return entities_result.rowcount
-
-    def get_test_case_by_id(self, test_case_id: int) -> Optional[TestCase]:
-        """
-        Get test case by ID.
-
-        Args:
-            test_case_id (int): Test case ID
-
-        Returns:
-            Optional[TestCase]: Test case or None
-        """
-        return self.db.query(TestCase).filter(TestCase.id == test_case_id).first()
-
+    
     # Generation Job Operations
     def create_generation_job(self, job_id: str, business_type: BusinessType) -> GenerationJob:
         """
@@ -301,7 +129,7 @@ class DatabaseOperations:
         """
         stats = {}
         for business_type in BusinessType:
-            test_case_count = self.db.query(TestCase).filter(TestCase.business_type == business_type).count()
+            test_case_count = self.db.query(TestCaseGroup).filter(TestCaseGroup.business_type == business_type).count()
             job_count = self.db.query(GenerationJob).filter(GenerationJob.business_type == business_type).count()
             stats[business_type.value] = {
                 "test_cases": test_case_count,
@@ -574,9 +402,8 @@ class DatabaseOperations:
 
     def create_test_case_entity(
         self,
-        test_case_id: Optional[int] = None,
-        test_case_item_id: Optional[int] = None,
-        entity_id: Optional[int] = None,
+        test_case_item_id: int,
+        entity_id: int,
         name: Optional[str] = None,
         description: Optional[str] = None,
         tags: Optional[List[str]] = None,
@@ -586,9 +413,8 @@ class DatabaseOperations:
         Create a test case entity.
 
         Args:
-            test_case_id (Optional[int]): Legacy test case ID
-            test_case_item_id (Optional[int]): New test case item ID
-            entity_id (Optional[int]): Knowledge entity ID
+            test_case_item_id (int): Test case item ID
+            entity_id (int): Knowledge entity ID
             name (Optional[str]): Test case name
             description (Optional[str]): Test case description
             tags (Optional[List[str]]): List of tags
@@ -598,7 +424,6 @@ class DatabaseOperations:
             TestCaseEntity: Created test case entity
         """
         test_case_entity = TestCaseEntity(
-            test_case_id=test_case_id,
             test_case_item_id=test_case_item_id,
             entity_id=entity_id,
             name=name,

@@ -18,7 +18,7 @@ prompts/
 └── shared/                             # 共享内容目录
     ├── system_background.md           # 系统背景介绍
     ├── error_codes.md                 # TSP-APP错误码
-    └── swagger_api.md                 # Swagger文档信息
+    └── remote_control_api.md         # Swagger文档信息
 ```
 
 ## 使用方法
