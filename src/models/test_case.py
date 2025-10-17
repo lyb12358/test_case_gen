@@ -11,6 +11,7 @@ class TestCase(BaseModel):
 
     id: str = Field(..., description="Unique identifier for the test case")
     name: str = Field(..., description="Test case name/title")
+    description: Optional[str] = Field(default=None, description="Test case description")
     module: str = Field(..., description="Module to which this test case belongs")
     preconditions: Union[str, List[str]] = Field(default="", description="Preconditions for the test")
     remarks: str = Field(default="", description="Additional remarks or notes")
@@ -18,6 +19,8 @@ class TestCase(BaseModel):
     expected_result: Union[str, List[str]] = Field(default="", description="Expected test results")
     functional_module: str = Field(default="", description="Functional module category")
     functional_domain: str = Field(default="", description="Functional domain category")
+    test_case_id: Optional[str] = Field(default=None, description="Test case identifier like TC001")
+    entity_order: Optional[float] = Field(default=None, description="Entity order for sorting")
 
 
 class TestCaseCollection(BaseModel):

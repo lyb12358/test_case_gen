@@ -494,6 +494,93 @@ class AllTestCaseGenerator:
 
         return result
 
+    def _validate_configuration(self) -> bool:
+        """
+        Validate system configuration before starting generation.
+
+        Returns:
+            bool: True if configuration is valid, False otherwise
+        """
+        try:
+            # Test basic configuration
+            logging.info("  检查基本配置...")
+
+            # Check environment variables directly
+            import os
+            from dotenv import load_dotenv
+            load_dotenv()
+
+            # Get project root for file path checking
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = os.path.dirname(current_dir)
+
+            api_key = os.getenv('API_KEY', '')
+            api_base_url = os.getenv('API_BASE_URL', '')
+            model = os.getenv('MODEL', '')
+
+            # Check required environment variables
+            if not api_key:
+                logging.error("  ❌ API key未配置，请检查.env文件中的API_KEY")
+                return False
+
+            if not api_base_url:
+                logging.error("  ❌ API base URL未配置，请检查.env文件中的API_BASE_URL")
+                return False
+
+            if not model:
+                logging.error("  ❌ 模型名称未配置，请检查.env文件中的MODEL")
+                return False
+
+            logging.info(f"  ✅ 基本配置检查通过: {api_base_url} / {model}")
+
+            # Test file paths
+            logging.info("  检查文件路径...")
+
+            # Check system prompt file
+            system_prompt_path = os.path.join(project_root, os.getenv('SYSTEM_PROMPT_PATH', 'prompts/system.md'))
+            if not os.path.exists(system_prompt_path):
+                logging.error(f"  ❌ 系统提示词文件不存在: {system_prompt_path}")
+                return False
+            logging.info(f"  ✅ 系统提示词文件存在: {system_prompt_path}")
+
+            # Check business description files
+            business_types = self.get_business_types_to_process()
+            if not business_types:
+                logging.error("  ❌ 没有找到业务类型")
+                return False
+
+            # Check a few business description files
+            missing_files = []
+            for bt in business_types[:3]:  # Check first 3
+                from config.business_types import get_business_file_mapping
+                filename = get_business_file_mapping(bt)
+                file_path = os.path.join(project_root, 'prompts', 'business_descriptions', filename)
+                if not os.path.exists(file_path):
+                    missing_files.append(file_path)
+
+            if missing_files:
+                logging.error(f"  ❌ 业务描述文件不存在: {', '.join(missing_files)}")
+                return False
+
+            logging.info(f"  ✅ 业务描述文件检查通过")
+
+            # Test server health (we already did this above, but confirm it's still working)
+            if not self.api_client.check_health():
+                logging.error("  ❌ API服务器健康检查失败")
+                return False
+
+            logging.info(f"  ✅ API服务器健康检查通过")
+
+            return True
+
+        except ImportError as e:
+            logging.error(f"  ❌ 导入模块失败: {e}")
+            logging.error("  💡 请确保项目依赖已正确安装")
+            return False
+        except Exception as e:
+            logging.error(f"  ❌ 配置验证过程中发生错误: {e}")
+            return False
+
     def run(self) -> bool:
         """Main execution method."""
         try:
@@ -503,7 +590,16 @@ class AllTestCaseGenerator:
             # Check server health
             if not self.config.dry_run and not self.api_client.check_health():
                 logging.error("❌ API服务器不可用，请确保服务器正在运行")
+                logging.error(f"   服务器地址: {self.api_client.base_url}")
+                logging.error("   💡 尝试运行: python scripts/test_api_connection.py")
                 return False
+
+            # Validate configuration before starting
+            logging.info("🔧 验证配置...")
+            if not self._validate_configuration():
+                logging.error("❌ 配置验证失败")
+                return False
+            logging.info("✅ 配置验证通过")
 
             # Get business types to process
             business_types = self.get_business_types_to_process()
@@ -659,8 +755,8 @@ Examples:
     parser.add_argument(
         '--server-url',
         type=str,
-        default='http://127.0.0.1:8001',
-        help='API server base URL (default: http://127.0.0.1:8001)'
+        default='http://127.0.0.1:8000',
+        help='API server base URL (default: http://127.0.0.1:8000)'
     )
 
     return parser.parse_args()
