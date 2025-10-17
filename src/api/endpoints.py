@@ -23,6 +23,7 @@ from ..database.operations import DatabaseOperations
 from ..database.models import BusinessType, JobStatus, EntityType
 from ..core.business_data_extractor import BusinessDataExtractor
 from ..core.excel_converter import ExcelConverter
+from ..models.test_case import TestCase
 from ..config.business_types import get_business_type_mapping
 
 
@@ -821,15 +822,37 @@ async def generate_test_cases_background(task_id: str, business_type: str):
         task_progress[task_id]["progress"] = 30
 
         # Generate test cases
-        test_cases_data = generator.generate_test_cases_for_business(business_type)
-        if test_cases_data is None:
-            raise Exception("Failed to generate test cases")
+        try:
+            test_cases_data = generator.generate_test_cases_for_business(business_type)
+        except ValueError as e:
+            # Business validation errors
+            error_details = f"Business type validation failed for {business_type}: {str(e)}"
+            print(f"❌ Validation error in generate_test_cases_background:\n{error_details}")
+            raise Exception(error_details) from e
+        except RuntimeError as e:
+            # JSON parsing/validation errors
+            error_details = f"JSON processing failed for {business_type}: {str(e)}"
+            print(f"❌ JSON processing error in generate_test_cases_background:\n{error_details}")
+            raise Exception(error_details) from e
+        except Exception as e:
+            # Other unexpected errors
+            import traceback
+            error_details = f"Unexpected error generating test cases for {business_type}: {str(e)}\n\nFull traceback:\n{traceback.format_exc()}"
+            print(f"❌ Unexpected error in generate_test_cases_background:\n{error_details}")
+            raise Exception(error_details) from e
 
         task_progress[task_id]["progress"] = 70
 
         # Save to database (automatically deletes old data)
-        if not generator.save_to_database(test_cases_data, business_type):
-            raise Exception("Failed to save test cases to database")
+        try:
+            if not generator.save_to_database(test_cases_data, business_type):
+                raise Exception("Failed to save test cases to database")
+        except Exception as e:
+            # Preserve the original error with full traceback for debugging
+            import traceback
+            error_details = f"Failed to save test cases to database for {business_type}: {str(e)}\n\nFull traceback:\n{traceback.format_exc()}"
+            print(f"❌ Detailed error in save_to_database:\n{error_details}")
+            raise Exception(error_details) from e
 
         task_progress[task_id]["progress"] = 90
 
@@ -855,14 +878,22 @@ async def generate_test_cases_background(task_id: str, business_type: str):
         task_progress[task_id]["progress"] = 100
 
     except Exception as e:
-        # Update failed status in database
+        # Update failed status in database with detailed error
+        error_message = str(e)
+        print(f"❌ Background task failed for {business_type} (task_id: {task_id}):\n{error_message}")
+
         with db_manager.get_session() as db:
             from ..database.models import GenerationJob, JobStatus
             job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
             if job:
                 job.status = JobStatus.FAILED
-                job.error_message = str(e)
+                # Truncate error message if too long for database
+                if len(error_message) > 2000:
+                    job.error_message = error_message[:2000] + "... (truncated)"
+                else:
+                    job.error_message = error_message
                 db.commit()
+                print(f"💾 Saved error to database: {job.error_message[:100]}...")
 
         # Clean up progress info
         if task_id in task_progress:
