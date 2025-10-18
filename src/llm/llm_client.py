@@ -152,26 +152,11 @@ class LLMClient:
             system_prompt (str): System prompt
             requirements_prompt (str): Requirements prompt
         """
-        try:
-            import os
-            import time
-            os.makedirs("debug", exist_ok=True)
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            error_file = f"debug/llm_error_{timestamp}.txt"
-
-            with open(error_file, 'w', encoding='utf-8') as f:
-                f.write(f"LLM API Error Details\n")
-                f.write(f"Timestamp: {timestamp}\n")
-                f.write(f"Error Type: {type(error).__name__}\n")
-                f.write(f"Error Message: {str(error)}\n")
-                f.write(f"API Base URL: {self.config.api_base_url}\n")
-                f.write(f"Model: {self.config.model}\n")
-                f.write(f"System Prompt Length: {len(system_prompt)}\n")
-                f.write(f"Requirements Prompt Length: {len(requirements_prompt)}\n")
-
-            print(f"[INFO] Error details saved to: {error_file}")
-        except Exception as save_error:
-            print(f"[WARN] Could not save error details: {save_error}")
+        print(f"[ERROR] LLM API Error: {type(error).__name__}: {str(error)[:100]}...")
+        print(f"[INFO] API Base URL: {self.config.api_base_url}")
+        print(f"[INFO] Model: {self.config.model}")
+        print(f"[INFO] System Prompt Length: {len(system_prompt)}")
+        print(f"[INFO] Requirements Prompt Length: {len(requirements_prompt)}")
 
     def test_connection(self) -> bool:
         """

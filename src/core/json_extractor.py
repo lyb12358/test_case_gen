@@ -31,7 +31,6 @@ class JSONExtractor:
         # Check if response is empty or only whitespace
         if not response_text or len(response_text.strip()) == 0:
             print("[ERROR] Empty response")
-            JSONExtractor._save_debug_response(response_text, "empty_response")
             return None
 
         # Try to parse the entire response as JSON first
@@ -82,7 +81,6 @@ class JSONExtractor:
         # All extraction attempts failed
         extraction_time = time.time() - start_time
         print(f"[ERROR] JSON extraction failed | Time: {extraction_time:.3f}s")
-        JSONExtractor._save_debug_response(response_text, "extraction_failed")
         return None
 
     @staticmethod
@@ -194,29 +192,4 @@ class JSONExtractor:
         """
         return data.get("test_cases", [])
 
-    @staticmethod
-    def _save_debug_response(response_text: str, error_type: str) -> None:
-        """
-        Save the response text to a debug file for analysis.
-
-        Args:
-            response_text (str): The response text to save
-            error_type (str): Type of error for filename
-        """
-        try:
-            os.makedirs("debug", exist_ok=True)
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            filename = f"debug/llm_response_{timestamp}_{error_type}.txt"
-
-            with open(filename, 'w', encoding='utf-8') as f:
-                f.write(f"LLM Response Debug Information\n")
-                f.write(f"Timestamp: {timestamp}\n")
-                f.write(f"Error Type: {error_type}\n")
-                f.write(f"Response Length: {len(response_text)}\n")
-                f.write("=" * 50 + "\n\n")
-                f.write("Raw Response:\n")
-                f.write(response_text)
-
-            print(f"[DEBUG] Response saved to: {filename}")
-        except Exception as e:
-            print(f"[WARN] Could not save debug response: {e}")
+  
