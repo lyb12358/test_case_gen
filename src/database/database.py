@@ -53,7 +53,36 @@ class DatabaseManager:
         """
         self.config = config
         self.database_url = config.database_url
-        self.engine = create_engine(self.database_url, echo=False)
+
+        # Optimize SQLite for better concurrency
+        if self.database_url.startswith("sqlite"):
+            # Configure SQLite engine with connection pooling and concurrency settings
+            self.engine = create_engine(
+                self.database_url,
+                echo=False,
+                # Connection pooling settings for SQLite
+                pool_size=5,  # Number of connections to maintain
+                max_overflow=10,  # Additional connections beyond pool_size
+                pool_timeout=30,  # Timeout in seconds to get connection
+                pool_recycle=3600,  # Recycle connections every hour
+                # SQLite-specific settings for better concurrency
+                connect_args={
+                    "check_same_thread": False,  # Allow multi-threaded access
+                    "timeout": 30,  # SQLite busy timeout in seconds
+                    "isolation_level": None  # Use autocommit mode for shorter transactions
+                }
+            )
+        else:
+            # Standard configuration for other databases
+            self.engine = create_engine(
+                self.database_url,
+                echo=False,
+                pool_size=10,
+                max_overflow=20,
+                pool_timeout=30,
+                pool_recycle=3600
+            )
+
         self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
 
     def create_tables(self):

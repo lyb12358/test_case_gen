@@ -279,7 +279,7 @@ GET /tasks?status=completed&page=1&size=10
 ```
 
 ## Development Guidelines
-
+不要写emoji表情
 ### Environment Configuration
 Create `.env` file with:
 ```env
@@ -547,5 +547,3 @@ This is a **production-ready** system with comprehensive capabilities:
 The system successfully bridges business requirements and automated test case generation using modern LLM technology, providing an intuitive interface for test management and visualization.
 
 ---
-
-*TSP Test Case Generation System* - Intelligent, automated test case generation for modern telematics services.

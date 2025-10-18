@@ -23,87 +23,142 @@ class JSONExtractor:
         Returns:
             Optional[Dict[str, Any]]: Extracted JSON data or None if not found
         """
-        print(f"🔍 JSON Extraction Started")
-        print(f"📏 Response length: {len(response_text)} characters")
-        print(f"📄 Response lines: {len(response_text.splitlines())}")
+        import time
+        start_time = time.time()
+
+        print(f"[JSON] Extraction Started | Length: {len(response_text)} chars")
 
         # Check if response is empty or only whitespace
         if not response_text or len(response_text.strip()) == 0:
-            print("❌ Response is empty or contains only whitespace")
+            print("[ERROR] Empty response")
             JSONExtractor._save_debug_response(response_text, "empty_response")
             return None
 
-        # Try to parse the entire response as JSON first (optimized for pure JSON responses)
+        # Try to parse the entire response as JSON first
         try:
-            print("🚀 Attempting direct JSON parsing (optimized for pure JSON responses)...")
             result = json.loads(response_text)
-
-            # Validate the parsed JSON structure
-            if isinstance(result, dict):
-                print(f"✅ JSON parsed successfully!")
-                print(f"📋 Top-level keys: {list(result.keys())}")
-
-                # Check for expected structure
-                if 'test_cases' in result:
-                    test_cases = result.get('test_cases', [])
-                    if isinstance(test_cases, list):
-                        print(f"📊 Found {len(test_cases)} test cases in JSON")
-                    else:
-                        print(f"⚠️  'test_cases' field exists but is not a list: {type(test_cases)}")
-                else:
-                    print(f"⚠️  Missing 'test_cases' key in JSON response")
-
-                return result
-            else:
-                print(f"⚠️  JSON parsed but is not a dictionary: {type(result)}")
-                return None
+            extraction_time = time.time() - start_time
+            print(f"[OK] Direct JSON parsing successful | Time: {extraction_time:.3f}s")
+            return JSONExtractor._validate_result(result, extraction_time)
 
         except json.JSONDecodeError as e:
-            print(f"❌ Direct JSON parsing failed: {e}")
-            print(f"📍 Error at line {e.lineno}, column {e.colno}")
-            print(f"🔍 Error context: {e.msg[:100]}...")
+            print(f"[WARN] Direct parsing failed: {str(e)[:50]}...")
 
-            # Save the failed response for debugging
-            JSONExtractor._save_debug_response(response_text, f"json_decode_error_{str(e).replace(' ', '_')[:50]}")
+            # Attempt JSON repair before trying other methods
+            repaired_json = JSONExtractor._attempt_json_repair(response_text, e)
+            if repaired_json:
+                try:
+                    result = json.loads(repaired_json)
+                    extraction_time = time.time() - start_time
+                    print(f"[REPAIR] JSON repair successful | Time: {extraction_time:.3f}s")
+                    return JSONExtractor._validate_result(result, extraction_time)
+                except json.JSONDecodeError:
+                    print("[REPAIR] Repaired JSON still invalid, trying fallback methods")
 
-        # Fallback: Look for JSON code block (for backward compatibility)
-        print("🔄 Fallback: Looking for JSON code block...")
+        # Fallback: Look for JSON code block
         json_match = re.search(r'```json\s*(\{.*?\})\s*```', response_text, re.DOTALL)
         if json_match:
             try:
-                print("📦 Found JSON code block, attempting to parse...")
                 json_content = json_match.group(1)
                 result = json.loads(json_content)
-                print(f"✅ JSON code block parsed successfully! Keys: {list(result.keys())}")
-                return result
-            except json.JSONDecodeError as e:
-                print(f"❌ JSON code block parsing failed: {e}")
-                JSONExtractor._save_debug_response(json_content, f"code_block_error_{str(e).replace(' ', '_')[:50]}")
+                extraction_time = time.time() - start_time
+                print(f"[OK] Code block parsing successful | Time: {extraction_time:.3f}s")
+                return JSONExtractor._validate_result(result, extraction_time)
+            except json.JSONDecodeError:
+                pass
 
-        # Fallback: Look for any JSON object in the response
-        print("🔄 Fallback: Looking for any JSON object...")
+        # Fallback: Look for any JSON object
         json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
         if json_match:
             try:
-                print("📦 Found JSON object, attempting to parse...")
                 json_content = json_match.group(0)
                 result = json.loads(json_content)
-                print(f"✅ JSON object parsed successfully! Keys: {list(result.keys())}")
-                return result
-            except json.JSONDecodeError as e:
-                print(f"❌ JSON object parsing failed: {e}")
-                JSONExtractor._save_debug_response(json_content, f"json_object_error_{str(e).replace(' ', '_')[:50]}")
+                extraction_time = time.time() - start_time
+                print(f"[OK] Object parsing successful | Time: {extraction_time:.3f}s")
+                return JSONExtractor._validate_result(result, extraction_time)
+            except json.JSONDecodeError:
+                pass
 
-        # If no valid JSON found, return None
-        print("💥 All JSON extraction attempts failed")
-        print("📄 Raw response preview (first 500 chars):")
-        print(response_text[:500])
-        if len(response_text) > 500:
-            print(f"... (and {len(response_text) - 500} more characters)")
-
-        # Save the complete response for debugging
+        # All extraction attempts failed
+        extraction_time = time.time() - start_time
+        print(f"[ERROR] JSON extraction failed | Time: {extraction_time:.3f}s")
         JSONExtractor._save_debug_response(response_text, "extraction_failed")
         return None
+
+    @staticmethod
+    def _attempt_json_repair(response_text: str, original_error: json.JSONDecodeError) -> Optional[str]:
+        """
+        Attempt to repair common JSON formatting issues.
+
+        Args:
+            response_text (str): The malformed JSON response
+            original_error (json.JSONDecodeError): The original parsing error
+
+        Returns:
+            Optional[str]: Repaired JSON string or None if repair failed
+        """
+        print("[REPAIR] Attempting JSON repair...")
+
+        try:
+            # Common repair patterns
+            repaired = response_text.strip()
+
+            # Fix unterminated strings
+            if "unterminated string" in str(original_error).lower():
+                # Find incomplete string and attempt to close it
+                lines = repaired.split('\n')
+                for i, line in enumerate(lines):
+                    if line.count('"') % 2 == 1:  # Odd number of quotes = unterminated
+                        lines[i] = line + '"'  # Add closing quote
+                        break
+                repaired = '\n'.join(lines)
+
+            # Fix missing closing braces/brackets
+            if repaired.count('{') > repaired.count('}'):
+                repaired += '}' * (repaired.count('{') - repaired.count('}'))
+            if repaired.count('[') > repaired.count(']'):
+                repaired += ']' * (repaired.count('[') - repaired.count(']'))
+
+            # Remove trailing commas before closing braces/brackets
+            repaired = re.sub(r',(\s*[}\]])', r'\1', repaired)
+
+            # Validate the repair
+            json.loads(repaired)
+            print("[REPAIR] JSON repair successful")
+            return repaired
+
+        except (json.JSONDecodeError, Exception) as e:
+            print(f"[REPAIR] JSON repair failed: {str(e)[:50]}...")
+            return None
+
+    @staticmethod
+    def _validate_result(result: Dict[str, Any], extraction_time: float) -> Dict[str, Any]:
+        """
+        Validate and report on the extracted JSON result.
+
+        Args:
+            result (Dict[str, Any]): The parsed JSON result
+            extraction_time (float): Time taken for extraction
+
+        Returns:
+            Dict[str, Any]: The validated result
+        """
+        if not isinstance(result, dict):
+            print(f"[WARN] Result is not a dictionary: {type(result)}")
+            return None
+
+        # Check for expected structure
+        if 'test_cases' not in result:
+            print("[WARN] Missing 'test_cases' key")
+            return result  # Still return for further processing
+
+        test_cases = result.get('test_cases', [])
+        if isinstance(test_cases, list):
+            print(f"[RESULT] Found {len(test_cases)} test cases")
+        else:
+            print(f"[WARN] 'test_cases' is not a list: {type(test_cases)}")
+
+        return result
 
     @staticmethod
     def validate_json_structure(data: Dict[str, Any], required_key: str = "test_cases") -> bool:
@@ -118,21 +173,13 @@ class JSONExtractor:
             bool: True if structure is valid, False otherwise
         """
         if not isinstance(data, dict):
-            print(f"❌ JSON validation failed: Expected dict, got {type(data)}")
             return False
 
         if required_key not in data:
-            print(f"❌ JSON validation failed: Missing required key '{required_key}'")
-            print(f"📋 Available keys: {list(data.keys())}")
             return False
 
         test_cases = data[required_key]
-        if not isinstance(test_cases, list):
-            print(f"❌ JSON validation failed: '{required_key}' should be a list, got {type(test_cases)}")
-            return False
-
-        print(f"✅ JSON structure validation passed: {len(test_cases)} test cases found")
-        return True
+        return isinstance(test_cases, list)
 
     @staticmethod
     def extract_test_cases_from_json(data: Dict[str, Any]) -> list:
@@ -145,9 +192,7 @@ class JSONExtractor:
         Returns:
             list: List of test cases
         """
-        test_cases = data.get("test_cases", [])
-        print(f"📊 Extracted {len(test_cases)} test cases from JSON")
-        return test_cases
+        return data.get("test_cases", [])
 
     @staticmethod
     def _save_debug_response(response_text: str, error_type: str) -> None:
@@ -172,20 +217,6 @@ class JSONExtractor:
                 f.write("Raw Response:\n")
                 f.write(response_text)
 
-            print(f"💾 Debug response saved to: {filename}")
+            print(f"[DEBUG] Response saved to: {filename}")
         except Exception as e:
-            print(f"⚠️  Could not save debug response: {e}")
-
-  
-    @staticmethod
-    def extract_test_cases_from_json(data: Dict[str, Any]) -> list:
-        """
-        Extract test cases list from JSON data.
-
-        Args:
-            data (Dict[str, Any]): JSON data containing test cases
-
-        Returns:
-            list: List of test cases
-        """
-        return data.get("test_cases", [])
+            print(f"[WARN] Could not save debug response: {e}")

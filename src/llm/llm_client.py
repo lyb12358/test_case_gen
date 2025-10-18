@@ -34,159 +34,144 @@ class LLMClient:
         Returns:
             Optional[str]: LLM response content or None if failed
         """
-        try:
-            print(f"=== LLM API Call Started ===")
-            print(f"Model: {self.config.model}")
-            print(f"API Base: {self.config.api_base_url}")
-            print(f"System prompt length: {len(system_prompt)} chars")
-            print(f"Requirements prompt length: {len(requirements_prompt)} chars")
+        import time
 
-            response = self.client.chat.completions.create(
-                model=self.config.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": requirements_prompt}
-                ],
-                temperature=0.7,
-                max_tokens=60000,
-                response_format={"type": "json_object"}
-            )
+        start_time = time.time()
+        max_attempts = 3
+        base_tokens = 80000
 
-            # Extract response content (direct JSON format)
-            result = response.choices[0].message.content
-
-            # Print usage information if available
-            if hasattr(response, 'usage'):
-                print(f"API Usage: {response.usage}")
-            else:
-                print("API Usage: No usage information available")
-
-            print(f"📦 Response received (length: {len(result)} chars)")
-            print(f"📄 Response lines: {len(result.splitlines())}")
-
-            # Enhanced response validation for JSON format
-            if not result:
-                print("❌ Empty response received from LLM")
-                return None
-
-            if len(result.strip()) == 0:
-                print("❌ Response contains only whitespace")
-                return None
-
-            # Quick JSON format validation
+        for attempt in range(max_attempts):
             try:
-                import json
-                json.loads(result)
-                print("✅ Response is valid JSON format")
-            except json.JSONDecodeError as e:
-                print(f"⚠️  Response is not valid JSON: {e}")
-                print("🔍 This might indicate a problem with the LLM response format")
-                # Don't return None here - let the JSONExtractor handle the detailed parsing
+                print(f"[LLM] API Call Attempt {attempt + 1}/{max_attempts}")
+                print(f"[INFO] Model: {self.config.model} | Tokens: {base_tokens}")
 
-            # Check for common error patterns in response (only for non-JSON responses)
-            if not result.strip().startswith('{'):
-                error_indicators = ["error", "failed", "exception", "cannot", "unable", "sorry"]
-                response_lower = result.lower()
-                error_found = False
+                api_start = time.time()
+                response = self.client.chat.completions.create(
+                    model=self.config.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": requirements_prompt}
+                    ],
+                    temperature=0.7,
+                    max_tokens=base_tokens,
+                    response_format={"type": "json_object"}
+                )
+                api_time = time.time() - api_start
 
-                for indicator in error_indicators:
-                    if indicator in response_lower and len(result) < 500:  # Only check short responses
-                        print(f"⚠️  Response contains error indicator: '{indicator}'")
-                        print(f"Response preview: {result[:200]}...")
-                        error_found = True
-                        break
+                # Extract response content
+                result = response.choices[0].message.content
 
-                if error_found:
-                    print("❌ Response appears to be an error message")
-                    return None
+                if hasattr(response, 'usage'):
+                    print(f"[API] Usage: {response.usage} | Time: {api_time:.2f}s")
+                else:
+                    print(f"[API] Time: {api_time:.2f}s")
 
-            # Show response preview for debugging (optimized for JSON)
-            if result.strip().startswith('{'):
-                print("📋 JSON Response preview (first 300 chars):")
-                print(result[:300])
-                if len(result) > 300:
-                    print(f"... (and {len(result) - 300} more characters)")
+                # Enhanced response validation
+                if not result or len(result.strip()) == 0:
+                    print(f"[ERROR] Empty response on attempt {attempt + 1}")
+                    continue
 
-                # Try to extract and display top-level keys
+                # Check for truncation indicators
+                if self._is_response_truncated(result):
+                    print(f"[WARN] Response truncated on attempt {attempt + 1}")
+                    if attempt < max_attempts - 1:
+                        # Increase token limit for next attempt
+                        base_tokens = min(base_tokens + 20000, 120000)
+                        print(f"[RETRY] With increased token limit: {base_tokens}")
+                        continue
+                    else:
+                        print("[ERROR] Max attempts reached, response still truncated")
+                        return None
+
+                # Quick JSON validation
                 try:
                     import json
-                    parsed = json.loads(result)
-                    if isinstance(parsed, dict):
-                        print(f"🔑 JSON top-level keys: {list(parsed.keys())}")
-                        if 'test_cases' in parsed:
-                            test_cases = parsed.get('test_cases', [])
-                            if isinstance(test_cases, list):
-                                print(f"📊 Test cases count: {len(test_cases)}")
-                except:
-                    pass
-            else:
-                # Show preview for non-JSON responses
-                lines = result.splitlines()
-                print(f"Response preview (first 5 lines):")
-                for i, line in enumerate(lines[:5]):
-                    print(f"  {i+1:2d}: {line[:80]}..." if len(line) > 80 else f"  {i+1:2d}: {line}")
+                    json.loads(result)
+                    total_time = time.time() - start_time
+                    print(f"[OK] LLM call successful | Total time: {total_time:.2f}s | Length: {len(result)} chars")
+                    return result
+                except json.JSONDecodeError as e:
+                    print(f"[WARN] JSON parsing failed on attempt {attempt + 1}: {str(e)[:100]}")
+                    if attempt < max_attempts - 1:
+                        print("[RETRY] Parsing...")
+                        continue
+                    else:
+                        print("[ERROR] Max attempts reached, JSON still invalid")
+                        # Don't return None here - let JSONExtractor handle repair attempts
+                        total_time = time.time() - start_time
+                        print(f"[TIME] Total: {total_time:.2f}s | Response length: {len(result)} chars")
+                        return result
 
-                if len(lines) > 5:
-                    print(f"  ... and {len(lines) - 5} more lines")
+            except Exception as e:
+                print(f"[ERROR] API call failed on attempt {attempt + 1}: {type(e).__name__}: {str(e)[:100]}")
+                if attempt < max_attempts - 1:
+                    print("[RETRY] With backoff...")
+                    time.sleep(2 ** attempt)  # Exponential backoff
+                    continue
+                else:
+                    print("[ERROR] Max attempts reached")
+                    self._log_api_error(e, system_prompt, requirements_prompt)
+                    return None
 
-            print(f"✅ LLM API call successful, response ready for JSON extraction")
-            return result
+        return None
 
-        except Exception as e:
-            print(f"❌ LLM API call failed:")
-            print(f"  Error type: {type(e).__name__}")
-            print(f"  Error message: {str(e)}")
+    def _is_response_truncated(self, response: str) -> bool:
+        """
+        Check if the response appears to be truncated.
 
-            # Enhanced error details for common issues
-            error_str = str(e).lower()
-            if "openai" in error_str or "api" in error_str:
-                if any(word in error_str for word in ["authentication", "unauthorized", "401", "invalid key"]):
-                    print(f"  💡 Possible cause: Invalid API key or authentication issue")
-                    print(f"     Please check your API_KEY in .env file")
-                elif any(word in error_str for word in ["not found", "model", "404"]):
-                    print(f"  💡 Possible cause: Model '{self.config.model}' not available")
-                    print(f"     Please check if the model name is correct")
-                elif any(word in error_str for word in ["timeout", "connection", "network"]):
-                    print(f"  💡 Possible cause: Network timeout or connection issue")
-                    print(f"     Please check your internet connection")
-                elif any(word in error_str for word in ["rate", "limit", "429", "quota"]):
-                    print(f"  💡 Possible cause: API rate limit exceeded")
-                    print(f"     Please wait and try again later")
-                elif any(word in error_str for word in ["length", "token", "too long"]):
-                    print(f"  💡 Possible cause: Request too long")
-                    print(f"     Consider reducing prompt length")
-                elif any(word in error_str for word in ["format", "json", "parse"]):
-                    print(f"  💡 Possible cause: Response format issue")
-                    print(f"     The model may have returned malformed content")
+        Args:
+            response (str): The LLM response
 
-            # Additional debugging information
-            print(f"  API Base URL: {self.config.api_base_url}")
-            print(f"  Model: {self.config.model}")
-            print(f"  Total prompt length: {len(system_prompt) + len(requirements_prompt)} chars")
+        Returns:
+            bool: True if response appears truncated
+        """
+        response = response.strip()
 
-            # Save error details for debugging
-            try:
-                import os
-                import time
-                os.makedirs("debug", exist_ok=True)
-                timestamp = time.strftime("%Y%m%d_%H%M%S")
-                error_file = f"debug/llm_error_{timestamp}.txt"
+        # Check if JSON is properly closed
+        if not response.endswith('}') and not response.endswith(']'):
+            return True
 
-                with open(error_file, 'w', encoding='utf-8') as f:
-                    f.write(f"LLM API Error Details\n")
-                    f.write(f"Timestamp: {timestamp}\n")
-                    f.write(f"Error Type: {type(e).__name__}\n")
-                    f.write(f"Error Message: {str(e)}\n")
-                    f.write(f"API Base URL: {self.config.api_base_url}\n")
-                    f.write(f"Model: {self.config.model}\n")
-                    f.write(f"System Prompt Length: {len(system_prompt)}\n")
-                    f.write(f"Requirements Prompt Length: {len(requirements_prompt)}\n")
+        # Basic JSON structure validation
+        try:
+            import json
+            json.loads(response)
+            return False
+        except json.JSONDecodeError as e:
+            # Check for common truncation patterns
+            error_msg = str(e).lower()
+            if any(indicator in error_msg for indicator in ['unterminated string', 'expecting','incomplete']):
+                return True
+            return False
 
-                print(f"  📄 Error details saved to: {error_file}")
-            except Exception as save_error:
-                print(f"  ⚠️  Could not save error details: {save_error}")
+    def _log_api_error(self, error: Exception, system_prompt: str, requirements_prompt: str) -> None:
+        """
+        Log API error details for debugging.
 
-            return None
+        Args:
+            error (Exception): The error that occurred
+            system_prompt (str): System prompt
+            requirements_prompt (str): Requirements prompt
+        """
+        try:
+            import os
+            import time
+            os.makedirs("debug", exist_ok=True)
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            error_file = f"debug/llm_error_{timestamp}.txt"
+
+            with open(error_file, 'w', encoding='utf-8') as f:
+                f.write(f"LLM API Error Details\n")
+                f.write(f"Timestamp: {timestamp}\n")
+                f.write(f"Error Type: {type(error).__name__}\n")
+                f.write(f"Error Message: {str(error)}\n")
+                f.write(f"API Base URL: {self.config.api_base_url}\n")
+                f.write(f"Model: {self.config.model}\n")
+                f.write(f"System Prompt Length: {len(system_prompt)}\n")
+                f.write(f"Requirements Prompt Length: {len(requirements_prompt)}\n")
+
+            print(f"[INFO] Error details saved to: {error_file}")
+        except Exception as save_error:
+            print(f"[WARN] Could not save error details: {save_error}")
 
     def test_connection(self) -> bool:
         """

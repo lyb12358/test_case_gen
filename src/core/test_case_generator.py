@@ -191,160 +191,76 @@ class TestCaseGenerator:
         Raises:
             Exception: Propagates specific error messages for better debugging
         """
+        import time
         import traceback
 
+        start_time = time.time()
+
         try:
-            print(f"🚀 Starting test case generation for {business_type}")
+            print(f"[START] Test case generation for {business_type}")
 
             # Validate business type
-            try:
-                business_enum = BusinessType(business_type.upper())
-                print(f"✅ Business type validated: {business_enum.value}")
-            except ValueError as e:
-                error_msg = f"Invalid business type '{business_type}'. Supported types: {[bt.value for bt in BusinessType]}"
-                print(f"❌ Error: {error_msg}")
-                print(f"📋 Full validation error: {str(e)}")
-                raise ValueError(error_msg)
+            business_enum = BusinessType(business_type.upper())
+            print(f"[OK] Business type validated: {business_enum.value}")
 
-            print(f"=== Generating Test Cases for {business_enum.value} ===")
-
-            # Build requirements prompt using PromptBuilder
-            print(f"📝 Building requirements prompt for {business_type}...")
-            try:
-                requirements_prompt = self.prompt_builder.build_prompt(business_type)
-                if requirements_prompt is None:
-                    error_msg = f"Could not build requirements prompt for {business_type}"
-                    print(f"❌ Error: {error_msg}")
-                    raise RuntimeError(error_msg)
-                print(f"✅ Requirements prompt built successfully (length: {len(requirements_prompt)} chars)")
-            except Exception as e:
-                error_msg = f"Error building requirements prompt for {business_type}: {str(e)}"
-                print(f"❌ Error: {error_msg}")
-                print(f"📋 Prompt builder traceback:\n{traceback.format_exc()}")
-                raise RuntimeError(error_msg) from e
+            # Build requirements prompt
+            prompt_start = time.time()
+            requirements_prompt = self.prompt_builder.build_prompt(business_type)
+            if requirements_prompt is None:
+                raise RuntimeError(f"Could not build requirements prompt for {business_type}")
+            print(f"[PROMPT] Built | Time: {time.time() - prompt_start:.3f}s | Length: {len(requirements_prompt)}")
 
             # Load system prompt
-            print(f"📄 Loading system prompt from: {self.config.system_prompt_path}")
-            try:
-                system_prompt = load_text_file(self.config.system_prompt_path)
-                if system_prompt is None:
-                    error_msg = "Could not load system prompt"
-                    print(f"❌ Error: {error_msg}")
-                    print(f"📁 System prompt path: {self.config.system_prompt_path}")
-                    raise RuntimeError(error_msg)
-                print(f"✅ System prompt loaded successfully (length: {len(system_prompt)} chars)")
-            except Exception as e:
-                error_msg = f"Error loading system prompt: {str(e)}"
-                print(f"❌ Error: {error_msg}")
-                print(f"📋 System prompt loading traceback:\n{traceback.format_exc()}")
-                raise RuntimeError(error_msg) from e
-
-            print(f"=== Starting LLM API Call for {business_enum.value} ===")
+            system_prompt = load_text_file(self.config.system_prompt_path)
+            if system_prompt is None:
+                raise RuntimeError("Could not load system prompt")
+            print(f"[SYS] System prompt loaded | Length: {len(system_prompt)}")
 
             # Generate test cases using LLM
-            try:
-                response = self.llm_client.generate_test_cases(system_prompt, requirements_prompt)
-                if response is None:
-                    error_msg = "Failed to get response from LLM"
-                    print(f"❌ Error: {error_msg}")
-                    print(f"🔗 LLM API configuration - Base URL: {self.config.api_base_url}, Model: {self.config.model}")
-                    raise RuntimeError(error_msg)
-                print(f"✅ LLM response received (length: {len(response)} chars)")
-            except Exception as e:
-                error_msg = f"LLM API call failed: {str(e)}"
-                print(f"❌ Error: {error_msg}")
-                print(f"📋 LLM API traceback:\n{traceback.format_exc()}")
-                raise RuntimeError(error_msg) from e
+            llm_start = time.time()
+            response = self.llm_client.generate_test_cases(system_prompt, requirements_prompt)
+            if response is None:
+                raise RuntimeError("Failed to get response from LLM")
+            print(f"[LLM] Call completed | Time: {time.time() - llm_start:.2f}s")
 
-            print("=== Processing LLM Response ===")
+            # Extract JSON from response
+            json_start = time.time()
+            json_result = self.json_extractor.extract_json_from_response(response)
+            if json_result is None:
+                print("[ERROR] JSON extraction failed")
+                self._analyze_failed_response(response)
+                raise RuntimeError("JSON extraction failed - no valid JSON found in LLM response")
+            print(f"[JSON] Extracted | Time: {time.time() - json_start:.3f}s")
 
-            # Extract JSON from response (optimized with enhanced logging)
-            try:
-                print("🔍 Starting JSON extraction from LLM response...")
-                json_result = self.json_extractor.extract_json_from_response(response)
+            # Validate JSON structure
+            if not self.json_extractor.validate_json_structure(json_result):
+                print("[ERROR] JSON structure validation failed")
+                if isinstance(json_result, dict):
+                    print(f"[INFO] Available keys: {list(json_result.keys())}")
+                raise RuntimeError("JSON structure validation failed")
 
-                if json_result is None:
-                    error_msg = "JSON extraction failed - no valid JSON found in LLM response"
-                    print(f"❌ {error_msg}")
-                    print("📄 Raw response preview:")
-                    print(response[:800])
-                    if len(response) > 800:
-                        print(f"... (and {len(response) - 800} more characters)")
+            # Report success
+            test_cases = json_result.get('test_cases', [])
+            test_cases_count = len(test_cases) if isinstance(test_cases, list) else 0
+            total_time = time.time() - start_time
 
-                    # Enhanced error analysis
-                    self._analyze_failed_response(response)
-                    raise RuntimeError(error_msg)
+            print(f"[DONE] Generation completed for {business_type}")
+            print(f"[RESULT] Generated {test_cases_count} test cases | Total time: {total_time:.2f}s")
 
-                print(f"✅ JSON extraction successful")
-            except RuntimeError:
-                # Re-raise RuntimeError from JSON extraction
-                raise
-            except Exception as e:
-                error_msg = f"Unexpected error during JSON extraction: {str(e)}"
-                print(f"❌ {error_msg}")
-                print(f"📋 Unexpected error traceback:\n{traceback.format_exc()}")
-                raise RuntimeError(error_msg) from e
-
-            # Validate JSON structure (enhanced with detailed feedback)
-            try:
-                print("🔍 Validating extracted JSON structure...")
-                if not self.json_extractor.validate_json_structure(json_result):
-                    error_msg = "JSON structure validation failed"
-                    print(f"❌ {error_msg}")
-
-                    # Detailed structure analysis
-                    if isinstance(json_result, dict):
-                        print(f"📋 Available keys in JSON: {list(json_result.keys())}")
-                        if 'test_cases' not in json_result:
-                            print("💡 Missing 'test_cases' key - LLM may not have followed the expected format")
-                        else:
-                            test_cases = json_result.get('test_cases')
-                            print(f"📊 'test_cases' field type: {type(test_cases)}")
-                    else:
-                        print(f"📊 JSON root type: {type(json_result)} (expected dict)")
-
-                    raise RuntimeError(error_msg)
-
-                # Success details
-                test_cases = json_result.get('test_cases', [])
-                test_cases_count = len(test_cases) if isinstance(test_cases, list) else 0
-                print(f"✅ JSON structure validated successfully")
-                print(f"📊 Found {test_cases_count} test cases in the JSON response")
-
-                if test_cases_count == 0:
-                    print("⚠️  Warning: No test cases found in the response")
-                    print("💡 This might indicate the LLM couldn't generate valid test cases")
-
-            except RuntimeError:
-                # Re-raise RuntimeError from validation
-                raise
-            except Exception as e:
-                error_msg = f"Unexpected error during JSON validation: {str(e)}"
-                print(f"❌ {error_msg}")
-                print(f"📋 Unexpected validation error traceback:\n{traceback.format_exc()}")
-                raise RuntimeError(error_msg) from e
-
-            # Pretty print the JSON result (truncated for very large responses)
-            print("=== Extracted JSON Preview ===")
-            json_str = json.dumps(json_result, indent=2, ensure_ascii=False)
-            if len(json_str) > 2000:
-                print(json_str[:2000])
-                print(f"... (JSON truncated, total length: {len(json_str)} characters)")
-            else:
-                print(json_str)
-
-            print(f"🎉 Test case generation completed successfully for {business_type}")
             return json_result
 
         except Exception as e:
-            # Re-raise the exception with full context and traceback
-            error_msg = f"Error generating test cases for {business_type}: {str(e)}\n\nFull traceback:\n{traceback.format_exc()}"
-            print(f"💥 Complete failure in generate_test_cases_for_business:\n{error_msg}")
+            total_time = time.time() - start_time
+            error_msg = f"Error generating test cases for {business_type}: {str(e)}"
+            print(f"[ERROR] Generation failed | Time: {total_time:.2f}s | Error: {str(e)[:100]}...")
             raise Exception(error_msg) from e
 
     def save_to_database(self, test_cases_data: Dict[str, Any], business_type: str) -> bool:
         """
         Save test cases to database using new TestCaseGroup + TestCaseItem structure.
+
+        This method has been optimized to split long transactions into multiple short
+        transactions to prevent database blocking of other APIs.
 
         Args:
             test_cases_data (Dict[str, Any]): Test cases data
@@ -356,49 +272,46 @@ class TestCaseGenerator:
         import traceback
 
         try:
-            print(f"💾 Starting database save for {business_type}")
+            print(f"[DB] Starting database save for {business_type}")
 
             # Validate business type
             try:
                 business_enum = BusinessType(business_type.upper())
-                print(f"✅ Business type validated for database: {business_enum.value}")
+                print(f"[DB] Business type validated: {business_enum.value}")
             except ValueError as e:
                 error_msg = f"Invalid business type '{business_type}' for database save: {str(e)}"
-                print(f"❌ Error: {error_msg}")
+                print(f"[ERROR] {error_msg}")
                 raise ValueError(error_msg)
 
             test_cases_list = test_cases_data.get('test_cases', [])
-            print(f"📊 Processing {len(test_cases_list)} test cases for database save")
+            print(f"[DB] Processing {len(test_cases_list)} test cases")
 
             # Remove duplicate test case names, keep the first occurrence
             try:
                 original_count = len(test_cases_list)
                 test_cases_list = self._remove_duplicate_test_cases(test_cases_list)
                 dedup_count = len(test_cases_list)
-                print(f"🔄 Deduplication: {original_count} -> {dedup_count} test cases")
+                print(f"[DB] Deduplication: {original_count} -> {dedup_count} test cases")
             except Exception as e:
                 error_msg = f"Error during deduplication: {str(e)}"
-                print(f"❌ Error: {error_msg}")
+                print(f"[ERROR] {error_msg}")
                 raise RuntimeError(error_msg) from e
 
-            print(f"🗄️ Opening database session...")
-            with self.db_manager.get_session() as db:
-                db_operations = DatabaseOperations(db)
-                print(f"✅ Database session opened successfully")
+            # Split operations into multiple short transactions to avoid blocking other APIs
+            test_case_group = None
+            test_case_items = []
 
-                # Delete existing test case groups and items for this business type
-                try:
-                    print(f"🗑️ Deleting existing test case groups for {business_enum.value}...")
+            # Transaction 1: Delete existing data (short transaction)
+            try:
+                print(f"[DB] Transaction 1: Deleting existing data...")
+                with self.db_manager.get_session() as db:
+                    db_operations = DatabaseOperations(db)
+
+                    # Delete existing test case groups and items
                     deleted_count = db_operations.delete_test_case_groups_by_business_type(business_enum)
-                    print(f"✅ Deleted {deleted_count} existing test case groups for {business_enum.value}")
-                except Exception as e:
-                    error_msg = f"Error deleting existing test case groups: {str(e)}"
-                    print(f"❌ Error: {error_msg}")
-                    raise RuntimeError(error_msg) from e
+                    print(f"[DB] Deleted {deleted_count} existing test case groups")
 
-                # Delete only test case entities (not business/service entities) to prevent UNIQUE constraint errors
-                try:
-                    print(f"🗑️ Deleting existing test case knowledge entities for {business_enum.value}...")
+                    # Delete existing test case knowledge entities
                     deleted_entities_count = db_operations.db.query(KnowledgeEntity).filter(
                         KnowledgeEntity.business_type == business_enum,
                         KnowledgeEntity.type == EntityType.TEST_CASE
@@ -408,98 +321,136 @@ class TestCaseGenerator:
                         KnowledgeEntity.business_type == business_enum,
                         KnowledgeEntity.type == EntityType.TEST_CASE
                     ).delete()
-
                     db_operations.db.commit()
-                    print(f"✅ Deleted {deleted_entities_count} existing test case knowledge entities for {business_enum.value}")
-                except Exception as e:
-                    error_msg = f"Error deleting existing knowledge entities: {str(e)}"
-                    print(f"❌ Error: {error_msg}")
-                    raise RuntimeError(error_msg) from e
+                    print(f"[DB] Deleted {deleted_entities_count} existing test case knowledge entities")
 
-                # Ensure business entities exist before creating test case entities
-                try:
-                    print(f"🏢 Ensuring business entities exist for {business_enum.value}...")
+                print(f"[DB] Transaction 1 completed successfully")
+            except Exception as e:
+                error_msg = f"Error deleting existing data: {str(e)}"
+                print(f"[ERROR] {error_msg}")
+                raise RuntimeError(error_msg) from e
+
+            # Transaction 2: Ensure business entities exist (short transaction)
+            try:
+                print(f"[DB] Transaction 2: Ensuring business entities exist...")
+                with self.db_manager.get_session() as db:
+                    db_operations = DatabaseOperations(db)
                     self._ensure_business_entities_exist(db_operations, business_enum)
-                    print(f"✅ Business entities verified/created")
-                except Exception as e:
-                    error_msg = f"Error ensuring business entities exist: {str(e)}"
-                    print(f"❌ Error: {error_msg}")
-                    raise RuntimeError(error_msg) from e
 
-                # Create new test case group
-                try:
-                    print(f"📁 Creating new test case group for {business_enum.value}...")
-                    generation_metadata = {
-                        'generated_at': test_cases_data.get('generated_at'),
-                        'total_test_cases': len(test_cases_list),
-                        'generator_version': '2.0'
-                    }
+                print(f"[DB] Transaction 2 completed successfully")
+            except Exception as e:
+                error_msg = f"Error ensuring business entities exist: {str(e)}"
+                print(f"[ERROR] {error_msg}")
+                raise RuntimeError(error_msg) from e
 
+            # Transaction 3: Create test case group (short transaction)
+            test_case_group_id = None
+            try:
+                print(f"[DB] Transaction 3: Creating test case group...")
+                generation_metadata = {
+                    'generated_at': test_cases_data.get('generated_at'),
+                    'total_test_cases': len(test_cases_list),
+                    'generator_version': '2.0'
+                }
+
+                with self.db_manager.get_session() as db:
+                    db_operations = DatabaseOperations(db)
                     test_case_group = db_operations.create_test_case_group(
                         business_enum,
                         generation_metadata
                     )
-                    print(f"✅ Created new test case group for {business_enum.value} with ID: {test_case_group.id}")
-                except Exception as e:
-                    error_msg = f"Error creating test case group: {str(e)}"
-                    print(f"❌ Error: {error_msg}")
-                    raise RuntimeError(error_msg) from e
+                    # Get ID inside the transaction before session closes
+                    test_case_group_id = test_case_group.id
 
-                # Create test case items in batch
-                try:
-                    print(f"📝 Creating {len(test_cases_list)} test case items in batch...")
+                print(f"[DB] Transaction 3 completed - Created group with ID: {test_case_group_id}")
+            except Exception as e:
+                error_msg = f"Error creating test case group: {str(e)}"
+                print(f"[ERROR] {error_msg}")
+                raise RuntimeError(error_msg) from e
+
+            # Transaction 4: Create test case items (shorter transaction, batched if needed)
+            try:
+                print(f"[DB] Transaction 4: Creating test case items...")
+                with self.db_manager.get_session() as db:
+                    db_operations = DatabaseOperations(db)
                     test_case_items = db_operations.create_test_case_items_batch(
-                        test_case_group.id,
+                        test_case_group_id,  # Use the captured ID
                         test_cases_list
                     )
-                    print(f"✅ Created {len(test_case_items)} test case items for group {test_case_group.id}")
-                except Exception as e:
-                    error_msg = f"Error creating test case items: {str(e)}"
-                    print(f"❌ Error: {error_msg}")
-                    print(f"📋 Test case items creation traceback:\n{traceback.format_exc()}")
-                    raise RuntimeError(error_msg) from e
 
-                # Create knowledge graph entities for the new test case items
-                try:
-                    print(f"🕸️ Creating knowledge graph entities for {len(test_case_items)} test case items...")
+                    # Capture all required TestCaseItem data before session closes
+                    test_case_items_data = []
+                    for item in test_case_items:
+                        item_data = {
+                            'id': item.id,
+                            'name': item.name,
+                            'description': item.description,
+                            'test_case_id': item.test_case_id,
+                            'module': item.module,
+                            'preconditions': item.preconditions,
+                            'steps': item.steps,
+                            'expected_result': item.expected_result,
+                            'functional_module': item.functional_module,
+                            'functional_domain': item.functional_domain,
+                            'remarks': item.remarks,
+                            'entity_order': item.entity_order
+                        }
+                        test_case_items_data.append(item_data)
+
+                print(f"[DB] Transaction 4 completed - Created {len(test_case_items)} test case items")
+            except Exception as e:
+                error_msg = f"Error creating test case items: {str(e)}"
+                print(f"[ERROR] {error_msg}")
+                print(f"[DEBUG] Test case items creation traceback:\n{traceback.format_exc()}")
+                raise RuntimeError(error_msg) from e
+
+            # Transaction 5: Create knowledge graph entities (shorter transaction)
+            try:
+                print(f"[DB] Transaction 5: Creating knowledge graph entities...")
+                with self.db_manager.get_session() as db:
+                    db_operations = DatabaseOperations(db)
                     self._create_knowledge_entities_for_new_structure(
                         db_operations,
-                        test_case_group,
-                        test_case_items,
+                        test_case_group_id,  # Pass the ID instead of object
+                        test_case_items_data,  # Pass captured data instead of detached objects
                         business_enum
                     )
-                    print(f"✅ Knowledge graph entities created successfully")
-                except Exception as e:
-                    error_msg = f"Error creating knowledge graph entities: {str(e)}"
-                    print(f"❌ Error: {error_msg}")
-                    raise RuntimeError(error_msg) from e
 
-                # Verify data consistency
-                try:
-                    print(f"🔍 Verifying data consistency...")
-                    self._verify_data_consistency(test_case_group, test_case_items, business_enum, db_operations)
-                    print(f"✅ Data consistency verified")
-                except Exception as e:
-                    error_msg = f"Error during data consistency verification: {str(e)}"
-                    print(f"⚠️ Warning: {error_msg}")
-                    # Don't fail the whole operation for consistency check failures
+                print(f"[DB] Transaction 5 completed - Knowledge graph entities created")
+            except Exception as e:
+                error_msg = f"Error creating knowledge graph entities: {str(e)}"
+                print(f"[ERROR] {error_msg}")
+                raise RuntimeError(error_msg) from e
 
-            print(f"🎉 Database save completed successfully for {business_type}")
+            # Transaction 6: Final verification (short transaction, read-only)
+            try:
+                print(f"[DB] Transaction 6: Verifying data consistency...")
+                with self.db_manager.get_session() as db:
+                    db_operations = DatabaseOperations(db)
+                    self._verify_data_consistency(test_case_group_id, test_case_items_data, business_enum, db_operations)
+
+                print(f"[DB] Transaction 6 completed - Data consistency verified")
+            except Exception as e:
+                error_msg = f"Error during data consistency verification: {str(e)}"
+                print(f"[WARNING] {error_msg}")
+                # Don't fail the whole operation for consistency check failures
+
+            print(f"[DB] All transactions completed successfully for {business_type}")
             return True
 
         except Exception as e:
             error_msg = f"Error saving test cases to database for {business_type}: {str(e)}\n\nFull traceback:\n{traceback.format_exc()}"
-            print(f"💥 Complete failure in save_to_database:\n{error_msg}")
+            print(f"[ERROR] Complete failure in save_to_database:\n{error_msg}")
             return False
 
-    def _create_knowledge_entities_for_new_structure(self, db_operations, test_case_group, test_case_items, business_type):
+    def _create_knowledge_entities_for_new_structure(self, db_operations, test_case_group_id, test_case_items_data, business_type):
         """
         Create knowledge graph entities for the new test case structure.
 
         Args:
             db_operations: Database operations instance
-            test_case_group: TestCaseGroup instance
-            test_case_items: List of TestCaseItem instances
+            test_case_group_id: TestCaseGroup ID (integer)
+            test_case_items_data: List of dictionaries containing test case item data
             business_type: Business type enum
         """
         # Get the business entity to associate test cases with
@@ -514,35 +465,35 @@ class TestCaseGenerator:
 
         print(f"Found business entity: {business_entity.name} (ID: {business_entity.id})")
 
-        for item in test_case_items:
+        for item in test_case_items_data:
             # Create test case knowledge entity
             tc_entity = db_operations.create_knowledge_entity(
-                name=item.name,
+                name=item['name'],
                 entity_type=EntityType.TEST_CASE,
-                description=item.description,
+                description=item['description'],
                 business_type=business_type,
                 parent_id=business_entity.id,
-                entity_order=item.entity_order,
+                entity_order=item['entity_order'],
                 extra_data=json.dumps({
-                    'test_case_id': item.test_case_id,
-                    'module': item.module,
-                    'preconditions': json.loads(item.preconditions) if item.preconditions else [],
-                    'steps': json.loads(item.steps) if item.steps else [],
-                    'expected_result': json.loads(item.expected_result) if item.expected_result else [],
-                    'functional_module': item.functional_module,
-                    'functional_domain': item.functional_domain,
-                    'remarks': item.remarks,
-                    'test_case_item_id': item.id
+                    'test_case_id': item['test_case_id'],
+                    'module': item['module'],
+                    'preconditions': json.loads(item['preconditions']) if item['preconditions'] else [],
+                    'steps': json.loads(item['steps']) if item['steps'] else [],
+                    'expected_result': json.loads(item['expected_result']) if item['expected_result'] else [],
+                    'functional_module': item['functional_module'],
+                    'functional_domain': item['functional_domain'],
+                    'remarks': item['remarks'],
+                    'test_case_item_id': item['id']
                 }, ensure_ascii=False)
             )
 
             # Create test case entity mapping
             db_operations.create_test_case_entity(
-                test_case_item_id=item.id,
+                test_case_item_id=item['id'],
                 entity_id=tc_entity.id,
-                name=item.name,
-                description=item.description,
-                extra_metadata=json.dumps({'test_case_item_id': item.id}, ensure_ascii=False)
+                name=item['name'],
+                description=item['description'],
+                extra_metadata=json.dumps({'test_case_item_id': item['id']}, ensure_ascii=False)
             )
 
             # Create relation: business has_test_case test_case_entity
@@ -553,7 +504,7 @@ class TestCaseGenerator:
                 business_type=business_type
             )
 
-        print(f"Created knowledge entities for {len(test_case_items)} test case items")
+        print(f"Created knowledge entities for {len(test_case_items_data)} test case items")
 
     def _ensure_business_entities_exist(self, db_operations, business_type):
         """
@@ -673,13 +624,13 @@ class TestCaseGenerator:
 
         return unique_test_cases
 
-    def _verify_data_consistency(self, test_case_group, test_case_items, business_type, db_operations):
+    def _verify_data_consistency(self, test_case_group_id, test_case_items_data, business_type, db_operations):
         """
         Verify data consistency between TestCaseItems and KnowledgeEntities.
 
         Args:
-            test_case_group: TestCaseGroup instance
-            test_case_items: List of TestCaseItem instances
+            test_case_group_id: TestCaseGroup ID (integer)
+            test_case_items_data: List of dictionaries containing test case item data
             business_type: Business type enum
             db_operations: Database operations instance
         """
@@ -699,18 +650,18 @@ class TestCaseGenerator:
             ).count()
 
             print(f"Data consistency check for {business_type.value}:")
-            print(f"  - TestCaseItems: {len(test_case_items)}")
+            print(f"  - TestCaseItems: {len(test_case_items_data)}")
             print(f"  - KnowledgeEntities (TEST_CASE): {knowledge_entities_count}")
             print(f"  - TestCaseEntity mappings: {test_case_entities_count}")
 
             # Check for inconsistencies
-            if len(test_case_items) != knowledge_entities_count:
-                print(f"WARNING: TestCaseItems count ({len(test_case_items)}) != KnowledgeEntities count ({knowledge_entities_count})")
+            if len(test_case_items_data) != knowledge_entities_count:
+                print(f"WARNING: TestCaseItems count ({len(test_case_items_data)}) != KnowledgeEntities count ({knowledge_entities_count})")
 
-            if len(test_case_items) != test_case_entities_count:
-                print(f"WARNING: TestCaseItems count ({len(test_case_items)}) != TestCaseEntity mappings count ({test_case_entities_count})")
+            if len(test_case_items_data) != test_case_entities_count:
+                print(f"WARNING: TestCaseItems count ({len(test_case_items_data)}) != TestCaseEntity mappings count ({test_case_entities_count})")
 
-            if len(test_case_items) == knowledge_entities_count == test_case_entities_count:
+            if len(test_case_items_data) == knowledge_entities_count == test_case_entities_count:
                 print("✓ Data consistency verified: All counts match")
 
         except Exception as e:

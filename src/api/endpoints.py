@@ -801,12 +801,24 @@ async def generate_test_cases_background(task_id: str, business_type: str):
     """
     Background task for test case generation.
 
+    This function runs blocking operations (LLM calls) in a thread pool to avoid
+    blocking the event loop and other API requests.
+
     Args:
         task_id: Task identifier
         business_type: Business type for generation
     """
+    import time
+    import traceback
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    start_time = time.time()
+
     try:
-        # Update status to running in database
+        print(f"[START] Background task started for {business_type} (ID: {task_id[:8]}...)")
+
+        # Update status to running
         with db_manager.get_session() as db:
             from ..database.models import GenerationJob, JobStatus
             job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
@@ -814,49 +826,53 @@ async def generate_test_cases_background(task_id: str, business_type: str):
                 job.status = JobStatus.RUNNING
                 db.commit()
 
-        # Update progress in memory
         task_progress[task_id]["progress"] = 10
 
-        # Initialize generator
+        # Initialize generator (quick operation)
         generator = TestCaseGenerator(config)
         task_progress[task_id]["progress"] = 30
 
-        # Generate test cases
+        # Run blocking LLM operations in thread pool
         try:
-            test_cases_data = generator.generate_test_cases_for_business(business_type)
-        except ValueError as e:
-            # Business validation errors
-            error_details = f"Business type validation failed for {business_type}: {str(e)}"
-            print(f"❌ Validation error in generate_test_cases_background:\n{error_details}")
-            raise Exception(error_details) from e
-        except RuntimeError as e:
-            # JSON parsing/validation errors
-            error_details = f"JSON processing failed for {business_type}: {str(e)}"
-            print(f"❌ JSON processing error in generate_test_cases_background:\n{error_details}")
-            raise Exception(error_details) from e
+            print(f"[LLM] Starting LLM generation in thread pool...")
+            gen_start = time.time()
+
+            # Create a separate function for the blocking operations
+            def run_blocking_generation():
+                return generator.generate_test_cases_for_business(business_type)
+
+            # Run in thread pool to avoid blocking event loop
+            loop = asyncio.get_event_loop()
+            test_cases_data = await loop.run_in_executor(None, run_blocking_generation)
+
+            print(f"[LLM] Generation completed | Time: {time.time() - gen_start:.2f}s")
         except Exception as e:
-            # Other unexpected errors
-            import traceback
-            error_details = f"Unexpected error generating test cases for {business_type}: {str(e)}\n\nFull traceback:\n{traceback.format_exc()}"
-            print(f"❌ Unexpected error in generate_test_cases_background:\n{error_details}")
-            raise Exception(error_details) from e
+            print(f"[ERROR] Generation failed: {str(e)[:100]}...")
+            raise Exception(f"Generation failed for {business_type}: {str(e)}") from e
 
         task_progress[task_id]["progress"] = 70
 
-        # Save to database (automatically deletes old data)
+        # Save to database (also run in thread pool if it might be blocking)
         try:
-            if not generator.save_to_database(test_cases_data, business_type):
+            print(f"[DB] Starting database save...")
+            db_start = time.time()
+
+            def run_database_save():
+                return generator.save_to_database(test_cases_data, business_type)
+
+            # Run database operations in thread pool
+            success = await loop.run_in_executor(None, run_database_save)
+
+            if not success:
                 raise Exception("Failed to save test cases to database")
+            print(f"[DB] Database save completed | Time: {time.time() - db_start:.2f}s")
         except Exception as e:
-            # Preserve the original error with full traceback for debugging
-            import traceback
-            error_details = f"Failed to save test cases to database for {business_type}: {str(e)}\n\nFull traceback:\n{traceback.format_exc()}"
-            print(f"❌ Detailed error in save_to_database:\n{error_details}")
-            raise Exception(error_details) from e
+            print(f"[ERROR] Database save failed: {str(e)[:100]}...")
+            raise Exception(f"Database save failed for {business_type}: {str(e)}") from e
 
         task_progress[task_id]["progress"] = 90
 
-        # Get the created test case group ID
+        # Get the created test case group ID (quick operation)
         with db_manager.get_session() as db:
             from ..database.models import TestCaseGroup
             group = db.query(TestCaseGroup).filter(
@@ -866,7 +882,7 @@ async def generate_test_cases_background(task_id: str, business_type: str):
             if group:
                 task_progress[task_id]["test_case_id"] = group.id
 
-        # Update completion status in database
+        # Update completion status
         with db_manager.get_session() as db:
             from ..database.models import GenerationJob, JobStatus
             job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
@@ -876,24 +892,23 @@ async def generate_test_cases_background(task_id: str, business_type: str):
                 db.commit()
 
         task_progress[task_id]["progress"] = 100
+        total_time = time.time() - start_time
+
+        print(f"[DONE] Background task completed for {business_type} | Total time: {total_time:.2f}s")
 
     except Exception as e:
-        # Update failed status in database with detailed error
+        total_time = time.time() - start_time
         error_message = str(e)
-        print(f"❌ Background task failed for {business_type} (task_id: {task_id}):\n{error_message}")
+        print(f"[ERROR] Background task failed for {business_type} | Time: {total_time:.2f}s | Error: {error_message[:100]}...")
 
+        # Update failed status in database
         with db_manager.get_session() as db:
             from ..database.models import GenerationJob, JobStatus
             job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
             if job:
                 job.status = JobStatus.FAILED
-                # Truncate error message if too long for database
-                if len(error_message) > 2000:
-                    job.error_message = error_message[:2000] + "... (truncated)"
-                else:
-                    job.error_message = error_message
+                job.error_message = error_message[:2000] + "..." if len(error_message) > 2000 else error_message
                 db.commit()
-                print(f"💾 Saved error to database: {job.error_message[:100]}...")
 
         # Clean up progress info
         if task_id in task_progress:
