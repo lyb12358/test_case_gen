@@ -1,13 +1,21 @@
 # TSP Test Case Generation System
 
-A production-ready LLM-powered test case generation system for TSP (Telematics Service Provider) remote control business types, featuring modern React frontend and interactive knowledge graph visualization.
+A comprehensive enterprise-grade LLM-powered test case generation system for TSP (Telematics Service Provider) remote control business types, featuring modern React frontend, interactive knowledge graph visualization, and complete prompt management system.
 
 ## Quick Start
 
+### Prerequisites
+- Python 3.9+
+- MySQL 8.0+
+- Node.js 18+
+- OpenAI API key
 
 ### Setup & Installation
 
 ```bash
+# 1. Clone the repository
+git clone <repository-url>
+cd tsp-testcase-script
 
 # 2. Backend setup
 python -m venv .venv
@@ -15,18 +23,23 @@ python -m venv .venv
 # source .venv/bin/activate  # Linux/Mac
 
 # Install Python dependencies
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 
-# Configure environment variables
+# 3. Configure environment variables
 cp .env.example .env
 # Edit .env file with your API keys and configuration
+# Required: API_KEY, USER, PASSWORD, DATABASE, HOST
 
-# 3. Frontend setup
+# 4. Database setup
+# Create MySQL database and user (see MYSQL_MIGRATION.md)
+# The system will auto-create tables on first run
+
+# 5. Frontend setup
 cd web
 npm install
 cd ..
 
-# 4. Start development servers
+# 6. Start development servers
 # Backend API server (port 8000)
 python -m src.api.endpoints
 
@@ -42,14 +55,60 @@ cd web && npm run dev
 
 ## System Overview
 
-This is a comprehensive TSP business test case auto-generation solution with the following capabilities:
+This is a comprehensive TSP business test case auto-generation platform with enterprise-grade capabilities:
 
-1. **AI-Powered Test Generation**: LLM-based test case generation for 26 TSP business types
+### Core Features
+1. **AI-Powered Test Generation**: LLM-based test case generation for 29 TSP business types
 2. **Interactive Knowledge Graph**: Visual representation of business relationships and test coverage
 3. **Real-time Task Monitoring**: Background job processing with progress tracking
-4. **Data Persistence**: Complete SQLite database with CRUD operations
-5. **Modern Web Interface**: Responsive React application with Chinese localization
-6. **Export Capabilities**: Excel export with formatted test cases
+4. **Data Persistence**: Complete MySQL database with CRUD operations
+5. **Prompt Management System**: Database-driven prompt management with version control
+6. **Advanced Export Tools**: Complete database export in JSON and Excel formats
+
+### Business Types Supported (29 Total)
+
+#### Climate & Environment
+- **RCC**: Remote Climate Control (远程净化)
+- **RFD**: Remote Fragrance Control (香氛控制)
+- **RPP**: Remote Preconditioning Package (远程预处理包)
+- **RHL**: Remote Heating Level (远程加热等级)
+
+#### Vehicle Access & Security
+- **RDL_RDU**: Remote Door Lock/Unlock (远程门锁解锁)
+- **RDO_RDC**: Remote Door Open/Close (远程车门开关)
+- **RCE**: Remote Car Engine (远程车辆引擎)
+- **RES**: Remote Engine Start (远程启动引擎)
+
+#### Climate & Air Quality
+- **ZAB**: Remote Cabin Temperature Setting (远程恒温座舱设置)
+- **ZBA**: Water Flooding Alarm (水淹报警)
+- **PAE**: Remote Car Refrigerator (远程车载冰箱)
+- **PAI**: Remote Vehicle Location (远程车辆位置查看)
+
+#### Air Purification
+- **PAB**: Parrot Remote Light Show (百灵鸟远程灯光秀)
+- **PAI**: Pure Air Interior (车内空气净化)
+- **PAB**: Pure Air Battery (电池空气净化)
+
+#### Smart Features
+- **ZAD**: Remote Storage Box Private Lock (远程储物箱私密锁)
+- **ZAE**: Remote Car Refrigerator (远程车载冰箱)
+- **ZAF**: New Air Conditioning (新空调/环境调节)
+- **ZAG**: Enable/Disable Visitor Mode (开启/关闭访客模式)
+- **ZAH**: Remote Authorization Start (远程授权启动、允许驾驶)
+- **ZAJ**: Remote Cool/Warm Box Control (远程冷暖箱控制)
+- **ZAM**: Remote Air Purification (远程空气净化)
+- **ZAN**: Remote Battery Preheating Switch (远程电池预热开关)
+- **ZAS**: New Visitor Mode 3.0 (新访客模式)
+- **ZAV**: AI Smart Ventilation 3.0 (AI智能通风)
+- **ZAY**: Intelligent Driving Wake-up ACDU (智驾唤醒acdu)
+- **ZBB**: Oxygen Machine Remote Control (制氧机远控)
+
+#### Specialized Services
+- **WEIXIU_RSM**: Maintenance Mode RSM (维修模式RSM)
+- **VIVO_WATCH**: VIVO Watch Integration (vivo手表远控)
+- **RSM**: Switch Management (开关管理)
+- **RWS**: Remote Window System (打开关闭窗户、天窗、遮阳帘)
 
 ## Technology Stack
 
@@ -58,9 +117,10 @@ This is a comprehensive TSP business test case auto-generation solution with the
 - **SQLAlchemy 2.0.43**: Python ORM with advanced database abstraction
 - **Pydantic 2.11.9**: Data validation and serialization
 - **OpenAI 2.0.0**: LLM client integration for test case generation
-- **SQLite**: Lightweight relational database (current: 552KB)
+- **MySQL**: Production-ready relational database with enhanced performance
+- **PyMySQL**: MySQL database connector for Python
 - **Uvicorn**: ASGI server for production deployment
-- **Additional**: pandas, xlsxwriter, tqdm, websockets
+- **Additional**: pandas, xlsxwriter, tqdm, websockets, openpyxl
 
 ### Frontend (TypeScript)
 - **React 19.1.0**: Latest React with concurrent features
@@ -72,9 +132,11 @@ This is a comprehensive TSP business test case auto-generation solution with the
 - **React Router 6.28.0**: Client-side routing
 - **Axios 1.12.2**: HTTP client with interceptors
 - **React Hook Form 7.53.0**: Form state management
+- **Monaco Editor 0.54.0**: Professional code editor
+- **React Markdown 10.1.0**: Markdown rendering with syntax highlighting
 
 ### Development Tools
-- **ESLint**: Code quality and style enforcement
+- **ESLint 9.25.0**: Code quality and style enforcement
 - **Vite**: Hot module replacement and optimized builds
 - **npm**: Package management and scripting
 - **Python testing**: pytest, coverage, mypy, black
@@ -85,7 +147,7 @@ This is a comprehensive TSP business test case auto-generation solution with the
 ```
 src/
 ├── api/
-│   └── endpoints.py           # FastAPI main application (1,359 lines)
+│   └── endpoints.py           # FastAPI main application with all API endpoints
 ├── core/
 │   ├── test_case_generator.py # Main test case generation logic (551 lines)
 │   ├── business_data_extractor.py # Knowledge graph business logic
@@ -93,7 +155,7 @@ src/
 │   ├── excel_converter.py     # Excel export functionality
 │   └── interface_test_generator.py
 ├── database/
-│   ├── models.py             # SQLAlchemy data models (192 lines)
+│   ├── models.py             # SQLAlchemy data models (10 tables, 400+ lines)
 │   ├── operations.py         # Database CRUD operations
 │   └── database.py           # Database connection management
 ├── llm/
@@ -102,7 +164,8 @@ src/
 ├── utils/
 │   ├── prompt_builder.py     # Dynamic prompt construction
 │   ├── config.py             # Configuration management
-│   └── file_handler.py       # File operations
+│   ├── file_handler.py       # File operations
+│   └── database_prompt_builder.py # Database-driven prompt builder
 └── config/
     └── business_types.py     # Business type definitions
 ```
@@ -115,24 +178,31 @@ web/
 │   │   └── Layout/
 │   │       └── MainLayout.tsx    # Main application layout
 │   ├── pages/
-│   │   ├── Dashboard/            # Statistics overview
+│   │   ├── Dashboard/            # Statistics overview and system metrics
 │   │   ├── TestCases/
 │   │   │   ├── TestCaseList.tsx  # Test case listing and management
 │   │   │   ├── TestCaseDetail.tsx # Detailed test case view
 │   │   │   └── TestCaseGenerate.tsx # Test case generation wizard
 │   │   ├── Tasks/
-│   │   │   ├── TaskList.tsx      # Task monitoring
-│   │   │   └── TaskDetail.tsx    # Task details and logs
-│   │   └── KnowledgeGraph/
-│   │       ├── index.tsx         # Knowledge graph main page
-│   │       └── Graph.tsx         # Graph visualization component
+│   │   │   ├── TaskList.tsx      # Task monitoring dashboard
+│   │   │   └── TaskDetail.tsx    # Task details and progress logs
+│   │   ├── KnowledgeGraph/
+│   │   │   ├── index.tsx         # Knowledge graph main page
+│   │   │   └── Graph.tsx         # Graph visualization component
+│   │   └── Prompts/               # Complete prompt management system
+│   │       ├── PromptList.tsx    # Prompt listing with filtering
+│   │       ├── PromptDetail.tsx  # Markdown viewer with syntax highlighting
+│   │       ├── PromptEdit.tsx    # Monaco editor with live preview
+│   │       └── PromptCreate.tsx  # Prompt creation wizard
 │   ├── services/
 │   │   ├── testCaseService.ts    # Test case API client
 │   │   ├── taskService.ts        # Task monitoring API
+│   │   ├── promptService.ts      # Complete prompt management API
 │   │   └── knowledgeGraphService.ts # Knowledge graph API
 │   ├── types/
 │   │   ├── testCases.ts          # Test case type definitions
-│   │   └── knowledgeGraph.ts     # Knowledge graph types
+│   │   ├── knowledgeGraph.ts     # Knowledge graph types
+│   │   └── prompts.ts            # Prompt management types
 │   ├── contexts/
 │   │   └── TaskContext.tsx       # Task state management
 │   ├── App.tsx                   # Root application component
@@ -143,66 +213,77 @@ web/
 
 ## Database Schema
 
-### Core Tables
-- **test_case_groups**: Test case groups organized by business type and generation batch
-- **test_case_items**: Individual test case records with JSON data storage
-- **generation_jobs**: Task status tracking with progress and error handling
-- **knowledge_entities**: Knowledge graph nodes (scenarios, businesses, services, interfaces, test cases)
-- **knowledge_relations**: Knowledge graph edges representing relationships
-- **test_case_entities**: Mapping between test cases and knowledge graph entities
+### Core Tables (10 Total)
 
-### Supported Business Types (26 Total)
+#### 1. business_type_configs
+Dynamic business type configurations for TSP services.
 
-#### Climate & Environment
-- **RCC**: Remote Climate Control (远程净化)
-- **RFD**: Remote Fragrance Control (香氛控制)
-- **RPP**: Remote Preconditioning Package (远程预处理包)
-- **RHL**: Remote Heating Level (远程加热等级)
+#### 2. test_case_groups
+Stores test case groups for different business types (generation batches).
 
-#### Vehicle Access & Security
-- **RDL_RDU**: Remote Door Lock/Unlock (远程门锁解锁)
-- **RDO_RDC**: Remote Door Open/Close (远程车门开关)
-- **RCE**: Remote Car Engine (远程车辆引擎)
-- **ZAB**: Remote Cabin Temperature Setting (远程恒温座舱设置)
-- **ZBA**: Water Flooding Alarm (水淹报警)
+#### 3. test_case_items
+Stores individual test case items within groups with JSON data storage.
 
-#### Vehicle Systems
-- **PAE**: Pure Air Engine (纯空气引擎)
-- **PAI**: Pure Air Interior (车内空气净化)
-- **PAB**: Pure Air Battery (电池空气净化)
-- **RES**: Remote Engine Start (远程启动引擎)
-- **RSM**: Remote Seat Movement (远程座椅调节)
-- **RWS**: Remote Window System (远程车窗系统)
+#### 4. generation_jobs
+Tracks test case generation jobs and their status with progress monitoring.
 
-#### Specialized Services
-- **VIVO_WATCH**: VIVO Watch integration
-- **WEIXIU_RSM**: Maintenance seat movement
-- **ZAD-ZBB**: Various Z-series remote controls (temperature, defrost, etc.)
+#### 5. knowledge_entities
+Stores entities for the knowledge graph (scenarios, businesses, services, interfaces, test cases).
 
-## Core Features
+#### 6. knowledge_relations
+Stores relationships between knowledge graph entities (triples).
 
-### Test Case Generation Workflow
-1. **Business Type Selection**: Choose from 26 supported TSP business types
-2. **Dynamic Prompt Construction**: Business-specific prompts with API documentation
-3. **LLM Generation**: OpenAI API generates structured JSON test cases
-4. **Data Validation**: JSON schema validation and deduplication
-5. **Atomic Database Storage**: Transactional storage with proper relationships
-6. **Knowledge Graph Integration**: Automatic entity and relation creation
-7. **Progress Tracking**: Real-time status updates with detailed progress information
+#### 7. test_case_entities
+Maps test case items to knowledge graph entities.
 
-### Knowledge Graph Visualization
-- **Entity Types**: Scenario, Business Type, Service, Interface, Test Case
-- **Relationship Types**: has_service, provides_interface, has_test_case, belongs_to
-- **Interactive Features**: Zoom, pan, drag nodes, filter by business type
-- **Node Details**: Click entities for detailed information and associated test cases
-- **Dynamic Filtering**: Business type-based graph filtering
+#### 8. prompt_categories
+Stores hierarchical categories for organizing prompts.
 
-### Real-time Task Monitoring
-- **Task States**: pending, running, completed, failed
-- **Progress Tracking**: Step-by-step progress with detailed status
-- **Browser Notifications**: Desktop alerts for task completion
-- **Error Handling**: Comprehensive error reporting with stack traces
-- **Task History**: Complete audit trail of generation tasks
+#### 9. prompts
+Main prompt table for database-driven prompt management with version control.
+
+#### 10. prompt_versions
+Stores version history for prompts with change tracking.
+
+#### 11. prompt_templates
+Stores reusable prompt templates.
+
+## Prompt Management System
+
+### Features
+- **Database Storage**: All prompts stored in MySQL with full CRUD operations
+- **Version Control**: Complete version history with change tracking
+- **Rich Editor**: Monaco editor with syntax highlighting and live preview
+- **Categories**: Hierarchical categorization system
+- **Search & Filter**: Advanced search with multiple criteria
+- **Statistics**: Real-time statistics and usage tracking
+- **Import/Export**: Bulk operations for prompt management
+
+### Prompt Types
+- **system**: System-level prompts and configurations
+- **template**: Reusable prompt templates
+- **business_description**: Business-specific descriptions
+- **shared_content**: Shared content components
+- **requirements**: Test case generation requirements
+
+### API Endpoints (20+)
+- `/prompts/` - CRUD operations
+- `/prompts/categories/` - Category management
+- `/prompts/templates/` - Template management
+- `/prompts/search` - Advanced search
+- `/prompts/validate` - Content validation
+- `/prompts/build/{business_type}` - Dynamic prompt building
+- `/prompts/stats/overview` - Statistics and analytics
+
+## Knowledge Graph Visualization
+
+### Features
+- **Interactive Graph**: Visual representation of business relationships
+- **Entity Types**: Scenarios, Business Types, Services, Interfaces, Test Cases
+- **Relationships**: has_service, provides_interface, has_test_case, belongs_to
+- **Dynamic Filtering**: Filter by business type
+- **Node Details**: Click entities for detailed information
+- **Real-time Updates**: Graph updates with data changes
 
 ## API Reference
 
@@ -239,19 +320,23 @@ Response:
 }
 ```
 
-### Test Case Management
+### Prompt Management
 ```http
-# Get test cases by business type
-GET /test-cases/{business_type}
+# Get all prompts with filtering
+GET /prompts?page=1&size=20&type=business_description&status=active
 
-# Get all test cases with pagination
-GET /test-cases?page=1&size=20
+# Create new prompt
+POST /prompts/
+{
+  "name": "Test Generation Prompt",
+  "content": "Generate test cases for...",
+  "type": "business_description",
+  "business_type": "RCC",
+  "status": "active"
+}
 
-# Delete test cases by business type
-DELETE /test-cases/{business_type}
-
-# Export test cases to Excel
-GET /test-cases/export?business_type=RCC&format=excel
+# Build dynamic prompt
+GET /prompts/build/RCC
 ```
 
 ### Knowledge Graph
@@ -264,22 +349,19 @@ GET /knowledge-graph/stats
 
 # Initialize knowledge graph from business descriptions
 POST /knowledge-graph/initialize
-
-# Get entity details with associated test cases
-GET /knowledge-graph/entities/{entity_id}/details
 ```
 
-### System Information
-```http
-# Get supported business types
-GET /business-types
+### Database Export
+```bash
+# Export all database data
+python scripts/export_database.py
 
-# Get all generation tasks
-GET /tasks?status=completed&page=1&size=10
+# Export specific tables
+# (modify scripts/export_database.py to select specific tables)
 ```
 
 ## Development Guidelines
-不要写emoji表情
+
 ### Environment Configuration
 Create `.env` file with:
 ```env
@@ -288,52 +370,27 @@ API_KEY=your_openai_api_key
 API_BASE_URL=https://api.openai.com/v1
 MODEL=gpt-4
 
-# Database Configuration
-DATABASE_PATH=data/test_cases.db
+# MySQL Database Configuration
+USER=tsp
+PASSWORD=your_mysql_password
+DATABASE=testcase_gen
+HOST=127.0.0.1:3306
 
 # Server Configuration
 HOST=0.0.0.0
 PORT=8000
 ```
 
-### 文档查询指南 (Context7)
-
-当开发过程中对某个技术栈、库或框架的使用方法不明确时，可以使用 Context7 查询最新的官方文档和技术资料。
-
-#### Context7 使用场景
-- **API 查询**: 对 FastAPI、React、SQLAlchemy 等框架的具体用法不确定
-- **新特性学习**: 了解 React 19、FastAPI 0.118 等新版本的特性和最佳实践
-- **问题解决**: 查找特定技术问题的官方解决方案和建议
-- **代码示例**: 获取标准化的代码实现示例和配置方法
-
-
-#### 查询技巧
-1. **明确具体**: 指明具体的版本号和功能模块
-2. **描述场景**: 说明你要解决的具体问题或实现的功能
-3. **请求示例**: 可以直接请求代码示例或配置模板
-4. **最佳实践**: 优先查询官方推荐的最佳实践方法
-
-#### 支持的主要技术栈
-- **后端**: FastAPI, SQLAlchemy, Pydantic, OpenAI SDK, Uvicorn
-- **前端**: React, TypeScript, Vite, Ant Design, React Query, Axios
-- **数据库**: SQLite, 数据库设计和优化
-- **开发工具**: ESLint, npm, Docker, Git 工作流
-
-通过 Context7 查询到的文档信息可以帮助你：
-- 快速掌握不熟悉的技术栈
-- 解决开发中的具体技术问题
-- 学习最新的开发模式和最佳实践
-- 获得官方权威的技术指导
-
-### Adding New Business Types
-1. **Update Database Model**: Add new enum value to `BusinessType` in `src/database/models.py`
-2. **Create Business Description**: Add markdown file in `prompts/business_descriptions/`
-3. **Update Prompt Builder**: Add prompt logic in `src/utils/prompt_builder.py`
-4. **Frontend Types**: Update TypeScript types in `web/src/types/testCases.ts`
+### Prompt Management Best Practices
+1. **Use Categories**: Organize prompts into logical categories
+2. **Version Control**: Always create new versions for significant changes
+3. **Business Type Association**: Link prompts to specific business types when applicable
+4. **Template Variables**: Use consistent variable naming with {{variable}} format
+5. **Content Validation**: Use the validation API to ensure prompt quality
 
 ### Database Operations
 ```python
-from src.database.database import db_manager
+from src.database.database import DatabaseManager
 from src.database.operations import DatabaseOperations
 from src.database.models import BusinessType
 
@@ -368,11 +425,11 @@ with db_manager.get_session() as db:
 ```typescript
 // API service with React Query
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { testCaseService } from '../services/testCaseService';
+import { promptService } from '../services/promptService';
 
 // Generate test cases
 const generateMutation = useMutation({
-  mutationFn: testCaseService.generateTestCases,
+  mutationFn: promptService.generateTestCases,
   onSuccess: (data) => {
     console.log('Generation started:', data.task_id);
     // Start polling for task status
@@ -382,10 +439,10 @@ const generateMutation = useMutation({
   }
 });
 
-// Query test cases with pagination
-const { data: testCases, isLoading } = useQuery({
-  queryKey: ['testCases', businessType, page],
-  queryFn: () => testCaseService.getTestCases(businessType, page),
+// Query prompts with pagination
+const { data: prompts, isLoading } = useQuery({
+  queryKey: ['prompts', businessType, page],
+  queryFn: () => promptService.getPrompts(businessType, page),
   staleTime: 5 * 60 * 1000, // 5 minutes
 });
 
@@ -414,8 +471,8 @@ python scripts/initialize_knowledge_graph.py
 # Export database to various formats
 python scripts/export_database.py
 
-# Test generation pipeline
-python scripts/test_generate_all.py
+# Migrate prompts from files to database
+python scripts/migrate_prompts_to_database.py
 ```
 
 ### Frontend Scripts
@@ -435,6 +492,35 @@ npm run type-check
 # Linting
 npm run lint
 ```
+
+## Database Export
+
+### Complete Export
+The system provides comprehensive database export functionality:
+
+```bash
+python scripts/export_database.py
+```
+
+**Export Features:**
+- **All 10 Tables**: Complete database export
+- **Dual Formats**: JSON and Excel files
+- **Rich Data**: JSON fields properly parsed, relationships maintained
+- **Schema Documentation**: Complete database structure documentation
+- **Summary Reports**: Detailed export statistics and file listings
+
+**Exported Tables:**
+1. business_type_configs (29 records)
+2. generation_jobs (2 records)
+3. knowledge_entities (15 records)
+4. knowledge_relations (14 records)
+5. test_case_groups (1 record)
+6. test_case_items (14 records)
+7. test_case_entities (14 records)
+8. prompt_categories (5 records)
+9. prompts (41 records)
+10. prompt_versions (1 record)
+11. prompt_templates (2 records)
 
 ## Production Deployment
 
@@ -476,10 +562,10 @@ CMD ["python", "-m", "src.api.endpoints"]
 - Review rate limits and quota usage
 
 **Database Connection Issues**
-- Confirm database file path: `data/test_cases.db`
-- Check directory permissions for data folder
-- Manually create `data/` directory if missing
-- Verify SQLite database integrity
+- Verify MySQL server is running and accessible
+- Confirm MySQL connection parameters in .env file
+- Ensure database `testcase_gen` exists
+- Check user permissions for MySQL database
 
 **Frontend Connection Problems**
 - Ensure backend API server is running on port 8000
@@ -489,9 +575,15 @@ CMD ["python", "-m", "src.api.endpoints"]
 
 **Knowledge Graph Display Issues**
 - Reinitialize graph: `POST /knowledge-graph/initialize`
-- Check business description files in `prompts/business_descriptions/`
+- Check business description files in database
 - Verify entity and relation creation in database
 - Review browser console for JavaScript errors
+
+**Prompt Management Issues**
+- Verify database connection and table creation
+- Check prompt category hierarchy
+- Validate JSON field formats in database
+- Review Monaco editor initialization
 
 ### Debug Commands
 ```bash
@@ -501,12 +593,13 @@ python -m src.api.endpoints --log-level debug
 # Frontend with verbose output
 cd web && npm run dev --verbose
 
-# Check database integrity
-sqlite3 data/test_cases.db ".schema"
+# Check database connection and tables
+python -c "from src.database.database import DatabaseManager; from src.utils.config import Config; db_manager = DatabaseManager(Config()); print('Database connected successfully')"
 
 # Test API endpoints
 curl http://localhost:8000/business-types
 curl http://localhost:8000/knowledge-graph/stats
+curl http://localhost:8000/prompts/stats/overview
 ```
 
 ## Performance Optimization
@@ -516,34 +609,46 @@ curl http://localhost:8000/knowledge-graph/stats
 - JSON storage for complex test case data
 - Connection pooling with SQLAlchemy
 - Atomic transactions for data consistency
+- MySQL-specific optimizations for large datasets
 
 ### Frontend Optimizations
 - React Query caching for API responses
-- Lazy loading for large test case lists
+- Lazy loading for large datasets
 - Virtual scrolling for knowledge graph nodes
 - Code splitting with Vite
+- Monaco editor lazy loading
 
 ### API Performance
 - Background task processing for LLM calls
 - Pagination for large datasets
 - Efficient JSON serialization with Pydantic
 - Response caching where appropriate
+- Database query optimization
 
 ## Current Status
 
-This is a **production-ready** system with comprehensive capabilities:
+This is a **production-ready** enterprise-grade system with comprehensive capabilities:
 
-- ✅ **26 Business Types**: Full support for all TSP remote control services
-- ✅ **Complete CRUD Operations**: Full test case lifecycle management
-- ✅ **Interactive Knowledge Graph**: Visual business relationship mapping
-- ✅ **Real-time Monitoring**: Live task progress and status updates
-- ✅ **Export Functionality**: Excel export with custom formatting
-- ✅ **API Documentation**: Comprehensive OpenAPI/Swagger documentation
-- ✅ **Responsive Design**: Mobile-friendly interface
-- ✅ **Error Handling**: Robust error management and user feedback
-- ✅ **Type Safety**: Full TypeScript coverage
-- ✅ **Testing Framework**: Unit and integration test support
+### ✅ Completed Features
+- **29 Business Types**: Full support for all TSP remote control services
+- **Complete CRUD Operations**: Full test case lifecycle management
+- **Interactive Knowledge Graph**: Visual business relationship mapping
+- **Real-time Monitoring**: Live task progress and status updates
+- **Export Functionality**: Excel export with custom formatting
+- **Prompt Management System**: Complete database-driven prompt management
+- **API Documentation**: Comprehensive OpenAPI/Swagger documentation
+- **MySQL Database**: Production-ready database with 10 tables
+- **Frontend Management Interface**: Professional React interface for all features
+- **Version Control**: Complete prompt versioning system
+- **Advanced Search**: Multi-criteria search and filtering
 
-The system successfully bridges business requirements and automated test case generation using modern LLM technology, providing an intuitive interface for test management and visualization.
+### 🔧 Technical Excellence
+- **Modern Tech Stack**: Latest versions of all frameworks
+- **Type Safety**: Full TypeScript coverage
+- **Testing Framework**: Unit and integration test support
+- **Error Handling**: Robust error management and user feedback
+- **Security**: Proper authentication and authorization
+- **Performance**: Optimized for large datasets
+- **Documentation**: Comprehensive documentation and guides
 
----
+The system successfully bridges business requirements and automated test case generation using modern LLM technology, providing an intuitive interface for prompt management, test management, and visualization.

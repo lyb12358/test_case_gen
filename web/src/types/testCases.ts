@@ -3,7 +3,7 @@
  */
 
 export interface GenerateTestCaseRequest {
-  business_type: string; // RCC, RFD, ZAB, ZBA
+  business_type: string; // Business type code (e.g., RCC, RFD, ZAB, ZBA, etc.)
 }
 
 export interface GenerateResponse {

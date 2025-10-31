@@ -52,7 +52,7 @@ const NodeLegend: React.FC<NodeLegendProps> = ({
       name: '业务',
       color: '#1890ff',
       icon: <DatabaseOutlined />,
-      description: '具体业务类型（RCC、RFD、ZAB、ZBA）'
+      description: '具体业务类型（如RCC、RFD、ZAB等远程控制业务）'
     },
     {
       type: 'interface',

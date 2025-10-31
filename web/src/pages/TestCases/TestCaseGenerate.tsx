@@ -68,13 +68,13 @@ const TestCaseGenerate: React.FC = () => {
   }, [taskState.currentTask?.status, minDisplayTimer]);
 
   // 获取业务类型列表
-  const { data: businessTypesData, isLoading: typesLoading } = useQuery({
+  const { data: businessTypesData, isLoading: typesLoading, error: typesError } = useQuery({
     queryKey: ['businessTypes'],
     queryFn: testCaseService.getBusinessTypes,
   });
 
   // 获取业务类型映射（包含中文名称和描述）
-  const { data: businessTypesMapping } = useQuery({
+  const { data: businessTypesMapping, error: mappingError } = useQuery({
     queryKey: ['businessTypesMapping'],
     queryFn: testCaseService.getBusinessTypesMapping,
   });
@@ -197,6 +197,27 @@ const TestCaseGenerate: React.FC = () => {
 
     return step;
   })();
+
+  // 错误处理
+  if (typesError || mappingError) {
+    return (
+      <div>
+        <Title level={2}>生成测试用例</Title>
+        <Card>
+          <Result
+            status="error"
+            title="加载失败"
+            subTitle="无法加载业务类型数据，请检查网络连接或刷新页面重试"
+            extra={[
+              <Button key="retry" type="primary" onClick={() => window.location.reload()}>
+                刷新页面
+              </Button>
+            ]}
+          />
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div>

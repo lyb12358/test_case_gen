@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Export all database data to output folder.
-This script exports all data from the SQLite database to JSON and Excel files.
+This script exports all data from the MySQL database to JSON and Excel files.
 """
 
 import sys
@@ -34,38 +34,7 @@ def export_table_to_json(db_operations, db_manager, table_name, output_dir):
     """Export table data to JSON file."""
     try:
         with db_manager.get_session() as db:
-            if table_name == "test_cases":
-                from src.database.models import TestCaseGroup, TestCaseItem
-                # Query test case groups with their items
-                groups = db.query(TestCaseGroup).all()
-                data = []
-                for group in groups:
-                    # Get all items for this group
-                    items = db.query(TestCaseItem).filter(TestCaseItem.group_id == group.id).all()
-
-                    # Create a record for each test case item
-                    for item in items:
-                        data.append({
-                            'id': item.id,
-                            'group_id': group.id,
-                            'business_type': group.business_type.value,
-                            'test_case_id': item.test_case_id,
-                            'name': item.name,
-                            'description': item.description,
-                            'module': item.module,
-                            'functional_module': item.functional_module,
-                            'functional_domain': item.functional_domain,
-                            'preconditions': json.loads(item.preconditions) if item.preconditions else [],
-                            'steps': json.loads(item.steps) if item.steps else [],
-                            'expected_result': json.loads(item.expected_result) if item.expected_result else [],
-                            'remarks': item.remarks,
-                            'entity_order': item.entity_order,
-                            'generation_metadata': json.loads(group.generation_metadata) if group.generation_metadata else None,
-                            'created_at': item.created_at.isoformat(),
-                            'updated_at': group.updated_at.isoformat() if group.updated_at else None
-                        })
-
-            elif table_name == "test_case_groups":
+            if table_name == "test_case_groups":
                 from src.database.models import TestCaseGroup
                 query = db.query(TestCaseGroup)
                 data = []
@@ -161,6 +130,91 @@ def export_table_to_json(db_operations, db_manager, table_name, output_dir):
                         'created_at': relation.created_at.isoformat()
                     })
 
+            elif table_name == "business_type_configs":
+                from src.database.models import BusinessTypeConfig
+                query = db.query(BusinessTypeConfig)
+                data = []
+                for config in query.all():
+                    data.append({
+                        'id': config.id,
+                        'code': config.code,
+                        'name': config.name,
+                        'description': config.description,
+                        'category': config.category,
+                        'interface_type': config.interface_type,
+                        'interface_entity': config.interface_entity,
+                        'is_active': config.is_active,
+                        'created_at': config.created_at.isoformat(),
+                        'updated_at': config.updated_at.isoformat()
+                    })
+
+            elif table_name == "prompt_categories":
+                from src.database.models import PromptCategory
+                query = db.query(PromptCategory)
+                data = []
+                for category in query.all():
+                    data.append({
+                        'id': category.id,
+                        'name': category.name,
+                        'description': category.description,
+                        'parent_id': category.parent_id,
+                        'order': category.order,
+                        'created_at': category.created_at.isoformat()
+                    })
+
+            elif table_name == "prompts":
+                from src.database.models import Prompt
+                query = db.query(Prompt)
+                data = []
+                for prompt in query.all():
+                    data.append({
+                        'id': prompt.id,
+                        'name': prompt.name,
+                        'content': prompt.content,
+                        'type': prompt.type.value,
+                        'business_type': prompt.business_type.value if prompt.business_type else None,
+                        'status': prompt.status.value,
+                        'author': prompt.author,
+                        'version': prompt.version,
+                        'tags': json.loads(prompt.tags) if prompt.tags else None,
+                        'variables': json.loads(prompt.variables) if prompt.variables else None,
+                        'extra_metadata': json.loads(prompt.extra_metadata) if prompt.extra_metadata else None,
+                        'category_id': prompt.category_id,
+                        'file_path': prompt.file_path,
+                        'created_at': prompt.created_at.isoformat(),
+                        'updated_at': prompt.updated_at.isoformat() if prompt.updated_at else None
+                    })
+
+            elif table_name == "prompt_versions":
+                from src.database.models import PromptVersion
+                query = db.query(PromptVersion)
+                data = []
+                for version in query.all():
+                    data.append({
+                        'id': version.id,
+                        'prompt_id': version.prompt_id,
+                        'version_number': version.version_number,
+                        'content': version.content,
+                        'changelog': version.changelog,
+                        'created_by': version.created_by,
+                        'created_at': version.created_at.isoformat()
+                    })
+
+            elif table_name == "prompt_templates":
+                from src.database.models import PromptTemplate
+                query = db.query(PromptTemplate)
+                data = []
+                for template in query.all():
+                    data.append({
+                        'id': template.id,
+                        'name': template.name,
+                        'template_content': template.template_content,
+                        'description': template.description,
+                        'variables': json.loads(template.variables) if template.variables else None,
+                        'created_at': template.created_at.isoformat(),
+                        'updated_at': template.updated_at.isoformat()
+                    })
+
             # Write to JSON file
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             json_file = output_dir / f"{table_name}_{timestamp}.json"
@@ -185,7 +239,7 @@ def export_table_to_excel(db_operations, table_name, output_dir, data):
         df = pd.DataFrame(data)
 
         # Flatten nested objects for better Excel display
-        if table_name in ["test_cases", "test_case_items", "test_case_groups", "test_case_entities"]:
+        if table_name in ["test_case_items", "test_case_groups", "test_case_entities", "prompts", "prompt_versions", "prompt_templates"]:
             # Convert list fields to strings for better Excel display
             if 'preconditions' in df.columns:
                 df['preconditions'] = df['preconditions'].apply(lambda x: '; '.join(x) if isinstance(x, list) else str(x))
@@ -194,9 +248,14 @@ def export_table_to_excel(db_operations, table_name, output_dir, data):
             if 'expected_result' in df.columns:
                 df['expected_result'] = df['expected_result'].apply(lambda x: '; '.join(x) if isinstance(x, list) else str(x))
             # Convert JSON fields to strings if they exist
-            for json_field in ['generation_metadata', 'tags', 'extra_metadata']:
+            for json_field in ['generation_metadata', 'tags', 'extra_metadata', 'variables']:
                 if json_field in df.columns:
                     df[json_field] = df[json_field].apply(lambda x: json.dumps(x, ensure_ascii=False) if x else '')
+            # Handle prompt content fields (may be very long)
+            if 'content' in df.columns:
+                df['content'] = df['content'].apply(lambda x: x[:1000] + '...' if len(str(x)) > 1000 else str(x))
+            if 'template_content' in df.columns:
+                df['template_content'] = df['template_content'].apply(lambda x: x[:1000] + '...' if len(str(x)) > 1000 else str(x))
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         excel_file = output_dir / f"{table_name}_{timestamp}.xlsx"
@@ -218,7 +277,22 @@ def export_database_schema(db_operations, db_manager, output_dir):
 
 ## Tables Overview
 
-### 1. test_case_groups
+### 1. business_type_configs
+Stores dynamic business type configurations for TSP services.
+
+**Columns:**
+- `id` (Integer, Primary Key): Unique identifier
+- `code` (String, Unique): Business type code (RCC, RFD, etc.)
+- `name` (String): Business type display name
+- `description` (Text): Business type description
+- `category` (String): Business category grouping
+- `interface_type` (String): Interface type (remote_control_api, etc.)
+- `interface_entity` (String): Interface entity name
+- `is_active` (Boolean): Whether the business type is active
+- `created_at` (DateTime): Record creation timestamp
+- `updated_at` (DateTime): Last update timestamp
+
+### 2. test_case_groups
 Stores test case groups for different business types (generation batches).
 
 **Columns:**
@@ -306,6 +380,70 @@ Maps test case items to knowledge graph entities.
 - `test_case_item_id` → `test_case_items.id`
 - `entity_id` → `knowledge_entities.id`
 
+### 7. prompt_categories
+Stores hierarchical categories for organizing prompts.
+
+**Columns:**
+- `id` (Integer, Primary Key): Unique identifier
+- `name` (String): Category name
+- `description` (Text): Category description
+- `parent_id` (Integer, Foreign Key): Parent category ID for hierarchy
+- `order` (Float): Category order for sorting
+- `created_at` (DateTime): Category creation timestamp
+
+**Relationships:**
+- `parent_id` → `prompt_categories.id` (self-referential)
+
+### 8. prompts
+Main prompt table for database-driven prompt management.
+
+**Columns:**
+- `id` (Integer, Primary Key): Unique identifier
+- `name` (String): Prompt name
+- `content` (Text): Prompt content/text
+- `type` (Enum): Prompt type (system, template, business_description, shared_content, requirements)
+- `business_type` (Enum): Associated business type (optional)
+- `status` (Enum): Prompt status (active, draft, archived, deprecated)
+- `author` (String): Prompt author
+- `version` (String): Version string
+- `tags` (Text): JSON array of tags
+- `variables` (Text): JSON array of template variables
+- `extra_metadata` (Text): JSON string for additional metadata
+- `category_id` (Integer, Foreign Key): Reference to prompt_categories.id
+- `file_path` (String): Original file path for migration tracking
+- `created_at` (DateTime): Prompt creation timestamp
+- `updated_at` (DateTime): Last update timestamp
+
+**Relationships:**
+- `category_id` → `prompt_categories.id`
+
+### 9. prompt_versions
+Stores version history for prompts with change tracking.
+
+**Columns:**
+- `id` (Integer, Primary Key): Unique identifier
+- `prompt_id` (Integer, Foreign Key): Reference to prompts.id
+- `version_number` (String): Version identifier
+- `content` (Text): Version-specific content
+- `changelog` (Text): Change description
+- `created_by` (String): Author of this version
+- `created_at` (DateTime): Version creation timestamp
+
+**Relationships:**
+- `prompt_id` → `prompts.id`
+
+### 10. prompt_templates
+Stores reusable prompt templates.
+
+**Columns:**
+- `id` (Integer, Primary Key): Unique identifier
+- `name` (String): Template name
+- `template_content` (Text): Template content with placeholders
+- `description` (Text): Template description
+- `variables` (Text): JSON array of template variables
+- `created_at` (DateTime): Template creation timestamp
+- `updated_at` (DateTime): Last update timestamp
+
 ## Entity Types
 
 ### Business Types
@@ -351,6 +489,19 @@ Maps test case items to knowledge graph entities.
 - **completed**: Job finished successfully
 - **failed**: Job finished with errors
 
+### Prompt Types
+- **system**: System-level prompts and configurations
+- **template**: Reusable prompt templates
+- **business_description**: Business-specific descriptions
+- **shared_content**: Shared content components
+- **requirements**: Test case generation requirements
+
+### Prompt Status Types
+- **active**: Prompt is active and in use
+- **draft**: Prompt is in draft state
+- **archived**: Prompt is archived but preserved
+- **deprecated**: Prompt is deprecated and should not be used
+
 ---
 *Generated on: """ + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + """
 """
@@ -374,11 +525,6 @@ def main():
     try:
         # Initialize configuration and database
         config = Config()
-
-        # Ensure data directory exists
-        db_path = Path(config.database_path)
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-
         db_manager = DatabaseManager(config)
 
         # Create output directory if it doesn't exist
@@ -389,8 +535,20 @@ def main():
         with db_manager.get_session() as db:
             db_operations = DatabaseOperations(db)
 
-            # Tables to export
-            tables = ["test_cases", "generation_jobs", "knowledge_entities", "knowledge_relations", "test_case_groups", "test_case_items", "test_case_entities"]
+            # Tables to export (all 10 database tables)
+            tables = [
+                "business_type_configs",
+                "generation_jobs",
+                "knowledge_entities",
+                "knowledge_relations",
+                "test_case_groups",
+                "test_case_items",
+                "test_case_entities",
+                "prompt_categories",
+                "prompts",
+                "prompt_versions",
+                "prompt_templates"
+            ]
 
             total_records = 0
             all_data = {}

@@ -12,6 +12,7 @@ import TestCaseGenerate from '@/pages/TestCases/TestCaseGenerate';
 import TaskList from '@/pages/Tasks/TaskList';
 import TaskDetail from '@/pages/Tasks/TaskDetail';
 import KnowledgeGraph from '@/pages/KnowledgeGraph';
+import { PromptList, PromptEditor, PromptDetail } from '@/pages/Prompts';
 import { TaskProvider } from '@/contexts/TaskContext';
 
 const queryClient = new QueryClient({
@@ -47,9 +48,23 @@ const App: React.FC = () => {
                   <Route path="generate" element={<TestCaseGenerate />} />
                   <Route path=":id" element={<TestCaseDetail />} />
                 </Route>
+                {/* 支持无连字符的路径格式 */}
+                <Route path="testcases">
+                  <Route index element={<TestCaseList />} />
+                  <Route path="list" element={<TestCaseList />} />
+                  <Route path="generate" element={<TestCaseGenerate />} />
+                  <Route path=":id" element={<TestCaseDetail />} />
+                </Route>
                 <Route path="tasks">
                   <Route index element={<TaskList />} />
                   <Route path=":id" element={<TaskDetail />} />
+                </Route>
+                <Route path="prompts">
+                  <Route index element={<PromptList />} />
+                  <Route path="list" element={<PromptList />} />
+                  <Route path="create" element={<PromptEditor />} />
+                  <Route path=":id" element={<PromptDetail />} />
+                  <Route path=":id/edit" element={<PromptEditor />} />
                 </Route>
                 <Route path="knowledge-graph" element={<KnowledgeGraph />} />
               </Route>

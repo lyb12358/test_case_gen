@@ -20,11 +20,12 @@ from ..core.test_case_generator import TestCaseGenerator
 from ..utils.config import Config
 from ..database.database import DatabaseManager
 from ..database.operations import DatabaseOperations
-from ..database.models import BusinessType, JobStatus, EntityType
+from ..database.models import BusinessType, JobStatus, EntityType, BusinessTypeConfig
 from ..core.business_data_extractor import BusinessDataExtractor
 from ..core.excel_converter import ExcelConverter
 from ..models.test_case import TestCase
-from ..config.business_types import get_business_type_mapping
+from .prompt_endpoints import router as prompt_router
+from .config_endpoints import router as config_router
 
 
 class GenerateTestCaseRequest(BaseModel):
@@ -196,6 +197,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include prompt management router
+app.include_router(prompt_router)
+app.include_router(config_router)
 
 # Configuration and database
 config = Config()
@@ -713,27 +718,51 @@ async def delete_test_cases_by_business_type(business_type: str):
 @app.get("/business-types", response_model=BusinessTypeResponse)
 async def get_business_types():
     """
-    Get list of supported business types.
+    Get list of supported business types from database.
 
     Returns:
         BusinessTypeResponse: List of supported business types
     """
-    business_types = [bt.value for bt in BusinessType]
-    return BusinessTypeResponse(business_types=business_types)
+    try:
+        with db_manager.get_session() as db:
+            # Get active business types from database
+            business_type_configs = db.query(BusinessTypeConfig).filter(
+                BusinessTypeConfig.is_active == True
+            ).order_by(BusinessTypeConfig.code).all()
+
+            business_types = [config.code for config in business_type_configs]
+            return BusinessTypeResponse(business_types=business_types)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get business types: {str(e)}")
 
 
 @app.get("/business-types/mapping", response_model=BusinessTypeMappingResponse)
 async def get_business_types_mapping():
     """
-    Get business type mapping with names and descriptions.
+    Get business type mapping with names and descriptions from database.
 
     Returns:
         BusinessTypeMappingResponse: Dictionary of business type mappings with names and descriptions
     """
     try:
-        # Get business type mapping from centralized configuration
-        business_mapping = get_business_type_mapping()
-        return BusinessTypeMappingResponse(business_types=business_mapping)
+        with db_manager.get_session() as db:
+            # Get active business types from database
+            business_type_configs = db.query(BusinessTypeConfig).filter(
+                BusinessTypeConfig.is_active == True
+            ).order_by(BusinessTypeConfig.code).all()
+
+            business_mapping = {}
+            for config in business_type_configs:
+                business_mapping[config.code] = {
+                    "name": config.name,
+                    "description": config.description or f"业务类型 {config.code} 的功能描述",
+                    "category": config.category,
+                    "interface_type": config.interface_type,
+                    "interface_entity": config.interface_entity
+                }
+
+            return BusinessTypeMappingResponse(business_types=business_mapping)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get business types mapping: {str(e)}")

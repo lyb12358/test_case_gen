@@ -4,12 +4,31 @@ SQLAlchemy database models for test case generation service.
 
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import Column, Integer, String, DateTime, Text, Enum, ForeignKey, Float, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, Text, Enum, ForeignKey, Float, UniqueConstraint, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 import enum
 
 Base = declarative_base()
+
+
+class BusinessTypeConfig(Base):
+    """Business type configuration table for dynamic business type management."""
+    __tablename__ = "business_type_configs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(20), unique=True, nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    description = Column(Text, nullable=True)
+    category = Column(String(50), nullable=True)
+    interface_type = Column(String(50), nullable=True, default="remote_control_api")
+    interface_entity = Column(String(100), nullable=True, default="TSP远程控制接口")
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+    def __repr__(self):
+        return f"<BusinessTypeConfig(code='{self.code}', name='{self.name}')>"
 
 
 class BusinessType(enum.Enum):
@@ -65,7 +84,7 @@ class TestCaseGroup(Base):
     id = Column(Integer, primary_key=True, index=True)
     business_type = Column(Enum(BusinessType), nullable=False, index=True)
     generation_metadata = Column(Text, nullable=True)  # JSON string for generation metadata
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
 
     # Relationships
@@ -109,11 +128,11 @@ class GenerationJob(Base):
     """Generation job model."""
     __tablename__ = "generation_jobs"
 
-    id = Column(String, primary_key=True, index=True)  # UUID string
+    id = Column(String(36), primary_key=True, index=True)  # UUID string
     business_type = Column(Enum(BusinessType), nullable=False, index=True)
-    status = Column(Enum(JobStatus), default=JobStatus.PENDING, nullable=False)
+    status = Column(Enum(JobStatus), default=JobStatus.PENDING, nullable=False, index=True)
     error_message = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
     completed_at = Column(DateTime, nullable=True)
 
     def __repr__(self):
@@ -191,3 +210,109 @@ class TestCaseEntity(Base):
 
     def __repr__(self):
         return f"<TestCaseEntity(id={self.id}, name={self.name}, test_case_item_id={self.test_case_item_id})>"
+
+
+class PromptType(enum.Enum):
+    """Prompt types for categorization."""
+    SYSTEM = "system"                    # System-level prompts
+    TEMPLATE = "template"                # Template prompts with variables
+    BUSINESS_DESCRIPTION = "business_description"  # Business-specific descriptions
+    SHARED_CONTENT = "shared_content"    # Shared/reusable content
+    REQUIREMENTS = "requirements"        # Requirements generation prompts
+
+
+class PromptStatus(enum.Enum):
+    """Prompt status for workflow management."""
+    DRAFT = "draft"                      # Work in progress
+    ACTIVE = "active"                    # Currently in use
+    ARCHIVED = "archived"                # No longer used but kept
+    DEPRECATED = "deprecated"            # Outdated, should not be used
+
+
+class PromptCategory(Base):
+    """Prompt category model for organization."""
+    __tablename__ = "prompt_categories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    parent_id = Column(Integer, ForeignKey("prompt_categories.id"), nullable=True, index=True)
+    order = Column(Float, default=0.0, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    # Relationships
+    parent = relationship("PromptCategory", remote_side=[id], backref="children")
+    prompts = relationship("Prompt", back_populates="category")
+
+    def __repr__(self):
+        return f"<PromptCategory(id={self.id}, name={self.name})>"
+
+
+class Prompt(Base):
+    """Main prompt model for database storage."""
+    __tablename__ = "prompts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    type = Column(Enum(PromptType), nullable=False, index=True)
+    business_type = Column(Enum(BusinessType), nullable=True, index=True)  # Associated business type if applicable
+    status = Column(Enum(PromptStatus), default=PromptStatus.DRAFT, nullable=False, index=True)
+
+    # Metadata
+    author = Column(String(100), nullable=True)
+    version = Column(String(20), default="1.0.0", nullable=False)
+    tags = Column(Text, nullable=True)  # JSON string for tags array
+    variables = Column(Text, nullable=True)  # JSON string for template variables
+    extra_metadata = Column(Text, nullable=True)  # JSON string for additional metadata
+
+    # Organization
+    category_id = Column(Integer, ForeignKey("prompt_categories.id"), nullable=True, index=True)
+    file_path = Column(String(500), nullable=True)  # Original file path for migration tracking
+
+  
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+    # Relationships
+    category = relationship("PromptCategory", back_populates="prompts")
+    versions = relationship("PromptVersion", back_populates="prompt", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<Prompt(id={self.id}, name={self.name}, type={self.type}, status={self.status})>"
+
+
+class PromptVersion(Base):
+    """Prompt version history model."""
+    __tablename__ = "prompt_versions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    prompt_id = Column(Integer, ForeignKey("prompts.id"), nullable=False, index=True)
+    version_number = Column(String(20), nullable=False)
+    content = Column(Text, nullable=False)
+    changelog = Column(Text, nullable=True)
+    created_by = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    # Relationships
+    prompt = relationship("Prompt", back_populates="versions")
+
+    def __repr__(self):
+        return f"<PromptVersion(id={self.id}, prompt_id={self.prompt_id}, version={self.version_number})>"
+
+
+class PromptTemplate(Base):
+    """Prompt template model for reusable templates."""
+    __tablename__ = "prompt_templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False, index=True)
+    template_content = Column(Text, nullable=False)
+    description = Column(Text, nullable=True)
+    variables = Column(Text, nullable=True)  # JSON string for template variables
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+    def __repr__(self):
+        return f"<PromptTemplate(id={self.id}, name={self.name})>"

@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Row, Col, Statistic, Button, Select, Space, Spin, Alert, message } from 'antd';
 import { ReloadOutlined, ClearOutlined, BarChartOutlined } from '@ant-design/icons';
+import { useQuery } from '@tanstack/react-query';
 import Graph from './Graph';
 import { knowledgeGraphService } from '../../services/knowledgeGraphService';
+import { testCaseService } from '../../services/testCaseService';
 import { KnowledgeGraphData, GraphStats } from '../../types/knowledgeGraph';
 
 const { Option } = Select;
@@ -13,6 +15,20 @@ const KnowledgeGraph: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [selectedBusinessType, setSelectedBusinessType] = useState<string>('');
   const [error, setError] = useState<string>('');
+
+  // Get business types and mapping from API
+  const { data: businessTypesData, isLoading: typesLoading } = useQuery({
+    queryKey: ['businessTypes'],
+    queryFn: testCaseService.getBusinessTypes,
+  });
+
+  const { data: businessTypesMapping, isLoading: mappingLoading } = useQuery({
+    queryKey: ['businessTypesMapping'],
+    queryFn: testCaseService.getBusinessTypesMapping,
+  });
+
+  const businessTypes = businessTypesData?.business_types || [];
+  const businessTypesMap = businessTypesMapping?.business_types || {};
 
   const loadData = async (businessType?: string) => {
     setLoading(true);
@@ -132,14 +148,16 @@ const KnowledgeGraph: React.FC = () => {
           <Select
             placeholder="按业务类型筛选"
             allowClear
-            style={{ width: 200 }}
+            style={{ width: 250 }}
             value={selectedBusinessType || undefined}
             onChange={setSelectedBusinessType}
+            loading={typesLoading || mappingLoading}
           >
-            <Option value="RCC">RCC - 远程净化</Option>
-            <Option value="RFD">RFD - 香氛控制</Option>
-            <Option value="ZAB">ZAB - 远程恒温座舱设置</Option>
-            <Option value="ZBA">ZBA - 水淹报警</Option>
+            {businessTypes.map(type => (
+              <Option key={type} value={type}>
+                [{type}] {businessTypesMap[type]?.name || type}
+              </Option>
+            ))}
           </Select>
 
           <Button

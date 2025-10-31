@@ -20,6 +20,8 @@ import {
   ReloadOutlined,
   ShareAltOutlined,
   ClockCircleOutlined,
+  EditOutlined,
+  TagsOutlined,
 } from '@ant-design/icons';
 import { useTask } from '@/contexts/TaskContext';
 
@@ -66,6 +68,17 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
       ],
     },
     {
+      key: '/prompts',
+      icon: <EditOutlined />,
+      label: '提示词管理',
+      children: [
+        {
+          key: '/prompts/list',
+          label: '提示词列表',
+        },
+      ],
+    },
+    {
       key: '/tasks',
       icon: <RocketOutlined />,
       label: '任务管理',
@@ -86,6 +99,9 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
         return ['/test-cases/generate'];
       }
       return ['/test-cases/list'];
+    }
+    if (pathname.startsWith('/prompts')) {
+      return ['/prompts/list'];
     }
     if (pathname.startsWith('/tasks')) {
       return ['/tasks'];

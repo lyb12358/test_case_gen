@@ -83,24 +83,18 @@ class Config:
 
     @property
     def database_url(self) -> str:
-        """Get database URL from environment."""
-        database_url = os.getenv('DATABASE_URL', '')
-        if database_url:
-            return database_url
+        """Get MySQL database URL from environment."""
+        # Build MySQL connection string from environment variables
+        user = os.getenv('USER', '')
+        password = os.getenv('PASSWORD', '')
+        database = os.getenv('DATABASE', '')
+        host = os.getenv('HOST', '127.0.0.1:3306')
 
-        # Default to SQLite
-        database_path = os.getenv('DATABASE_PATH', 'data/test_cases.db')
-        # Ensure absolute path
-        if not os.path.isabs(database_path):
-            database_path = os.path.abspath(database_path)
-        return f'sqlite:///{database_path}'
+        # Validate required MySQL connection parameters
+        if not all([user, password, database, host]):
+            raise ValueError("Missing required MySQL connection parameters. Please check USER, PASSWORD, DATABASE, and HOST in .env file")
 
-    @property
-    def database_path(self) -> str:
-        """Get database file path."""
-        if self.database_url.startswith('sqlite:///'):
-            return self.database_url.replace('sqlite:///', '')
-        return ''
+        return f'mysql+pymysql://{user}:{password}@{host}/{database}'
 
     def validate_main_config(self) -> bool:
         """Validate that all required main configuration is present."""
