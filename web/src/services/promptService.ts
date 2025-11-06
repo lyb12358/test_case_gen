@@ -62,25 +62,25 @@ api.interceptors.response.use(
 export const categoryService = {
   // Get all categories
   getCategories: async (): Promise<PromptCategory[]> => {
-    const response = await api.get('/prompts/categories');
+    const response = await api.get('/api/v1/prompts/categories');
     return response.data;
   },
 
   // Create category
   createCategory: async (category: PromptCategoryCreate): Promise<PromptCategory> => {
-    const response = await api.post('/prompts/categories', category);
+    const response = await api.post('/api/v1/prompts/categories', category);
     return response.data;
   },
 
   // Update category
   updateCategory: async (id: number, category: PromptCategoryUpdate): Promise<PromptCategory> => {
-    const response = await api.put(`/prompts/categories/${id}`, category);
+    const response = await api.put(`/api/v1/prompts/categories/${id}`, category);
     return response.data;
   },
 
   // Delete category
   deleteCategory: async (id: number): Promise<void> => {
-    await api.delete(`/prompts/categories/${id}`);
+    await api.delete(`/api/v1/prompts/categories/${id}`);
   },
 };
 
@@ -95,37 +95,38 @@ export const promptService = {
     status?: PromptStatus;
     category_id?: number;
     search?: string;
+    project_id?: number;
   }): Promise<PromptListResponse> => {
-    const response = await api.get('/prompts/', { params });
+    const response = await api.get('/api/v1/prompts/', { params });
     return response.data;
   },
 
   // Get specific prompt
   getPrompt: async (id: number): Promise<Prompt> => {
-    const response = await api.get(`/prompts/${id}`);
+    const response = await api.get(`/api/v1/prompts/${id}`);
     return response.data;
   },
 
   // Create prompt
   createPrompt: async (prompt: PromptCreate): Promise<Prompt> => {
-    const response = await api.post('/prompts/', prompt);
+    const response = await api.post('/api/v1/prompts/', prompt);
     return response.data;
   },
 
   // Update prompt
   updatePrompt: async (id: number, prompt: PromptUpdate): Promise<Prompt> => {
-    const response = await api.put(`/prompts/${id}`, prompt);
+    const response = await api.put(`/api/v1/prompts/${id}`, prompt);
     return response.data;
   },
 
   // Delete prompt
   deletePrompt: async (id: number): Promise<void> => {
-    await api.delete(`/prompts/${id}`);
+    await api.delete(`/api/v1/prompts/${id}`);
   },
 
   // Clone prompt
   clonePrompt: async (id: number): Promise<Prompt> => {
-    const response = await api.post(`/prompts/${id}/clone`);
+    const response = await api.post(`/api/v1/prompts/${id}/clone`);
     return response.data;
   },
 };
@@ -134,19 +135,19 @@ export const promptService = {
 export const searchService = {
   // Advanced search
   searchPrompts: async (searchRequest: PromptSearchRequest): Promise<PromptListResponse> => {
-    const response = await api.post('/prompts/search', searchRequest);
+    const response = await api.post('/api/v1/prompts/search', searchRequest);
     return response.data;
   },
 
   // Preview prompt
   previewPrompt: async (request: PromptPreviewRequest): Promise<PromptPreviewResponse> => {
-    const response = await api.post('/prompts/preview', request);
+    const response = await api.post('/api/v1/prompts/preview', request);
     return response.data;
   },
 
   // Validate prompt
   validatePrompt: async (id: number): Promise<PromptValidationResponse> => {
-    const response = await api.post(`/prompts/${id}/validate`);
+    const response = await api.post(`/api/v1/prompts/${id}/validate`);
     return response.data;
   },
 };
@@ -155,7 +156,7 @@ export const searchService = {
 export const buildService = {
   // Build prompt for business type
   buildPromptForBusiness: async (businessType: string): Promise<{ content: string; business_type: string }> => {
-    const response = await api.get(`/prompts/build/${businessType}`);
+    const response = await api.get(`/api/v1/prompts/build/${businessType}`);
     return response.data;
   },
 };
@@ -163,8 +164,9 @@ export const buildService = {
 // Statistics API
 export const statsService = {
   // Get overview statistics
-  getOverviewStats: async (): Promise<PromptStatistics> => {
-    const response = await api.get('/prompts/stats/overview');
+  getOverviewStats: async (projectId?: number): Promise<PromptStatistics> => {
+    const params = projectId ? { project_id: projectId } : {};
+    const response = await api.get('/api/v1/prompts/stats/overview', { params });
     return response.data;
   },
 };
@@ -173,19 +175,19 @@ export const statsService = {
 export const templateService = {
   // Get all templates
   getTemplates: async (): Promise<PromptTemplate[]> => {
-    const response = await api.get('/prompts/templates');
+    const response = await api.get('/api/v1/prompts/templates');
     return response.data;
   },
 
   // Create template
   createTemplate: async (template: PromptTemplateCreate): Promise<PromptTemplate> => {
-    const response = await api.post('/prompts/templates', template);
+    const response = await api.post('/api/v1/prompts/templates', template);
     return response.data;
   },
 
   // Delete template
   deleteTemplate: async (id: number): Promise<void> => {
-    await api.delete(`/prompts/templates/${id}`);
+    await api.delete(`/api/v1/prompts/templates/${id}`);
   },
 };
 

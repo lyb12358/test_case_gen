@@ -12,8 +12,13 @@ import TestCaseGenerate from '@/pages/TestCases/TestCaseGenerate';
 import TaskList from '@/pages/Tasks/TaskList';
 import TaskDetail from '@/pages/Tasks/TaskDetail';
 import KnowledgeGraph from '@/pages/KnowledgeGraph';
+import ProjectManager from '@/pages/Projects/ProjectManager';
 import { PromptList, PromptEditor, PromptDetail } from '@/pages/Prompts';
+import BusinessList from '@/pages/BusinessManagement/BusinessList';
+import PromptBuilder from '@/pages/BusinessManagement/PromptBuilder';
 import { TaskProvider } from '@/contexts/TaskContext';
+import { ProjectProvider } from '@/contexts/ProjectContext';
+import ProjectProtectedRoute from '@/components/Routing/ProjectProtectedRoute';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -36,41 +41,49 @@ const App: React.FC = () => {
           },
         }}
       >
-        <TaskProvider>
-          <Router>
+        <ProjectProvider>
+          <TaskProvider>
+            <Router>
             <Routes>
               <Route path="/" element={<MainLayout />}>
+                {/* 公共页面 - 不需要项目上下文 */}
                 <Route index element={<Dashboard />} />
                 <Route path="dashboard" element={<Dashboard />} />
-                <Route path="test-cases">
+                <Route path="knowledge-graph" element={<KnowledgeGraph />} />
+                <Route path="projects" element={<ProjectManager />} />
+
+                {/* 需要项目上下文的页面 - 业务管理 */}
+                <Route path="business-management" element={<ProjectProtectedRoute />}>
+                  <Route index element={<BusinessList />} />
+                  <Route path="prompt-combinations/create" element={<PromptBuilder />} />
+                  <Route path="prompt-combinations/:id" element={<PromptBuilder />} />
+                </Route>
+
+                {/* 需要项目上下文的页面 - 测试用例管理 */}
+                <Route path="test-cases" element={<ProjectProtectedRoute />}>
                   <Route index element={<TestCaseList />} />
                   <Route path="list" element={<TestCaseList />} />
                   <Route path="generate" element={<TestCaseGenerate />} />
                   <Route path=":id" element={<TestCaseDetail />} />
                 </Route>
-                {/* 支持无连字符的路径格式 */}
-                <Route path="testcases">
-                  <Route index element={<TestCaseList />} />
-                  <Route path="list" element={<TestCaseList />} />
-                  <Route path="generate" element={<TestCaseGenerate />} />
-                  <Route path=":id" element={<TestCaseDetail />} />
-                </Route>
-                <Route path="tasks">
+
+                <Route path="tasks" element={<ProjectProtectedRoute />}>
                   <Route index element={<TaskList />} />
                   <Route path=":id" element={<TaskDetail />} />
                 </Route>
-                <Route path="prompts">
+
+                <Route path="prompts" element={<ProjectProtectedRoute />}>
                   <Route index element={<PromptList />} />
                   <Route path="list" element={<PromptList />} />
                   <Route path="create" element={<PromptEditor />} />
                   <Route path=":id" element={<PromptDetail />} />
                   <Route path=":id/edit" element={<PromptEditor />} />
                 </Route>
-                <Route path="knowledge-graph" element={<KnowledgeGraph />} />
               </Route>
             </Routes>
-          </Router>
-        </TaskProvider>
+            </Router>
+          </TaskProvider>
+        </ProjectProvider>
       </ConfigProvider>
     </QueryClientProvider>
   );

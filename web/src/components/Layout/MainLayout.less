@@ -1,0 +1,128 @@
+/* TSP Main Layout Styles */
+
+// Header responsive behavior
+.main-layout-header {
+  @media (max-width: 768px) {
+    padding: 0 8px !important;
+
+    .header-breadcrumb {
+      margin-left: 8px;
+      display: none; // Hide breadcrumbs on mobile to save space
+    }
+  }
+
+  @media (max-width: 1024px) and (min-width: 769px) {
+    .header-breadcrumb {
+      margin-left: 12px;
+    }
+  }
+}
+
+// Content area responsive adjustments
+.main-layout-content {
+  @media (max-width: 768px) {
+    margin: 8px !important;
+    padding: 16px !important;
+  }
+
+  @media (max-width: 480px) {
+    margin: 4px !important;
+    padding: 12px !important;
+  }
+}
+
+// Project switcher responsive behavior
+.project-switcher {
+  @media (max-width: 768px) {
+    .ant-btn {
+      padding: 0 8px !important;
+    }
+
+    .ant-space {
+      max-width: 120px !important;
+    }
+  }
+}
+
+// Task status responsive behavior
+.task-status-button {
+  @media (max-width: 768px) {
+    .ant-btn {
+      padding: 4px !important;
+      font-size: 12px !important;
+    }
+
+    .ant-progress {
+      width: 40px !important;
+    }
+  }
+}
+
+// Page title responsive behavior
+.page-title {
+  @media (max-width: 768px) {
+    margin-bottom: 16px !important;
+
+    h3 {
+      font-size: 18px !important;
+    }
+  }
+}
+
+// Ensure proper overflow handling
+.header-left-section {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+}
+
+.header-right-section {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+
+  @media (max-width: 768px) {
+    .ant-space {
+      gap: 4px !important;
+    }
+  }
+}
+
+// Breadcrumb text overflow handling
+.header-breadcrumb {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+
+  .ant-breadcrumb {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+
+    .ant-breadcrumb-link {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 150px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 13px;
+    }
+
+    .ant-breadcrumb-separator {
+      color: #bfbfbf;
+      font-size: 12px;
+    }
+  }
+
+  // 确保面包屑项目正确对齐
+  .ant-breadcrumb-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+}

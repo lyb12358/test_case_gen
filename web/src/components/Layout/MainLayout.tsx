@@ -22,8 +22,16 @@ import {
   ClockCircleOutlined,
   EditOutlined,
   TagsOutlined,
+  SettingOutlined,
+  BuildOutlined,
 } from '@ant-design/icons';
 import { useTask } from '@/contexts/TaskContext';
+import { useProject } from '@/contexts/ProjectContext';
+import { ProjectSwitcher } from '@/components/ProjectSelection';
+import BreadcrumbNavigation from '@/components/Navigation/BreadcrumbNavigation';
+import HeaderBreadcrumbNavigation from '@/components/Navigation/HeaderBreadcrumbNavigation';
+import PageTitle from '@/components/Navigation/PageTitle';
+import './MainLayout.less';
 
 const { Header, Sider, Content } = AntLayout;
 const { Title } = Typography;
@@ -37,6 +45,7 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { state: taskState } = useTask();
+  const { currentProject } = useProject();
   const {
     token: { colorBgContainer, borderRadiusLG },
   } = theme.useToken();
@@ -51,6 +60,16 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
       key: '/knowledge-graph',
       icon: <ShareAltOutlined />,
       label: 'TSP本体图谱',
+    },
+    {
+      key: '/projects',
+      icon: <SettingOutlined />,
+      label: '项目管理',
+    },
+    {
+      key: '/business-management',
+      icon: <BuildOutlined />,
+      label: '业务管理',
     },
     {
       key: '/test-cases',
@@ -106,6 +125,9 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
     if (pathname.startsWith('/tasks')) {
       return ['/tasks'];
     }
+    if (pathname.startsWith('/projects')) {
+      return ['/projects'];
+    }
     if (pathname.startsWith('/knowledge-graph')) {
       return ['/knowledge-graph'];
     }
@@ -152,6 +174,7 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
       </Sider>
       <AntLayout>
         <Header
+          className="main-layout-header"
           style={{
             padding: '0 16px',
             background: colorBgContainer,
@@ -159,21 +182,32 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            height: 64,
           }}
         >
-          <Button
-            type="text"
-            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            onClick={() => setCollapsed(!collapsed)}
-            style={{
-              fontSize: '16px',
-              width: 64,
-              height: 64,
-            }}
-          />
+          <div className="header-left-section">
+            <Button
+              type="text"
+              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              onClick={() => setCollapsed(!collapsed)}
+              style={{
+                fontSize: '16px',
+                width: 64,
+                height: 64,
+              }}
+            />
 
-          <Space>
-            {/* 任务状态显示 */}
+            {/* Header Breadcrumb Navigation */}
+            <HeaderBreadcrumbNavigation />
+          </div>
+
+          <Space className="header-right-section">
+            {/* 项目切换器 */}
+            <div className="project-switcher">
+              <ProjectSwitcher />
+            </div>
+
+            {/* 紧凑的任务状态显示 */}
             {taskState.currentTask && (
               <Tooltip
                 title={
@@ -186,45 +220,42 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
                   </div>
                 }
               >
-                <Badge
-                  status={
-                    taskState.currentTask.status === 'completed' ? 'success' :
-                    taskState.currentTask.status === 'running' ? 'processing' :
-                    taskState.currentTask.status === 'failed' ? 'error' : 'default'
-                  }
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<ClockCircleOutlined />}
+                  onClick={() => navigate('/test-cases/generate')}
+                  className="task-status-button"
+                  style={{
+                    color: taskState.currentTask.status === 'running' ? '#1890ff' : '#8c8c8c',
+                    padding: '4px 8px',
+                    height: 'auto'
+                  }}
                 >
-                  <Button
-                    type="text"
-                    icon={<ClockCircleOutlined />}
-                    onClick={() => navigate('/test-cases/generate')}
-                    style={{
-                      color: taskState.currentTask.status === 'running' ? '#1890ff' : undefined
-                    }}
-                  >
-                    {taskState.isPolling && (
-                      <Progress
-                        percent={taskState.currentTask.progress || 0}
-                        size="small"
-                        style={{ width: 100, marginRight: 8 }}
-                        format={() => `${taskState.currentTask.progress || 0}%`}
-                      />
-                    )}
-                    {taskState.currentTask.status === 'completed' ? '任务完成' :
-                     taskState.currentTask.status === 'running' ? '生成中...' :
-                     taskState.currentTask.status === 'failed' ? '任务失败' : '处理中'}
-                  </Button>
-                </Badge>
+                  {taskState.isPolling && (
+                    <Progress
+                      percent={taskState.currentTask.progress || 0}
+                      size="small"
+                      style={{ width: 60, marginRight: 4 }}
+                      showInfo={false}
+                    />
+                  )}
+                  {taskState.currentTask.status === 'completed' ? '完成' :
+                   taskState.currentTask.status === 'running' ? '生成中' :
+                   taskState.currentTask.status === 'failed' ? '失败' : '处理'}
+                </Button>
               </Tooltip>
             )}
 
-            <Button
-              type="text"
-              icon={<ReloadOutlined />}
-              onClick={handleRefresh}
-              title="刷新页面"
-            >
-              刷新
-            </Button>
+            <Tooltip title="刷新页面">
+              <Button
+                type="text"
+                size="small"
+                icon={<ReloadOutlined />}
+                onClick={handleRefresh}
+                style={{ padding: '4px 8px', height: 'auto' }}
+              />
+            </Tooltip>
           </Space>
         </Header>
         <Content
@@ -237,6 +268,7 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
             overflow: 'auto',
           }}
         >
+          <PageTitle />
           <Outlet />
         </Content>
       </AntLayout>

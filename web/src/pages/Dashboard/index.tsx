@@ -23,14 +23,18 @@ import {
   PlusOutlined,
   EyeOutlined,
   ReloadOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 import { testCaseService } from '@/services/testCaseService';
 import { taskService } from '@/services/taskService';
+import { projectService } from '@/services/projectService';
+import { useProject } from '@/contexts/ProjectContext';
 
 const { Title, Text } = Typography;
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
+  const { currentProject, projects } = useProject();
 
   // 获取测试用例数据
   const { data: testCasesData, isLoading: testCasesLoading } = useQuery({
@@ -42,8 +46,15 @@ const Dashboard: React.FC = () => {
   // 获取任务数据
   const { data: tasksData, isLoading: tasksLoading } = useQuery({
     queryKey: ['tasks'],
-    queryFn: taskService.getAllTasks,
+    queryFn: () => taskService.getAllTasks(),
     refetchInterval: 5000, // 5秒自动刷新
+  });
+
+  // 获取项目数据
+  const { data: projectsData, isLoading: projectsLoading } = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => projectService.getProjects(),
+    refetchInterval: 30000, // 30秒自动刷新
   });
 
   
@@ -76,20 +87,27 @@ const Dashboard: React.FC = () => {
     // 计算总测试用例数量
     const totalTestCases = testCaseGroups.reduce((sum, group) => sum + (group.test_case_items?.length || 0), 0);
 
+    // 项目统计
+    const projectStats = projectsData?.projects || [];
+    const activeProjects = projectStats.filter(p => p.is_active).length;
+
     return {
       totalTestCases,
       totalTasks: tasks.length,
       completedTasks,
       failedTasks,
       runningTasks,
+      totalProjects: projectStats.length,
+      activeProjects,
       businessTypeStats: Array.from(businessTypeStats.entries()).map(([type, data]) => ({
         type,
         count: data.count,
         latestUpdate: data.latestUpdate,
       })),
       recentTasks: tasks.slice(0, 5),
+      projects: projectStats,
     };
-  }, [testCasesData, tasksData]);
+  }, [testCasesData, tasksData, projectsData]);
 
   const getTaskSuccessRate = () => {
     if (stats.totalTasks === 0) return 0;
@@ -285,6 +303,60 @@ const Dashboard: React.FC = () => {
               loading={tasksLoading}
               valueStyle={{ color: '#ff4d4f' }}
             />
+          </Card>
+        </Col>
+      </Row>
+
+      {/* 项目统计 */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <Statistic
+              title="项目总数"
+              value={stats.totalProjects}
+              prefix={<SettingOutlined />}
+              loading={projectsLoading}
+              valueStyle={{ color: '#1890ff' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <Statistic
+              title="活跃项目"
+              value={stats.activeProjects}
+              prefix={<CheckCircleOutlined />}
+              loading={projectsLoading}
+              valueStyle={{ color: '#52c41a' }}
+              suffix={`/ ${stats.totalProjects}`}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <Statistic
+              title="当前项目"
+              value={currentProject?.name || '未选择'}
+              prefix={<SettingOutlined />}
+              valueStyle={{
+                color: '#722ed1',
+                fontSize: '16px'
+              }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <div style={{ textAlign: 'center' }}>
+              <Button
+                type="primary"
+                icon={<SettingOutlined />}
+                onClick={() => navigate('/projects')}
+                size="large"
+              >
+                项目管理
+              </Button>
+            </div>
           </Card>
         </Col>
       </Row>

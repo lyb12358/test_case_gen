@@ -26,6 +26,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { testCaseService } from '../../services/testCaseService';
 import { useTask, requestNotificationPermission } from '../../contexts/TaskContext';
+import { useProject } from '../../contexts/ProjectContext';
 
 // 浏览器通知功能
 function showNotification(title: string, body: string, type: 'success' | 'error' | 'info' = 'info') {
@@ -48,6 +49,7 @@ const TestCaseGenerate: React.FC = () => {
   const navigate = useNavigate();
   const [form] = Form.useForm();
   const { state: taskState, createTask, clearTask } = useTask();
+  const { currentProject } = useProject();
   const [submitted, setSubmitted] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [minDisplayTimer, setMinDisplayTimer] = useState<NodeJS.Timeout | null>(null);
@@ -69,8 +71,9 @@ const TestCaseGenerate: React.FC = () => {
 
   // 获取业务类型列表
   const { data: businessTypesData, isLoading: typesLoading, error: typesError } = useQuery({
-    queryKey: ['businessTypes'],
-    queryFn: testCaseService.getBusinessTypes,
+    queryKey: ['businessTypes', currentProject?.id],
+    queryFn: () => testCaseService.getBusinessTypes(currentProject?.id),
+    enabled: !!currentProject
   });
 
   // 获取业务类型映射（包含中文名称和描述）
@@ -82,6 +85,11 @@ const TestCaseGenerate: React.FC = () => {
   const businessTypes = businessTypesData?.business_types || [];
 
   const handleGenerate = async (values: { business_type: string }) => {
+    if (!currentProject) {
+      showNotification('生成失败', '请先选择一个项目', 'error');
+      return;
+    }
+
     setSubmitted(true);
     setIsGenerating(true); // 立即设置为生成中状态
 
@@ -92,7 +100,7 @@ const TestCaseGenerate: React.FC = () => {
     setMinDisplayTimer(timer);
 
     try {
-      await createTask(values.business_type);
+      await createTask(values.business_type, currentProject.id);
       form.resetFields();
     } catch (error) {
       console.error('生成测试用例失败:', error);
@@ -198,11 +206,30 @@ const TestCaseGenerate: React.FC = () => {
     return step;
   })();
 
+  // 如果没有选择项目，显示提示信息
+  if (!currentProject) {
+    return (
+      <div>
+        <Card>
+          <Result
+            status="warning"
+            title="请先选择一个项目"
+            subTitle="请在顶部导航栏选择一个项目后，即可开始生成测试用例。"
+            extra={[
+              <Button key="dashboard" type="primary" onClick={() => navigate('/dashboard')}>
+                返回首页
+              </Button>
+            ]}
+          />
+        </Card>
+      </div>
+    );
+  }
+
   // 错误处理
   if (typesError || mappingError) {
     return (
       <div>
-        <Title level={2}>生成测试用例</Title>
         <Card>
           <Result
             status="error"
@@ -221,8 +248,6 @@ const TestCaseGenerate: React.FC = () => {
 
   return (
     <div>
-      <Title level={2}>生成测试用例</Title>
-
       {!taskState.currentTask && !submitted && !isGenerating ? (
         <Card title="选择业务类型">
           <Form

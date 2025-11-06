@@ -12,6 +12,31 @@ import enum
 Base = declarative_base()
 
 
+class Project(Base):
+    """Project table for hierarchical management of business scenarios."""
+    __tablename__ = "projects"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), unique=True, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+    # Relationships
+    test_case_groups = relationship("TestCaseGroup", back_populates="project")
+    generation_jobs = relationship("GenerationJob", back_populates="project")
+    knowledge_entities = relationship("KnowledgeEntity", back_populates="project")
+    knowledge_relations = relationship("KnowledgeRelation", back_populates="project")
+    prompts = relationship("Prompt", back_populates="project")
+    prompt_versions = relationship("PromptVersion", back_populates="project")
+    prompt_templates = relationship("PromptTemplate", back_populates="project")
+    business_types = relationship("BusinessTypeConfig", back_populates="project")
+
+    def __repr__(self):
+        return f"<Project(id={self.id}, name='{self.name}')>"
+
+
 class BusinessTypeConfig(Base):
     """Business type configuration table for dynamic business type management."""
     __tablename__ = "business_type_configs"
@@ -20,15 +45,22 @@ class BusinessTypeConfig(Base):
     code = Column(String(20), unique=True, nullable=False, index=True)
     name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
-    category = Column(String(50), nullable=True)
-    interface_type = Column(String(50), nullable=True, default="remote_control_api")
-    interface_entity = Column(String(100), nullable=True, default="TSP远程控制接口")
-    is_active = Column(Boolean, default=True, nullable=False)
+
+    # Required project association
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    is_active = Column(Boolean, default=False, nullable=False)  # Default to False, need explicit activation
+    prompt_combination_id = Column(Integer, ForeignKey("prompt_combinations.id"), nullable=True, index=True)
+
+    # Metadata fields
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
 
+    # Relationships
+    project = relationship("Project", back_populates="business_types")
+    prompt_combination = relationship("PromptCombination", back_populates="business_types")
+
     def __repr__(self):
-        return f"<BusinessTypeConfig(code='{self.code}', name='{self.name}')>"
+        return f"<BusinessTypeConfig(code='{self.code}', name='{self.name}', active={self.is_active})>"
 
 
 class BusinessType(enum.Enum):
@@ -82,12 +114,14 @@ class TestCaseGroup(Base):
     __tablename__ = "test_case_groups"
 
     id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     business_type = Column(Enum(BusinessType), nullable=False, index=True)
     generation_metadata = Column(Text, nullable=True)  # JSON string for generation metadata
     created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
 
     # Relationships
+    project = relationship("Project", back_populates="test_case_groups")
     test_case_items = relationship("TestCaseItem", back_populates="group", cascade="all, delete-orphan")
 
     def __repr__(self):
@@ -129,11 +163,15 @@ class GenerationJob(Base):
     __tablename__ = "generation_jobs"
 
     id = Column(String(36), primary_key=True, index=True)  # UUID string
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     business_type = Column(Enum(BusinessType), nullable=False, index=True)
     status = Column(Enum(JobStatus), default=JobStatus.PENDING, nullable=False, index=True)
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
     completed_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    project = relationship("Project", back_populates="generation_jobs")
 
     def __repr__(self):
         return f"<GenerationJob(id={self.id}, business_type={self.business_type}, status={self.status})>"
@@ -152,6 +190,7 @@ class KnowledgeEntity(Base):
     __tablename__ = "knowledge_entities"
 
     id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     name = Column(String(100), nullable=False, index=True)
     type = Column(Enum(EntityType), nullable=False, index=True)
     description = Column(Text, nullable=True)
@@ -162,6 +201,7 @@ class KnowledgeEntity(Base):
     created_at = Column(DateTime, default=datetime.now, nullable=False)
 
     # Relationships
+    project = relationship("Project", back_populates="knowledge_entities")
     parent = relationship("KnowledgeEntity", remote_side=[id], backref="children")
     test_cases = relationship("TestCaseEntity", back_populates="entity", cascade="all, delete-orphan")
 
@@ -177,6 +217,7 @@ class KnowledgeRelation(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     subject_id = Column(Integer, ForeignKey("knowledge_entities.id"), nullable=False, index=True)
     predicate = Column(String(50), nullable=False, index=True)  # has, calls, contains, etc.
     object_id = Column(Integer, ForeignKey("knowledge_entities.id"), nullable=False, index=True)
@@ -184,6 +225,7 @@ class KnowledgeRelation(Base):
     created_at = Column(DateTime, default=datetime.now, nullable=False)
 
     # Relationships
+    project = relationship("Project", back_populates="knowledge_relations")
     subject = relationship("KnowledgeEntity", foreign_keys=[subject_id])
     object = relationship("KnowledgeEntity", foreign_keys=[object_id])
 
@@ -253,6 +295,7 @@ class Prompt(Base):
     __tablename__ = "prompts"
 
     id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     name = Column(String(200), nullable=False, index=True)
     content = Column(Text, nullable=False)
     type = Column(Enum(PromptType), nullable=False, index=True)
@@ -270,12 +313,13 @@ class Prompt(Base):
     category_id = Column(Integer, ForeignKey("prompt_categories.id"), nullable=True, index=True)
     file_path = Column(String(500), nullable=True)  # Original file path for migration tracking
 
-  
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
 
     # Relationships
+    project = relationship("Project", back_populates="prompts")
     category = relationship("PromptCategory", back_populates="prompts")
     versions = relationship("PromptVersion", back_populates="prompt", cascade="all, delete-orphan")
 
@@ -288,6 +332,7 @@ class PromptVersion(Base):
     __tablename__ = "prompt_versions"
 
     id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     prompt_id = Column(Integer, ForeignKey("prompts.id"), nullable=False, index=True)
     version_number = Column(String(20), nullable=False)
     content = Column(Text, nullable=False)
@@ -296,6 +341,7 @@ class PromptVersion(Base):
     created_at = Column(DateTime, default=datetime.now, nullable=False)
 
     # Relationships
+    project = relationship("Project", back_populates="prompt_versions")
     prompt = relationship("Prompt", back_populates="versions")
 
     def __repr__(self):
@@ -307,6 +353,7 @@ class PromptTemplate(Base):
     __tablename__ = "prompt_templates"
 
     id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     name = Column(String(200), nullable=False, index=True)
     template_content = Column(Text, nullable=False)
     description = Column(Text, nullable=True)
@@ -314,5 +361,57 @@ class PromptTemplate(Base):
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
 
+    # Relationships
+    project = relationship("Project", back_populates="prompt_templates")
+
     def __repr__(self):
         return f"<PromptTemplate(id={self.id}, name={self.name})>"
+
+
+class PromptCombination(Base):
+    """Prompt combination model for storing business prompt configurations."""
+    __tablename__ = "prompt_combinations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    name = Column(String(200), nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    business_type = Column(Enum(BusinessType), nullable=True, index=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_valid = Column(Boolean, default=False, nullable=False)  # Whether the combination is valid/complete
+    validation_errors = Column(Text, nullable=True)  # JSON string for validation errors
+
+    # Metadata
+    created_by = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+    # Relationships
+    project = relationship("Project")
+    business_types = relationship("BusinessTypeConfig", back_populates="prompt_combination")
+    items = relationship("PromptCombinationItem", back_populates="combination", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<PromptCombination(id={self.id}, name='{self.name}', valid={self.is_valid})>"
+
+
+class PromptCombinationItem(Base):
+    """Individual items within a prompt combination."""
+    __tablename__ = "prompt_combination_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    combination_id = Column(Integer, ForeignKey("prompt_combinations.id"), nullable=False, index=True)
+    prompt_id = Column(Integer, ForeignKey("prompts.id"), nullable=False, index=True)
+    order = Column(Integer, nullable=False, default=0)
+    variable_name = Column(String(100), nullable=True)  # Variable name for template substitution
+    is_required = Column(Boolean, default=True, nullable=False)
+
+    # Metadata
+    created_at = Column(DateTime, default=datetime.now, nullable=True)
+
+    # Relationships
+    combination = relationship("PromptCombination", back_populates="items")
+    prompt = relationship("Prompt")
+
+    def __repr__(self):
+        return f"<PromptCombinationItem(id={self.id}, combination_id={self.combination_id}, order={self.order})>"

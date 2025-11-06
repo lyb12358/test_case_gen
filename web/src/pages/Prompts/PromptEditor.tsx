@@ -65,7 +65,7 @@ loader.init().then((monaco) => {
 
 }).catch((error) => {
   console.error('Failed to pre-load Monaco Editor:', error);
-  setMonacoError('Monaco Editor初始化失败');
+  // Note: setMonacoError will be called within component scope
 });
 
 const { Option } = Select;
@@ -98,7 +98,152 @@ const PromptEditor: React.FC = () => {
     businessTypes: []
   });
 
-  const isNew = id === 'create';
+  // 判断是否为新建提示词 - 如果没有ID或ID为'create'，则为新建
+  const isNew = !id || id === 'create' || id === 'null' || id === 'undefined' || id === 'NaN';
+
+  // Fetch prompt data
+  const {
+    data: prompt,
+    isLoading,
+    error,
+    refetch
+  } = useQuery({
+    queryKey: ['prompt', id],
+    queryFn: () => promptService.prompt.getPrompt(Number(id)),
+    enabled: !isNew && !!id && id !== 'undefined' && id !== 'NaN'
+  });
+
+  // Fetch categories
+  const { data: categories } = useQuery({
+    queryKey: ['categories'],
+    queryFn: promptService.category.getCategories
+  });
+
+  // Create prompt mutation
+  const createPromptMutation = useMutation({
+    mutationFn: promptService.prompt.createPrompt,
+    onSuccess: (data) => {
+      message.success('提示词创建成功');
+      setHasUnsavedChanges(false);
+      navigate(`/prompts/${data.id}`);
+    },
+    onError: (error: any) => {
+      message.error(`创建失败: ${error.response?.data?.detail || error.message}`);
+    }
+  });
+
+  // Update prompt mutation
+  const updatePromptMutation = useMutation({
+    mutationFn: (data: { id: number; prompt: PromptUpdate }) =>
+      promptService.prompt.updatePrompt(data.id, data.prompt),
+    onSuccess: () => {
+      message.success('提示词保存成功');
+      setHasUnsavedChanges(false);
+      queryClient.invalidateQueries({ queryKey: ['prompt', id] });
+      queryClient.invalidateQueries({ queryKey: ['prompts'] });
+    },
+    onError: (error: any) => {
+      message.error(`保存失败: ${error.response?.data?.detail || error.message}`);
+    }
+  });
+
+  // Handle content change
+  const handleContentChange = useCallback((value: string | undefined) => {
+    const newContent = value || '';
+    setContent(newContent);
+    setHasUnsavedChanges(true);
+  }, []);
+
+  // Handle save
+  const handleSave = useCallback((showMessage = true) => {
+    console.log('PromptEditor: handleSave called', { showMessage, contentLength: content.length, isNew });
+
+    if (!content.trim()) {
+      if (showMessage) {
+        message.error('内容不能为空');
+      }
+      return;
+    }
+
+    // 添加表单状态检查
+    try {
+      const formValues = form.getFieldsValue();
+      console.log('PromptEditor: Current form values', formValues);
+    } catch (error) {
+      console.error('PromptEditor: Error getting form values', error);
+      return;
+    }
+
+    form.validateFields().then((values) => {
+      const promptData: PromptCreate | PromptUpdate = {
+        name: values.name,
+        content,
+        type: values.type,
+        business_type: values.business_type,
+        status: values.status,
+        author: values.author,
+        category_id: values.category_id,
+        tags: values.tags,
+        variables: detectedVariables,
+        extra_metadata: {
+          detected_variables_count: detectedVariables.length,
+          content_length: content.length,
+          last_edited: new Date().toISOString()
+        }
+      };
+
+      // 添加ID验证，防止NaN导致API调用失败
+      const numericId = Number(id);
+      if (isNaN(numericId) || !isFinite(numericId)) {
+        console.error('PromptEditor: Invalid ID for update:', { id, numericId });
+        if (showMessage) {
+          message.error('无效的提示词ID，无法保存');
+        }
+        return;
+      }
+
+      if (isNew) {
+        createPromptMutation.mutate(promptData as PromptCreate);
+      } else {
+        updatePromptMutation.mutate({
+          id: numericId,
+          prompt: promptData
+        });
+      }
+
+      if (showMessage) {
+        message.success('保存中...');
+      }
+    }).catch((error) => {
+      console.error('PromptEditor: Form validation failed', error);
+      // 检查是否是自动保存触发的错误
+      if (showMessage) {
+        // 只有手动保存时才显示错误消息，避免干扰用户编辑
+        if (error.errorFields && error.errorFields.length > 0) {
+          const firstError = error.errorFields[0];
+          message.error(`表单校验失败: ${firstError.errors?.[0] || '请检查表单字段'}`);
+        } else {
+          message.error('表单校验失败，请检查输入内容');
+        }
+      }
+    });
+  }, [content, form, isNew, id, detectedVariables, createPromptMutation, updatePromptMutation]);
+
+  // Handle save and continue
+  const handleSaveAndContinue = useCallback(() => {
+    handleSave();
+    navigate('/prompts');
+  }, [handleSave, navigate]);
+
+  // 添加调试信息
+  useEffect(() => {
+    console.log('PromptEditor Debug:', {
+      id,
+      isNew,
+      pathname: window.location.pathname,
+      timestamp: new Date().toISOString()
+    });
+  }, [id, isNew]);
 
   // Handle Monaco Editor initialization errors
   useEffect(() => {
@@ -152,78 +297,48 @@ const PromptEditor: React.FC = () => {
     loadConfiguration();
   }, []);
 
-  // Fetch prompt data
-  const {
-    data: prompt,
-    isLoading,
-    error,
-    refetch
-  } = useQuery({
-    queryKey: ['prompt', id],
-    queryFn: () => promptService.prompt.getPrompt(Number(id)),
-    enabled: !isNew && !!id && id !== 'undefined'
-  });
-
   // Update form when prompt data is loaded
   useEffect(() => {
-    if (prompt) {
+    if (prompt && !isMonacoLoading) {
+      console.log('PromptEditor: Updating form with prompt data');
       setContent(prompt.content);
-      form.setFieldsValue({
-        name: prompt.name,
-        type: prompt.type,
-        business_type: prompt.business_type,
-        status: prompt.status,
-        author: prompt.author,
-        category_id: prompt.category_id,
-        tags: prompt.tags || []
-      });
-    }
-  }, [prompt, form]);
 
-  // Fetch categories
-  const { data: categories } = useQuery({
-    queryKey: ['categories'],
-    queryFn: promptService.category.getCategories
-  });
-
-  // Create prompt mutation
-  const createPromptMutation = useMutation({
-    mutationFn: promptService.prompt.createPrompt,
-    onSuccess: (data) => {
-      message.success('提示词创建成功');
-      setHasUnsavedChanges(false);
-      navigate(`/prompts/${data.id}`);
-    },
-    onError: (error: any) => {
-      message.error(`创建失败: ${error.response?.data?.detail || error.message}`);
+      // 延迟一点设置表单值，确保组件完全初始化
+      setTimeout(() => {
+        try {
+          form.setFieldsValue({
+            name: prompt.name,
+            type: prompt.type,
+            business_type: prompt.business_type,
+            status: prompt.status,
+            author: prompt.author,
+            category_id: prompt.category_id,
+            tags: prompt.tags || []
+          });
+          console.log('PromptEditor: Form updated successfully');
+        } catch (error) {
+          console.error('PromptEditor: Error updating form', error);
+        }
+      }, 100);
     }
-  });
-
-  // Update prompt mutation
-  const updatePromptMutation = useMutation({
-    mutationFn: (data: { id: number; prompt: PromptUpdate }) =>
-      promptService.prompt.updatePrompt(data.id, data.prompt),
-    onSuccess: () => {
-      message.success('提示词保存成功');
-      setHasUnsavedChanges(false);
-      queryClient.invalidateQueries({ queryKey: ['prompt', id] });
-      queryClient.invalidateQueries({ queryKey: ['prompts'] });
-    },
-    onError: (error: any) => {
-      message.error(`保存失败: ${error.response?.data?.detail || error.message}`);
-    }
-  });
+  }, [prompt, form, isMonacoLoading]);
 
   // Auto-save effect
   useEffect(() => {
-    if (hasUnsavedChanges && isAutoSave && !isNew) {
+    // 添加ID验证，防止自动保存时使用无效ID
+    const numericId = Number(id);
+    const hasValidId = !isNaN(numericId) && isFinite(numericId);
+
+    if (hasUnsavedChanges && isAutoSave && !isNew && hasValidId) {
       const timer = setTimeout(() => {
+        console.log('PromptEditor: Triggering auto-save', { id, numericId });
+        // 自动保存时不显示消息，避免干扰用户
         handleSave(false);
       }, 2000); // 2 seconds after last change
 
       return () => clearTimeout(timer);
     }
-  }, [content, hasUnsavedChanges, isAutoSave, isNew]);
+  }, [content, hasUnsavedChanges, isAutoSave, isNew, id, handleSave]);
 
   // Extract variables from content
   useEffect(() => {
@@ -236,59 +351,6 @@ const PromptEditor: React.FC = () => {
     const validation = promptUtils.validateContent(content);
     setValidationErrors(validation.errors);
   }, [content]);
-
-  // Handle content change
-  const handleContentChange = useCallback((value: string | undefined) => {
-    const newContent = value || '';
-    setContent(newContent);
-    setHasUnsavedChanges(true);
-  }, []);
-
-  // Handle save
-  const handleSave = useCallback((showMessage = true) => {
-    if (!content.trim()) {
-      message.error('内容不能为空');
-      return;
-    }
-
-    form.validateFields().then((values) => {
-      const promptData: PromptCreate | PromptUpdate = {
-        name: values.name,
-        content,
-        type: values.type,
-        business_type: values.business_type,
-        status: values.status,
-        author: values.author,
-        category_id: values.category_id,
-        tags: values.tags,
-        variables: detectedVariables,
-        extra_metadata: {
-          detected_variables_count: detectedVariables.length,
-          content_length: content.length,
-          last_edited: new Date().toISOString()
-        }
-      };
-
-      if (isNew) {
-        createPromptMutation.mutate(promptData as PromptCreate);
-      } else {
-        updatePromptMutation.mutate({
-          id: Number(id),
-          prompt: promptData
-        });
-      }
-
-      if (showMessage) {
-        message.success('保存中...');
-      }
-    });
-  }, [content, form, isNew, id, detectedVariables, createPromptMutation, updatePromptMutation]);
-
-  // Handle save and continue
-  const handleSaveAndContinue = useCallback(() => {
-    handleSave();
-    navigate('/prompts');
-  }, [handleSave, navigate]);
 
   // Render preview content
   const renderPreview = () => {

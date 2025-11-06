@@ -67,11 +67,11 @@ export interface TestCasesListResponse {
 }
 
 export interface Task extends TaskStatusResponse {
-  id: string;
-  business_type: string;
+  task_id: string;
+  business_type?: string;
   status: 'pending' | 'running' | 'completed' | 'failed';
-  created_at: string;
-  updated_at?: string;
+  created_at?: string;
+  completed_at?: string;
 }
 
 export interface BusinessTypeResponse {

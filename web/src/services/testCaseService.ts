@@ -9,20 +9,22 @@ import {
 
 export const testCaseService = {
   // 获取所有测试用例
-  getAllTestCases: async (): Promise<TestCasesListResponse> => {
-    const response = await apiClient.get<TestCasesListResponse>('/test-cases');
+  getAllTestCases: async (projectId?: number): Promise<TestCasesListResponse> => {
+    const params = projectId ? { project_id: projectId } : {};
+    const response = await apiClient.get<TestCasesListResponse>('/api/v1/test-cases', { params });
     return response.data;
   },
 
   // 根据业务类型获取测试用例
-  getTestCasesByBusinessType: async (businessType: string): Promise<TestCasesListResponse> => {
-    const response = await apiClient.get<TestCasesListResponse>(`/test-cases/${businessType}`);
+  getTestCasesByBusinessType: async (businessType: string, projectId?: number): Promise<TestCasesListResponse> => {
+    const params = projectId ? { project_id: projectId } : {};
+    const response = await apiClient.get<TestCasesListResponse>(`/api/v1/test-cases/${businessType}`, { params });
     return response.data;
   },
 
   // 根据ID获取单个测试用例组
   getTestCaseById: async (id: number): Promise<any> => {
-    const response = await apiClient.get(`/test-cases`);
+    const response = await apiClient.get(`/api/v1/test-cases`);
     const allTestGroups = response.data.test_case_groups || [];
     const testGroup = allTestGroups.find((tg: any) => tg.id === id);
     if (!testGroup) {
@@ -33,7 +35,7 @@ export const testCaseService = {
 
   // 根据ID获取单个测试用例项
   getTestCaseItemById: async (groupId: number, itemId: number): Promise<any> => {
-    const response = await apiClient.get(`/test-cases`);
+    const response = await apiClient.get(`/api/v1/test-cases`);
     const allTestGroups = response.data.test_case_groups || [];
     const testGroup = allTestGroups.find((tg: any) => tg.id === groupId);
     if (!testGroup) {
@@ -47,25 +49,27 @@ export const testCaseService = {
   },
 
   // 生成测试用例
-  generateTestCases: async (request: GenerateTestCaseRequest): Promise<GenerateResponse> => {
-    const response = await apiClient.post<GenerateResponse>('/generate-test-cases', request);
+  generateTestCases: async (request: GenerateTestCaseRequest, projectId?: number): Promise<GenerateResponse> => {
+    const payload = projectId ? { ...request, project_id: projectId } : request;
+    const response = await apiClient.post<GenerateResponse>('/api/v1/generate-test-cases', payload);
     return response.data;
   },
 
   // 删除测试用例（根据业务类型）
   deleteTestCasesByBusinessType: async (businessType: string): Promise<void> => {
-    await apiClient.delete(`/test-cases/${businessType}`);
+    await apiClient.delete(`/api/v1/test-cases/${businessType}`);
   },
 
   // 获取业务类型列表
-  getBusinessTypes: async (): Promise<BusinessTypeResponse> => {
-    const response = await apiClient.get<BusinessTypeResponse>('/business-types');
+  getBusinessTypes: async (projectId?: number): Promise<BusinessTypeResponse> => {
+    const params = projectId ? { project_id: projectId } : {};
+    const response = await apiClient.get<BusinessTypeResponse>('/api/v1/business-types', { params });
     return response.data;
   },
 
   // 获取业务类型映射（包含中文名称和描述）
   getBusinessTypesMapping: async (): Promise<BusinessTypeMappingResponse> => {
-    const response = await apiClient.get<BusinessTypeMappingResponse>('/business-types/mapping');
+    const response = await apiClient.get<BusinessTypeMappingResponse>('/api/v1/business-types/mapping');
     return response.data;
   },
 
@@ -77,7 +81,7 @@ export const testCaseService = {
         params.append('business_type', businessType);
       }
 
-      const url = `/test-cases/export${params.toString() ? '?' + params.toString() : ''}`;
+      const url = `/api/v1/test-cases/export${params.toString() ? '?' + params.toString() : ''}`;
 
       const response = await apiClient.get(url, {
         responseType: 'blob',

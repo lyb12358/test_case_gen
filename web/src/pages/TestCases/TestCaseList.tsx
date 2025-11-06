@@ -24,6 +24,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { testCaseService } from '../../services/testCaseService';
 import { TestCaseGroup } from '../../types/testCases';
+import { useProject } from '../../contexts/ProjectContext';
 
 const { Title } = Typography;
 const { Search } = Input;
@@ -32,14 +33,15 @@ const { RangePicker } = DatePicker;
 const TestCaseList: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { currentProject } = useProject();
   const [searchText, setSearchText] = useState('');
   const [selectedBusinessType, setSelectedBusinessType] = useState<string>('');
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
 
   // 获取测试用例列表
   const { data: testCasesData, isLoading, refetch } = useQuery({
-    queryKey: ['testCases'],
-    queryFn: testCaseService.getAllTestCases,
+    queryKey: ['testCases', currentProject?.id],
+    queryFn: () => testCaseService.getAllTestCases(currentProject?.id),
     select: (data) => {
       let testCaseGroups = data.test_case_groups || [];
 
@@ -312,8 +314,7 @@ const TestCaseList: React.FC = () => {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <Title level={2} style={{ margin: 0 }}>测试用例列表</Title>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 24 }}>
         <Space>
           <Button
             type="primary"

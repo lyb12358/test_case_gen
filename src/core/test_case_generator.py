@@ -9,11 +9,12 @@ from ..llm.llm_client import LLMClient
 from ..utils.config import Config
 from ..utils.file_handler import load_text_file, save_json_file, ensure_directory_exists
 from ..utils.prompt_builder import PromptBuilder
+from ..utils.database_prompt_builder import DatabasePromptBuilder
 from ..core.json_extractor import JSONExtractor
 from ..core.excel_converter import ExcelConverter
 from ..database.database import DatabaseManager
 from ..database.operations import DatabaseOperations
-from ..database.models import BusinessType, TestCaseGroup, TestCaseItem, KnowledgeEntity, KnowledgeRelation, TestCaseEntity, EntityType
+from ..database.models import BusinessType, TestCaseGroup, TestCaseItem, KnowledgeEntity, KnowledgeRelation, TestCaseEntity, EntityType, BusinessTypeConfig
 
 
 class TestCaseGenerator:
@@ -30,7 +31,8 @@ class TestCaseGenerator:
         self.llm_client = LLMClient(config)
         self.json_extractor = JSONExtractor()
         self.excel_converter = ExcelConverter()
-        self.prompt_builder = PromptBuilder(config)
+        # Use DatabasePromptBuilder for dynamic business type support
+        self.prompt_builder = DatabasePromptBuilder(config)
         self.db_manager = DatabaseManager(config)
 
         # Create database tables if they don't exist
@@ -50,6 +52,54 @@ class TestCaseGenerator:
             return None, None
 
         return system_prompt, requirements_prompt
+
+    def validate_business_type(self, business_type: str) -> bool:
+        """
+        Validate business type using the new dynamic system.
+
+        Args:
+            business_type (str): Business type code
+
+        Returns:
+            bool: True if business type is valid and active, False otherwise
+        """
+        try:
+            with self.db_manager.get_session() as db:
+                # Check if business type exists in BusinessTypeConfig and is active
+                business_config = db.query(BusinessTypeConfig).filter(
+                    BusinessTypeConfig.code == business_type.upper(),
+                    BusinessTypeConfig.is_active == True
+                ).first()
+
+                if business_config:
+                    print(f"[OK] Business type validated: {business_config.name} ({business_config.code})")
+                    return True
+                else:
+                    print(f"[ERROR] Business type '{business_type}' not found or not active in database")
+                    return False
+
+        except Exception as e:
+            print(f"[ERROR] Failed to validate business type '{business_type}': {str(e)}")
+            return False
+
+    def get_available_business_types(self) -> list:
+        """
+        Get list of available active business types from database.
+
+        Returns:
+            list: List of available business type codes
+        """
+        try:
+            with self.db_manager.get_session() as db:
+                business_types = db.query(BusinessTypeConfig.code).filter(
+                    BusinessTypeConfig.is_active == True
+                ).order_by(BusinessTypeConfig.code).all()
+
+                return [bt[0] for bt in business_types]
+
+        except Exception as e:
+            print(f"[ERROR] Failed to get available business types: {str(e)}")
+            return []
 
     def generate_test_cases(self) -> Optional[Dict[str, Any]]:
         """
@@ -199,9 +249,18 @@ class TestCaseGenerator:
         try:
             print(f"[START] Test case generation for {business_type}")
 
-            # Validate business type
-            business_enum = BusinessType(business_type.upper())
-            print(f"[OK] Business type validated: {business_enum.value}")
+            # Validate business type using new dynamic system
+            if not self.validate_business_type(business_type):
+                raise ValueError(f"Invalid or inactive business type: {business_type}")
+
+            # For backward compatibility, also try to get the enum (will be used in database operations)
+            try:
+                business_enum = BusinessType(business_type.upper())
+                print(f"[OK] Business type enum validated: {business_enum.value}")
+            except ValueError:
+                # If enum doesn't exist, we'll handle it in database operations
+                business_enum = None
+                print(f"[INFO] Business type '{business_type}' exists in new system but not in legacy enum")
 
             # Build requirements prompt
             prompt_start = time.time()
@@ -255,7 +314,7 @@ class TestCaseGenerator:
             print(f"[ERROR] Generation failed | Time: {total_time:.2f}s | Error: {str(e)[:100]}...")
             raise Exception(error_msg) from e
 
-    def save_to_database(self, test_cases_data: Dict[str, Any], business_type: str) -> bool:
+    def save_to_database(self, test_cases_data: Dict[str, Any], business_type: str, project_id: Optional[int] = None) -> bool:
         """
         Save test cases to database using new TestCaseGroup + TestCaseItem structure.
 
@@ -265,6 +324,7 @@ class TestCaseGenerator:
         Args:
             test_cases_data (Dict[str, Any]): Test cases data
             business_type (str): Business type
+            project_id (Optional[int]): Project ID
 
         Returns:
             bool: True if successful, False otherwise
@@ -357,7 +417,8 @@ class TestCaseGenerator:
                     db_operations = DatabaseOperations(db)
                     test_case_group = db_operations.create_test_case_group(
                         business_enum,
-                        generation_metadata
+                        generation_metadata,
+                        project_id
                     )
                     # Get ID inside the transaction before session closes
                     test_case_group_id = test_case_group.id

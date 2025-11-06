@@ -11,7 +11,7 @@ from typing import Dict, List, Any, Optional
 
 from src.services.config_service import config_service
 
-router = APIRouter(prefix="/api/config", tags=["configuration"])
+router = APIRouter(prefix="/api/v1/config", tags=["configuration"])
 
 
 class ConfigurationItem(BaseModel):

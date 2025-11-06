@@ -72,7 +72,7 @@ class ConfigurationService {
 
     try {
       const response = await apiClient.get<Record<string, BusinessTypeItem>>(
-        '/api/config/business-types',
+        '/api/v1/config/business-types',
         { params: { refresh: refresh || false } }
       );
 
@@ -91,7 +91,7 @@ class ConfigurationService {
   async getBusinessType(businessType: string): Promise<BusinessTypeItem> {
     try {
       const response = await apiClient.get<BusinessTypeItem>(
-        `/api/config/business-types/${businessType}`
+        `/api/v1/config/business-types/${businessType}`
       );
       return response.data;
     } catch (error) {
@@ -110,7 +110,7 @@ class ConfigurationService {
 
     try {
       const response = await apiClient.get<Record<string, ConfigurationItem>>(
-        '/api/config/prompt-types',
+        '/api/v1/config/prompt-types',
         { params: { refresh: refresh || false } }
       );
 
@@ -129,7 +129,7 @@ class ConfigurationService {
   async getPromptType(promptType: string): Promise<ConfigurationItem> {
     try {
       const response = await apiClient.get<ConfigurationItem>(
-        `/api/config/prompt-types/${promptType}`
+        `/api/v1/config/prompt-types/${promptType}`
       );
       return response.data;
     } catch (error) {
@@ -148,7 +148,7 @@ class ConfigurationService {
 
     try {
       const response = await apiClient.get<Record<string, ConfigurationItem>>(
-        '/api/config/prompt-statuses',
+        '/api/v1/config/prompt-statuses',
         { params: { refresh: refresh || false } }
       );
 
@@ -167,7 +167,7 @@ class ConfigurationService {
   async getPromptStatus(promptStatus: string): Promise<ConfigurationItem> {
     try {
       const response = await apiClient.get<ConfigurationItem>(
-        `/api/config/prompt-statuses/${promptStatus}`
+        `/api/v1/config/prompt-statuses/${promptStatus}`
       );
       return response.data;
     } catch (error) {
@@ -186,7 +186,7 @@ class ConfigurationService {
 
     try {
       const response = await apiClient.get<AllConfigurationResponse>(
-        '/api/config/all',
+        '/api/v1/config/all',
         { params: { refresh: refresh || false } }
       );
 
@@ -207,7 +207,7 @@ class ConfigurationService {
    */
   async refreshCache(): Promise<void> {
     try {
-      await apiClient.post('/api/config/refresh-cache');
+      await apiClient.post('/api/v1/config/refresh-cache');
       this.clearCache();
     } catch (error) {
       console.error('Failed to refresh cache:', error);
@@ -221,7 +221,7 @@ class ConfigurationService {
   async validateBusinessType(businessType: string): Promise<boolean> {
     try {
       const response = await apiClient.get<ValidationResult>(
-        `/api/config/validate/business-type/${businessType}`
+        `/api/v1/config/validate/business-type/${businessType}`
       );
       return response.data.valid;
     } catch (error) {
@@ -236,7 +236,7 @@ class ConfigurationService {
   async validatePromptType(promptType: string): Promise<boolean> {
     try {
       const response = await apiClient.get<ValidationResult>(
-        `/api/config/validate/prompt-type/${promptType}`
+        `/api/v1/config/validate/prompt-type/${promptType}`
       );
       return response.data.valid;
     } catch (error) {
@@ -251,7 +251,7 @@ class ConfigurationService {
   async validatePromptStatus(promptStatus: string): Promise<boolean> {
     try {
       const response = await apiClient.get<ValidationResult>(
-        `/api/config/validate/prompt-status/${promptStatus}`
+        `/api/v1/config/validate/prompt-status/${promptStatus}`
       );
       return response.data.valid;
     } catch (error) {

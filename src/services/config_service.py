@@ -51,10 +51,7 @@ class ConfigurationService:
                     business_types[config.code] = {
                         'value': config.code,
                         'name': config.name,
-                        'description': config.description or f"业务类型 {config.code} 的功能描述",
-                        'category': config.category,
-                        'interface_type': config.interface_type,
-                        'interface_entity': config.interface_entity
+                        'description': config.description or f"业务类型 {config.code} 的功能描述"
                     }
 
                 self._business_types_cache = business_types

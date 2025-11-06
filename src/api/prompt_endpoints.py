@@ -15,9 +15,27 @@ from sqlalchemy.orm import Session
 from ..database.database import DatabaseManager
 from ..database.models import (
     Prompt, PromptCategory, PromptVersion, PromptTemplate,
-    PromptType, PromptStatus, BusinessType
+    PromptType, PromptStatus, BusinessType, Project
 )
 from ..database.operations import DatabaseOperations
+
+def validate_project_id(project_id: Optional[int], db: Session, use_default: bool = True):
+    """Validate project ID similar to endpoints.py"""
+    if project_id is None:
+        if use_default:
+            db_operations = DatabaseOperations(db)
+            return db_operations.get_or_create_default_project()
+        else:
+            return None
+
+    db_operations = DatabaseOperations(db)
+    project = db_operations.get_project(project_id)
+    if project is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Project with ID {project_id} not found"
+        )
+    return project
 from ..models.prompt import (
     Prompt as PromptSchema,
     PromptCreate,
@@ -40,7 +58,7 @@ from ..utils.config import Config
 from ..utils.database_prompt_builder import DatabasePromptBuilder
 
 # Create router
-router = APIRouter(prefix="/prompts", tags=["prompts"])
+router = APIRouter(prefix="/api/v1/prompts", tags=["prompts"])
 
 
 def get_database_manager() -> DatabaseManager:
@@ -58,6 +76,40 @@ def get_prompt_builder(db_manager: DatabaseManager = Depends(get_database_manage
     """Dependency to get prompt builder."""
     config = Config()
     return DatabasePromptBuilder(config)
+
+
+def validate_project_id(project_id: Optional[int], db: Session, use_default: bool = True) -> Project:
+    """
+    Validate that a project_id exists and return the project.
+    If no project_id is provided and use_default is True, returns the default project.
+
+    Args:
+        project_id (Optional[int]): Project ID to validate
+        db (Session): Database session
+        use_default (bool): Whether to use default project when project_id is None
+
+    Returns:
+        Project: Valid project (either specified or default)
+
+    Raises:
+        HTTPException: If project_id is provided but project doesn't exist
+    """
+    db_operations = DatabaseOperations(db)
+
+    if project_id is None:
+        if use_default:
+            # Get or create default project for backward compatibility
+            return db_operations.get_or_create_default_project()
+        else:
+            return None
+
+    project = db_operations.get_project(project_id)
+    if project is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Project with ID {project_id} not found"
+        )
+    return project
 
 
 # Category endpoints
@@ -137,12 +189,18 @@ async def get_prompts(
     status: Optional[PromptStatus] = Query(None),
     category_id: Optional[int] = Query(None),
     search: Optional[str] = Query(None),
+    project_id: Optional[int] = Query(None, description="Filter by project ID"),
     db: Session = Depends(get_db_session)
 ):
     """Get prompts with pagination and filtering."""
+    # Validate project ID with backward compatibility
+    project = validate_project_id(project_id, db, use_default=True)
+
     query = db.query(Prompt)
 
     # Apply filters
+    if project_id:
+        query = query.filter(Prompt.project_id == project.id)
     if type:
         query = query.filter(Prompt.type == type)
     if business_type:
@@ -166,6 +224,7 @@ async def get_prompts(
     for prompt in prompts:
         items.append(PromptSummary(
             id=prompt.id,
+            project_id=prompt.project_id or 1,  # Default to project 1 for backward compatibility
             name=prompt.name,
             type=prompt.type,
             business_type=prompt.business_type,
@@ -214,6 +273,7 @@ async def get_prompt(prompt_id: int, db: Session = Depends(get_db_session)):
         extra_metadata=extra_metadata,
         category_id=prompt.category_id,
         file_path=prompt.file_path,
+        project_id=prompt.project_id,
         created_at=prompt.created_at,
         updated_at=prompt.updated_at,
         category=prompt.category
@@ -223,9 +283,13 @@ async def get_prompt(prompt_id: int, db: Session = Depends(get_db_session)):
 @router.post("/", response_model=PromptSchema)
 async def create_prompt(
     prompt: PromptCreate,
+    project_id: Optional[int] = Query(None, description="Project ID for the prompt"),
     db: Session = Depends(get_db_session)
 ):
     """Create a new prompt."""
+    # Validate project ID with backward compatibility
+    project = validate_project_id(project_id, db, use_default=True)
+
     # Check if prompt with same name already exists
     existing = db.query(Prompt).filter(Prompt.name == prompt.name).first()
     if existing:
@@ -248,7 +312,8 @@ async def create_prompt(
         variables=variables_json,
         extra_metadata=metadata_json,
         category_id=prompt.category_id,
-        file_path=prompt.file_path
+        file_path=prompt.file_path,
+        project_id=project.id
     )
 
     db.add(db_prompt)
@@ -348,7 +413,8 @@ async def clone_prompt(
         tags=original.tags,
         variables=original.variables,
         extra_metadata=original.extra_metadata,
-        category_id=original.category_id
+        category_id=original.category_id,
+        project_id=original.project_id
     )
 
     db.add(clone)
@@ -401,6 +467,7 @@ async def search_prompts(
     for prompt in prompts:
         items.append(PromptSummary(
             id=prompt.id,
+            project_id=prompt.project_id or 1,  # Default to project 1 for backward compatibility
             name=prompt.name,
             type=prompt.type,
             business_type=prompt.business_type,
@@ -494,20 +561,33 @@ async def validate_prompt(prompt_id: int, db: Session = Depends(get_db_session))
 
 # Statistics and utility endpoints
 @router.get("/stats/overview", response_model=PromptStatistics)
-async def get_prompt_statistics(db: Session = Depends(get_db_session)):
-    """Get prompt statistics overview."""
-    total_prompts = db.query(Prompt).count()
-    active_prompts = db.query(Prompt).filter(Prompt.status == PromptStatus.ACTIVE).count()
-    draft_prompts = db.query(Prompt).filter(Prompt.status == PromptStatus.DRAFT).count()
-    archived_prompts = db.query(Prompt).filter(Prompt.status == PromptStatus.ARCHIVED).count()
+async def get_prompt_statistics(
+    project_id: Optional[int] = None,
+    db: Session = Depends(get_db_session)
+):
+    """Get prompt statistics overview for a specific project."""
+    # Validate project ID with backward compatibility
+    project = validate_project_id(project_id, db, use_default=True)
 
-    prompts_by_type = db.query(Prompt.type, func.count(Prompt.id)).group_by(Prompt.type).all()
-    prompts_by_business_type = db.query(Prompt.business_type, func.count(Prompt.id)).filter(
+    # Filter by project
+    query = db.query(Prompt).filter(Prompt.project_id == project.id)
+
+    total_prompts = query.count()
+    active_prompts = query.filter(Prompt.status == PromptStatus.ACTIVE).count()
+    draft_prompts = query.filter(Prompt.status == PromptStatus.DRAFT).count()
+    archived_prompts = query.filter(Prompt.status == PromptStatus.ARCHIVED).count()
+
+    prompts_by_type = query.with_entities(
+        Prompt.type, func.count(Prompt.id)
+    ).group_by(Prompt.type).all()
+    prompts_by_business_type = query.with_entities(
+        Prompt.business_type, func.count(Prompt.id)
+    ).filter(
         Prompt.business_type.isnot(None)
     ).group_by(Prompt.business_type).all()
 
     # Recent activity
-    recent_prompts = db.query(Prompt).filter(
+    recent_prompts = query.filter(
         Prompt.status == PromptStatus.ACTIVE
     ).order_by(desc(Prompt.updated_at)).limit(5).all()
 
@@ -515,6 +595,7 @@ async def get_prompt_statistics(db: Session = Depends(get_db_session)):
     for prompt in recent_prompts:
         recent_activity.append(PromptSummary(
             id=prompt.id,
+            project_id=prompt.project_id or project.id,
             name=prompt.name,
             type=prompt.type,
             business_type=prompt.business_type,
@@ -527,7 +608,7 @@ async def get_prompt_statistics(db: Session = Depends(get_db_session)):
         ))
 
     # Recently updated
-    most_recent = db.query(Prompt).filter(
+    most_recent = query.filter(
         Prompt.status == PromptStatus.ACTIVE
     ).order_by(desc(Prompt.updated_at)).limit(5).all()
 
@@ -535,6 +616,7 @@ async def get_prompt_statistics(db: Session = Depends(get_db_session)):
     for prompt in most_recent:
         most_recent_prompts.append(PromptSummary(
             id=prompt.id,
+            project_id=prompt.project_id or project.id,
             name=prompt.name,
             type=prompt.type,
             business_type=prompt.business_type,

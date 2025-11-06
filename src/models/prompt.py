@@ -62,6 +62,7 @@ class PromptCategory(PromptCategoryBase):
 
 class PromptBase(BasePromptModel):
     """Base model for prompts."""
+    project_id: int = Field(..., description="Project ID")
     name: str = Field(..., description="Prompt name", min_length=1, max_length=200)
     content: str = Field(..., description="Prompt content", min_length=1)
     type: str = Field(..., description="Prompt type")
@@ -153,6 +154,8 @@ class Prompt(PromptBase):
 class PromptSummary(BasePromptModel):
     """Summary model for prompt lists."""
     id: int = Field(..., description="Prompt ID")
+    project_id: int = Field(..., description="Project ID")
+    project_name: Optional[str] = Field(default=None, description="Project name")
     name: str = Field(..., description="Prompt name")
     type: str = Field(..., description="Prompt type")
     business_type: Optional[str] = Field(default=None, description="Associated business type")
@@ -166,6 +169,7 @@ class PromptSummary(BasePromptModel):
 
 class PromptVersionBase(BasePromptModel):
     """Base model for prompt versions."""
+    project_id: int = Field(..., description="Project ID")
     version_number: str = Field(..., description="Version number")
     content: str = Field(..., description="Version content", min_length=1)
     changelog: Optional[str] = Field(default=None, description="Change description")
@@ -186,6 +190,7 @@ class PromptVersion(PromptVersionBase):
 
 class PromptTemplateBase(BasePromptModel):
     """Base model for prompt templates."""
+    project_id: int = Field(..., description="Project ID")
     name: str = Field(..., description="Template name", min_length=1, max_length=200)
     template_content: str = Field(..., description="Template content", min_length=1)
     description: Optional[str] = Field(default=None, description="Template description")

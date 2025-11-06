@@ -53,6 +53,7 @@ import {
 import { configService } from '../../services/configService';
 import promptService, { promptUtils } from '../../services/promptService';
 import { statsService } from '../../services/promptService';
+import { useProject } from '../../contexts/ProjectContext';
 
 const { Search } = Input;
 const { Option } = Select;
@@ -60,6 +61,10 @@ const { Option } = Select;
 const PromptList: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { currentProject } = useProject();
+
+  // 添加调试信息
+  console.log('PromptList: 组件开始渲染', { currentProject });
 
   // State
   const [currentPage, setCurrentPage] = useState(1);
@@ -112,24 +117,26 @@ const PromptList: React.FC = () => {
     error,
     refetch
   } = useQuery({
-    queryKey: ['prompts', currentPage, pageSize, searchText, typeFilter, statusFilter, businessTypeFilter],
+    queryKey: ['prompts', currentPage, pageSize, searchText, typeFilter, statusFilter, businessTypeFilter, currentProject?.id],
     queryFn: () => promptService.prompt.getPrompts({
       page: currentPage,
       size: pageSize,
       search: searchText || undefined,
       type: typeFilter,
       status: statusFilter,
-      business_type: businessTypeFilter
+      business_type: businessTypeFilter,
+      project_id: currentProject?.id
     }),
-    placeholderData: (previousData) => previousData
+    placeholderData: (previousData) => previousData,
+    enabled: !!currentProject // 只有选择了项目才启用查询
   });
 
   // Fetch statistics data
   const {
     data: statsData
   } = useQuery({
-    queryKey: ['prompt-stats'],
-    queryFn: () => statsService.getOverviewStats(),
+    queryKey: ['prompt-stats', currentProject?.id],
+    queryFn: () => statsService.getOverviewStats(currentProject?.id),
     staleTime: 5 * 60 * 1000, // 5 minutes cache
   });
 
@@ -409,6 +416,25 @@ const PromptList: React.FC = () => {
     );
   }
 
+  // 如果没有选择项目，显示提示信息
+  if (!currentProject) {
+    return (
+      <div style={{ padding: '24px' }}>
+        <Card>
+          <Empty
+            description={
+              <div>
+                <h3>请先选择一个项目</h3>
+                <p>请在顶部导航栏选择一个项目后，即可查看该项目的提示词列表。</p>
+              </div>
+            }
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          />
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div style={{ padding: '24px' }}>
       {/* Statistics Cards */}
@@ -518,7 +544,19 @@ const PromptList: React.FC = () => {
                 </Button>
               )}
 
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/prompts/create')}>
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => {
+                  console.log('PromptList: 点击新建提示词按钮');
+                  console.log('PromptList Debug:', {
+                    currentPath: window.location.pathname,
+                    targetPath: '/prompts/create',
+                    timestamp: new Date().toISOString()
+                  });
+                  navigate('/prompts/create');
+                }}
+              >
                 新建提示词
               </Button>
 

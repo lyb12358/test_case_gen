@@ -93,51 +93,112 @@ const TaskDetail: React.FC = () => {
     );
   };
 
-  const getMockTaskLogs = (): TaskLog[] => {
-    const logs: TaskLog[] = [
-      {
-        timestamp: task?.created_at || new Date().toISOString(),
-        level: 'info',
-        message: '任务已创建，开始执行'
+  const getTaskLogs = (): TaskLog[] => {
+    const logs: TaskLog[] = [];
+
+    if (!task) return logs;
+
+    // Create log based on actual task data
+    const createdAt = dayjs(task.created_at);
+    const now = dayjs();
+
+    // Initial task creation log
+    logs.push({
+      timestamp: task.created_at,
+      level: 'info',
+      message: `任务已创建 - ${getTaskTypeText(task.task_type || '')} (${task.business_type || '未指定业务类型'})`
+    });
+
+    // If task is still pending after creation
+    if (task.status === 'pending') {
+      const elapsedMinutes = now.diff(createdAt, 'minute');
+      if (elapsedMinutes > 1) {
+        logs.push({
+          timestamp: createdAt.add(1, 'minute').toISOString(),
+          level: 'info',
+          message: '任务在队列中等待执行...'
+        });
       }
-    ];
+    }
 
-    if (task?.status === 'running') {
+    // If task is running or completed/failed, it was started
+    if (task.status !== 'pending') {
+      // Estimate start time (we don't have exact start time, so estimate)
+      const estimatedStartTime = createdAt.add(30, 'second');
       logs.push({
-        timestamp: new Date().toISOString(),
+        timestamp: estimatedStartTime.toISOString(),
         level: 'info',
-        message: '正在处理任务...'
+        message: '开始执行任务...'
       });
-    }
 
-    if (task?.status === 'completed') {
-      logs.push(
-        {
-          timestamp: new Date().toISOString(),
-          level: 'info',
-          message: '任务执行完成'
-        },
-        {
-          timestamp: new Date().toISOString(),
-          level: 'info',
-          message: task.result_summary || '任务成功完成，所有操作都已正常执行'
+      // Progress logs based on progress percentage
+      if (task.progress && task.progress > 0) {
+        if (task.progress >= 25) {
+          logs.push({
+            timestamp: estimatedStartTime.add(1, 'minute').toISOString(),
+            level: 'info',
+            message: '正在分析业务类型和提示词配置...'
+          });
         }
-      );
+        if (task.progress >= 50) {
+          logs.push({
+            timestamp: estimatedStartTime.add(2, 'minute').toISOString(),
+            level: 'info',
+            message: '正在生成测试用例...'
+          });
+        }
+        if (task.progress >= 75) {
+          logs.push({
+            timestamp: estimatedStartTime.add(3, 'minute').toISOString(),
+            level: 'info',
+            message: '正在验证和格式化测试用例...'
+          });
+        }
+      }
     }
 
-    if (task?.status === 'failed') {
-      logs.push(
-        {
-          timestamp: new Date().toISOString(),
-          level: 'warning',
-          message: '任务执行中遇到问题'
-        },
-        {
-          timestamp: new Date().toISOString(),
+    // Completion or failure logs
+    if (task.status === 'completed') {
+      const completedAt = task.updated_at ? dayjs(task.updated_at) : now;
+      logs.push({
+        timestamp: completedAt.toISOString(),
+        level: 'info',
+        message: '任务执行完成'
+      });
+
+      if (task.test_case_id) {
+        logs.push({
+          timestamp: completedAt.add(1, 'second').toISOString(),
+          level: 'info',
+          message: `已生成测试用例组 ID: ${task.test_case_id}`
+        });
+      }
+    }
+
+    if (task.status === 'failed') {
+      const failedAt = task.updated_at ? dayjs(task.updated_at) : now;
+      logs.push({
+        timestamp: failedAt.toISOString(),
+        level: 'warning',
+        message: '任务执行失败'
+      });
+
+      if (task.error || task.message) {
+        logs.push({
+          timestamp: failedAt.add(1, 'second').toISOString(),
           level: 'error',
-          message: task.error_details || task.message || '任务执行失败，请检查配置或重试'
-        }
-      );
+          message: task.error || task.message || '未知错误'
+        });
+      }
+    }
+
+    // If task is still running, add current progress
+    if (task.status === 'running') {
+      logs.push({
+        timestamp: now.toISOString(),
+        level: 'info',
+        message: task.message || `正在执行任务... (${task.progress || 0}%)`
+      });
     }
 
     return logs;
@@ -169,7 +230,7 @@ const TaskDetail: React.FC = () => {
     );
   }
 
-  const taskLogs = getMockTaskLogs();
+  const taskLogs = getTaskLogs();
 
   return (
     <div>
@@ -307,7 +368,7 @@ const TaskDetail: React.FC = () => {
                 {task.status === 'failed' && (
                   <Button
                     type="link"
-                    onClick={() => navigate('/testcases/generate')}
+                    onClick={() => navigate('/test-cases/generate')}
                     style={{ padding: 0, marginTop: 8 }}
                   >
                     重新创建任务

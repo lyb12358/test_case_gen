@@ -8,7 +8,7 @@ from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import delete, and_
 
-from .models import TestCaseGroup, TestCaseItem, GenerationJob, BusinessType, JobStatus, KnowledgeEntity, KnowledgeRelation, EntityType, TestCaseEntity
+from .models import TestCaseGroup, TestCaseItem, GenerationJob, BusinessType, JobStatus, KnowledgeEntity, KnowledgeRelation, EntityType, TestCaseEntity, Project
 
 
 class DatabaseOperations:
@@ -25,18 +25,24 @@ class DatabaseOperations:
 
     
     # Generation Job Operations
-    def create_generation_job(self, job_id: str, business_type: BusinessType) -> GenerationJob:
+    def create_generation_job(self, job_id: str, business_type: BusinessType, project_id: Optional[int] = None) -> GenerationJob:
         """
         Create a new generation job.
 
         Args:
             job_id (str): Job ID
             business_type (BusinessType): Business type
+            project_id (int): Project ID (defaults to getting or creating default project)
 
         Returns:
             GenerationJob: Created generation job
         """
-        job = GenerationJob(id=job_id, business_type=business_type)
+        # If no project_id provided, get or create default project
+        if project_id is None:
+            default_project = self.get_or_create_default_project()
+            project_id = default_project.id
+
+        job = GenerationJob(id=job_id, business_type=business_type, project_id=project_id)
         self.db.add(job)
         self.db.commit()
         self.db.refresh(job)
@@ -268,24 +274,53 @@ class DatabaseOperations:
         """
         return self.db.query(KnowledgeRelation).filter(KnowledgeRelation.business_type == business_type).all()
 
-    def get_knowledge_graph_data(self, business_type: Optional[BusinessType] = None) -> Dict[str, Any]:
+    def get_knowledge_entities_by_project(self, project_id: int) -> List[KnowledgeEntity]:
+        """
+        Get all knowledge entities for a specific project.
+
+        Args:
+            project_id (int): Project ID
+
+        Returns:
+            List[KnowledgeEntity]: List of entities for the specified project
+        """
+        return self.db.query(KnowledgeEntity).filter(KnowledgeEntity.project_id == project_id).all()
+
+    def get_knowledge_relations_by_project(self, project_id: int) -> List[KnowledgeRelation]:
+        """
+        Get all knowledge relations for a specific project.
+
+        Args:
+            project_id (int): Project ID
+
+        Returns:
+            List[KnowledgeRelation]: List of relations for the specified project
+        """
+        return self.db.query(KnowledgeRelation).filter(KnowledgeRelation.project_id == project_id).all()
+
+    def get_knowledge_graph_data(self, business_type: Optional[BusinessType] = None, project_id: Optional[int] = None) -> Dict[str, Any]:
         """
         Get knowledge graph data in G6 format.
 
         Args:
             business_type (Optional[BusinessType]): Filter by business type
+            project_id (Optional[str]): Filter by project ID
 
         Returns:
             Dict[str, Any]: Graph data in G6 format
         """
         # 添加调试日志
-        print(f"DB: get_knowledge_graph_data called with business_type: {business_type}")
+        print(f"DB: get_knowledge_graph_data called with business_type: {business_type}, project_id: {project_id}")
 
         # Get entities
         if business_type:
             entities = self.get_knowledge_entities_by_business_type(business_type)
             relations = self.get_knowledge_relations_by_business_type(business_type)
             print(f"DB: Filtered by business_type {business_type}: {len(entities)} entities, {len(relations)} relations")
+        elif project_id:
+            entities = self.get_knowledge_entities_by_project(project_id)
+            relations = self.get_knowledge_relations_by_project(project_id)
+            print(f"DB: Filtered by project_id {project_id}: {len(entities)} entities, {len(relations)} relations")
         else:
             entities = self.get_all_knowledge_entities()
             relations = self.get_all_knowledge_relations()
@@ -508,20 +543,22 @@ class DatabaseOperations:
 
     # ========== New TestCaseGroup and TestCaseItem Operations ==========
 
-    def create_test_case_group(self, business_type: BusinessType, generation_metadata: Optional[Dict[str, Any]] = None) -> TestCaseGroup:
+    def create_test_case_group(self, business_type: BusinessType, generation_metadata: Optional[Dict[str, Any]] = None, project_id: Optional[int] = None) -> TestCaseGroup:
         """
         Create a new test case group.
 
         Args:
             business_type (BusinessType): Business type
             generation_metadata (Optional[Dict[str, Any]]): Generation metadata
+            project_id (Optional[int]): Project ID
 
         Returns:
             TestCaseGroup: Created test case group
         """
         group = TestCaseGroup(
             business_type=business_type,
-            generation_metadata=json.dumps(generation_metadata, ensure_ascii=False) if generation_metadata else None
+            generation_metadata=json.dumps(generation_metadata, ensure_ascii=False) if generation_metadata else None,
+            project_id=project_id
         )
         self.db.add(group)
         self.db.commit()
@@ -772,3 +809,171 @@ class DatabaseOperations:
             self.db.commit()
             return True
         return False
+
+    # Project CRUD Operations
+    def create_project(self, name: str, description: str = None, is_active: bool = True) -> Project:
+        """
+        Create a new project.
+
+        Args:
+            name (str): Project name
+            description (str): Project description
+            is_active (bool): Whether the project is active
+
+        Returns:
+            Project: Created project
+        """
+        project = Project(
+            name=name,
+            description=description,
+            is_active=is_active
+        )
+        self.db.add(project)
+        self.db.commit()
+        self.db.refresh(project)
+        return project
+
+    def get_project(self, project_id: int) -> Optional[Project]:
+        """
+        Get a project by ID.
+
+        Args:
+            project_id (int): Project ID
+
+        Returns:
+            Optional[Project]: Project or None
+        """
+        return self.db.query(Project).filter(Project.id == project_id).first()
+
+    def get_project_by_name(self, name: str) -> Optional[Project]:
+        """
+        Get a project by name.
+
+        Args:
+            name (str): Project name
+
+        Returns:
+            Optional[Project]: Project or None
+        """
+        return self.db.query(Project).filter(Project.name == name).first()
+
+    def get_all_projects(self, active_only: bool = True) -> List[Project]:
+        """
+        Get all projects.
+
+        Args:
+            active_only (bool): Whether to only return active projects
+
+        Returns:
+            List[Project]: List of projects
+        """
+        query = self.db.query(Project)
+        if active_only:
+            query = query.filter(Project.is_active == True)
+        return query.order_by(Project.created_at.desc()).all()
+
+    def update_project(self, project_id: int, **kwargs) -> Optional[Project]:
+        """
+        Update a project.
+
+        Args:
+            project_id (int): Project ID
+            **kwargs: Fields to update
+
+        Returns:
+            Optional[Project]: Updated project or None
+        """
+        project = self.get_project(project_id)
+        if project:
+            for key, value in kwargs.items():
+                if hasattr(project, key):
+                    setattr(project, key, value)
+            self.db.commit()
+            self.db.refresh(project)
+        return project
+
+    def delete_project(self, project_id: int, soft_delete: bool = True) -> bool:
+        """
+        Delete a project.
+
+        Args:
+            project_id (int): Project ID
+            soft_delete (bool): Whether to soft delete (deactivate) or hard delete
+
+        Returns:
+            bool: True if deleted successfully
+        """
+        project = self.get_project(project_id)
+        if not project:
+            return False
+
+        if soft_delete:
+            project.is_active = False
+            self.db.commit()
+        else:
+            # Hard delete - this will cascade delete all related data
+            self.db.delete(project)
+            self.db.commit()
+        return True
+
+    def get_project_stats(self, project_id: int) -> Dict[str, int]:
+        """
+        Get statistics for a project.
+
+        Args:
+            project_id (int): Project ID
+
+        Returns:
+            Dict[str, int]: Project statistics
+        """
+        stats = {}
+
+        # Test case groups count
+        stats['test_case_groups'] = self.db.query(TestCaseGroup).filter(
+            TestCaseGroup.project_id == project_id
+        ).count()
+
+        # Test case items count
+        from .models import TestCaseItem
+        stats['test_case_items'] = self.db.query(TestCaseItem).join(TestCaseGroup).filter(
+            TestCaseGroup.project_id == project_id
+        ).count()
+
+        # Generation jobs count
+        stats['generation_jobs'] = self.db.query(GenerationJob).filter(
+            GenerationJob.project_id == project_id
+        ).count()
+
+        # Knowledge entities count
+        stats['knowledge_entities'] = self.db.query(KnowledgeEntity).filter(
+            KnowledgeEntity.project_id == project_id
+        ).count()
+
+        # Knowledge relations count
+        stats['knowledge_relations'] = self.db.query(KnowledgeRelation).filter(
+            KnowledgeRelation.project_id == project_id
+        ).count()
+
+        # Prompts count
+        from .models import Prompt
+        stats['prompts'] = self.db.query(Prompt).filter(
+            Prompt.project_id == project_id
+        ).count()
+
+        return stats
+
+    def get_or_create_default_project(self) -> Project:
+        """
+        Get or create the default "远控场景" project.
+
+        Returns:
+            Project: Default project
+        """
+        project = self.get_project_by_name("远控场景")
+        if not project:
+            project = self.create_project(
+                name="远控场景",
+                description="TSP远程控制业务场景，包含29个远控业务类型",
+                is_active=True
+            )
+        return project

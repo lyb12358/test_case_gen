@@ -6,14 +6,17 @@ import Graph from './Graph';
 import { knowledgeGraphService } from '../../services/knowledgeGraphService';
 import { testCaseService } from '../../services/testCaseService';
 import { KnowledgeGraphData, GraphStats } from '../../types/knowledgeGraph';
+import { useProject } from '../../contexts/ProjectContext';
 
 const { Option } = Select;
 
 const KnowledgeGraph: React.FC = () => {
+  const { currentProject, projects } = useProject();
   const [graphData, setGraphData] = useState<KnowledgeGraphData | null>(null);
   const [stats, setStats] = useState<GraphStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedBusinessType, setSelectedBusinessType] = useState<string>('');
+  const [selectedProject, setSelectedProject] = useState<number | undefined>(undefined);
   const [error, setError] = useState<string>('');
 
   // Get business types and mapping from API
@@ -30,16 +33,16 @@ const KnowledgeGraph: React.FC = () => {
   const businessTypes = businessTypesData?.business_types || [];
   const businessTypesMap = businessTypesMapping?.business_types || {};
 
-  const loadData = async (businessType?: string) => {
+  const loadData = async (businessType?: string, projectId?: number) => {
     setLoading(true);
     setError('');
 
     // 添加调试日志
-    console.log('Loading graph data with businessType:', businessType);
+    console.log('Loading graph data with businessType:', businessType, 'projectId:', projectId);
 
     try {
       const [dataResponse, statsResponse] = await Promise.all([
-        knowledgeGraphService.getGraphData(businessType),
+        knowledgeGraphService.getGraphData(businessType, projectId),
         knowledgeGraphService.getGraphStats()
       ]);
 
@@ -85,13 +88,12 @@ const KnowledgeGraph: React.FC = () => {
   };
 
   useEffect(() => {
-    loadData();
-  }, [selectedBusinessType]);
+    loadData(selectedBusinessType, selectedProject);
+  }, [selectedBusinessType, selectedProject]);
 
   return (
     <div style={{ padding: '24px' }}>
       <div style={{ marginBottom: '24px' }}>
-        <h1>TSP本体图谱</h1>
         <p>为用例生成提供结构化元数据，为变更管理提供可解释的依据</p>
       </div>
 
@@ -160,9 +162,26 @@ const KnowledgeGraph: React.FC = () => {
             ))}
           </Select>
 
+          <Select
+            placeholder="按项目筛选"
+            allowClear
+            style={{ width: 200 }}
+            value={selectedProject || undefined}
+            onChange={setSelectedProject}
+          >
+            {projects.map(project => (
+              <Option key={project.id} value={project.id}>
+                {project.name}
+                {currentProject?.id === project.id && (
+                  <span style={{ color: '#52c41a', marginLeft: 8 }}>(当前)</span>
+                )}
+              </Option>
+            ))}
+          </Select>
+
           <Button
             icon={<ReloadOutlined />}
-            onClick={() => loadData(selectedBusinessType)}
+            onClick={() => loadData(selectedBusinessType, selectedProject)}
             loading={loading}
           >
             刷新

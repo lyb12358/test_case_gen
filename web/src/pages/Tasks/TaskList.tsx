@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Card,
   Typography,
@@ -14,7 +14,8 @@ import {
   DatePicker,
   Modal,
   Descriptions,
-  Alert
+  Alert,
+  Empty
 } from 'antd';
 import {
   ReloadOutlined,
@@ -28,8 +29,9 @@ import {
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { taskService } from '../../services/taskService';
-import { Task } from '../../types/testCases';
+import { taskService } from '@/services/taskService';
+import { Task } from '@/types/testCases';
+import { useProject } from '@/contexts/ProjectContext';
 
 const { Title } = Typography;
 const { Search } = Input;
@@ -38,45 +40,55 @@ const { RangePicker } = DatePicker;
 const TaskList: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { currentProject } = useProject();
+
+  // State declarations
   const [searchText, setSearchText] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('');
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
 
-  // 获取任务列表
-  const { data: tasksData, isLoading, refetch } = useQuery({
-    queryKey: ['tasks'],
-    queryFn: taskService.getAllTasks,
-    select: (data) => {
-      let filteredData = data.tasks || [];
-
-      // 按搜索文本过滤
-      if (searchText) {
-        filteredData = filteredData.filter((item: any) =>
-          Object.values(item).some((value: any) =>
-            String(value).toLowerCase().includes(searchText.toLowerCase())
-          )
-        );
-      }
-
-      // 按状态过滤
-      if (selectedStatus) {
-        filteredData = filteredData.filter((item: any) => item.status === selectedStatus);
-      }
-
-      // 按日期范围过滤
-      if (dateRange && dateRange.length === 2) {
-        const [start, end] = dateRange;
-        filteredData = filteredData.filter((item: any) => {
-          const createdAt = dayjs(item.created_at);
-          return createdAt.isAfter(start) && createdAt.isBefore(end);
-        });
-      }
-
-      return filteredData.sort((a: any, b: any) => dayjs(b.created_at || '').unix() - dayjs(a.created_at || '').unix());
-    }
+  // 获取任务列表 - 按项目过滤
+  const { data: apiResponse, isLoading, error, refetch } = useQuery({
+    queryKey: ['tasks', currentProject?.id],
+    queryFn: () => taskService.getAllTasks(currentProject?.id),
+    enabled: !!currentProject
   });
+
+  // 数据过滤和排序
+  const filteredTasks = useMemo(() => {
+    if (!apiResponse?.tasks) return [];
+
+    let filteredData = [...apiResponse.tasks];
+
+    // 按搜索文本过滤
+    if (searchText) {
+      filteredData = filteredData.filter((item: any) =>
+        Object.values(item).some((value: any) =>
+          String(value).toLowerCase().includes(searchText.toLowerCase())
+        )
+      );
+    }
+
+    // 按状态过滤
+    if (selectedStatus) {
+      filteredData = filteredData.filter((item: any) => item.status === selectedStatus);
+    }
+
+    // 按日期范围过滤
+    if (dateRange && dateRange.length === 2) {
+      const [start, end] = dateRange;
+      filteredData = filteredData.filter((item: any) => {
+        const createdAt = dayjs(item.created_at);
+        return createdAt.isAfter(start) && createdAt.isBefore(end);
+      });
+    }
+
+    return filteredData.sort((a: any, b: any) =>
+      dayjs(b.created_at || '').unix() - dayjs(a.created_at || '').unix()
+    );
+  }, [apiResponse, searchText, selectedStatus, dateRange]);
 
   // 删除任务
   const deleteMutation = useMutation({
@@ -86,7 +98,7 @@ const TaskList: React.FC = () => {
         title: '删除成功',
         content: '任务已成功删除'
       });
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['tasks', currentProject?.id] });
     },
     onError: (error: any) => {
       Modal.error({
@@ -121,14 +133,18 @@ const TaskList: React.FC = () => {
     );
   };
 
-  const getTaskTypeText = (taskType: string) => {
-    const types = {
+  const getTaskTypeText = (businessType?: string) => {
+    const taskTypes = {
       'test_case_generation': '测试用例生成',
       'interface_test_generation': '接口测试生成',
       'data_processing': '数据处理',
       'system_maintenance': '系统维护'
     };
-    return types[taskType as keyof typeof types] || taskType;
+
+    if (businessType) {
+      return taskTypes['test_case_generation'];
+    }
+    return taskTypes['test_case_generation'];
   };
 
   const getBusinessTypeFullName = (type?: string) => {
@@ -152,10 +168,10 @@ const TaskList: React.FC = () => {
     },
     {
       title: '任务类型',
-      dataIndex: 'task_type',
+      dataIndex: 'business_type',
       key: 'task_type',
       width: 150,
-      render: (type: string) => getTaskTypeText(type),
+      render: (businessType: string) => getTaskTypeText(businessType),
     },
     {
       title: '业务类型',
@@ -204,10 +220,13 @@ const TaskList: React.FC = () => {
     },
     {
       title: '最后更新',
-      dataIndex: 'updated_at',
-      key: 'updated_at',
+      dataIndex: 'completed_at',
+      key: 'completed_at',
       width: 180,
-      render: (time: string) => time ? dayjs(time).format('YYYY-MM-DD HH:mm:ss') : '-',
+      render: (time: string, record: Task) => {
+        const updateTime = time || record.created_at;
+        return updateTime ? dayjs(updateTime).format('YYYY-MM-DD HH:mm:ss') : '-';
+      },
     },
     {
       title: '操作',
@@ -227,7 +246,7 @@ const TaskList: React.FC = () => {
             <Popconfirm
               title="确定删除吗？"
               description="删除后无法恢复"
-              onConfirm={() => handleDelete(record.id)}
+              onConfirm={() => handleDelete(record.task_id)}
               okText="确定"
               cancelText="取消"
             >
@@ -245,26 +264,59 @@ const TaskList: React.FC = () => {
     },
   ];
 
+  // Error handling
+  if (error) {
+    return (
+      <div style={{ padding: '24px' }}>
+        <Alert
+          message="任务管理加载失败"
+          description="无法加载任务数据，请检查网络连接或联系管理员"
+          type="error"
+          showIcon
+          action={
+            <Button size="small" onClick={() => refetch()}>
+              重试
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <Title level={2} style={{ margin: 0 }}>任务列表</Title>
-        <Space>
-          <Button
-            type="primary"
-            onClick={() => navigate('/testcases/generate')}
-          >
-            创建新任务
-          </Button>
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={() => refetch()}
-            loading={isLoading}
-          >
-            刷新
-          </Button>
-        </Space>
-      </div>
+      {/* 项目信息展示 */}
+      <Card style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <Title level={4} style={{ margin: 0 }}>
+              任务管理 - {currentProject?.name || '未选择项目'}
+            </Title>
+            <div style={{ color: '#666', marginTop: 4 }}>
+              {currentProject ?
+                `项目ID: ${currentProject.id} | ${currentProject.description || '无描述'}` :
+                '请先选择一个项目以查看相关任务'
+              }
+            </div>
+          </div>
+          <Space>
+            <Button
+              type="primary"
+              onClick={() => navigate('/test-cases/generate')}
+              disabled={!currentProject}
+            >
+              创建新任务
+            </Button>
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={() => refetch()}
+              loading={isLoading}
+            >
+              刷新
+            </Button>
+          </Space>
+        </div>
+      </Card>
 
       <Card>
         <div style={{ marginBottom: 16 }}>
@@ -295,20 +347,52 @@ const TaskList: React.FC = () => {
           </Space>
         </div>
 
-        <Table
-          columns={columns}
-          dataSource={tasksData}
-          rowKey="task_id"
-          loading={isLoading}
-          pagination={{
-            total: tasksData?.length || 0,
-            pageSize: 10,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total) => `共 ${total} 条记录`,
-          }}
-          scroll={{ x: 1200 }}
-        />
+        {!currentProject ? (
+          <Alert
+            message="请先选择项目"
+            description="请在顶部导航栏选择一个项目后，即可查看该项目的相关任务。"
+            type="info"
+            showIcon
+            style={{ marginTop: 16 }}
+          />
+        ) : filteredTasks && Array.isArray(filteredTasks) && filteredTasks.length > 0 ? (
+          <Table
+            columns={columns}
+            dataSource={filteredTasks}
+            rowKey="task_id"
+            loading={isLoading}
+            pagination={{
+              total: filteredTasks?.length || 0,
+              pageSize: 10,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              showTotal: (total) => `共 ${total} 条记录`,
+            }}
+            scroll={{ x: 1200 }}
+          />
+        ) : (
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={
+              <span>
+                当前项目 <strong>{currentProject?.name || '未选择项目'}</strong> 暂无任务
+                <br />
+                <span style={{ color: '#999', fontSize: '12px' }}>
+                  创建新任务开始生成测试用例
+                </span>
+              </span>
+            }
+            style={{ marginTop: 32, marginBottom: 32 }}
+          >
+            <Button
+              type="primary"
+              onClick={() => navigate('/test-cases/generate')}
+              disabled={!currentProject}
+            >
+              创建新任务
+            </Button>
+          </Empty>
+        )}
       </Card>
 
       {/* 任务详情弹窗 */}
@@ -331,10 +415,10 @@ const TaskList: React.FC = () => {
               size="small"
             >
               <Descriptions.Item label="任务ID">
-                <span style={{ fontFamily: 'monospace' }}>#{selectedTask.id}</span>
+                <span style={{ fontFamily: 'monospace' }}>#{selectedTask.task_id}</span>
               </Descriptions.Item>
               <Descriptions.Item label="任务类型">
-                {getTaskTypeText(selectedTask.task_type || '')}
+                {getTaskTypeText(selectedTask.business_type)}
               </Descriptions.Item>
               <Descriptions.Item label="业务类型">
                 {selectedTask.business_type ? getBusinessTypeFullName(selectedTask.business_type) : '-'}
@@ -346,7 +430,9 @@ const TaskList: React.FC = () => {
                 {dayjs(selectedTask.created_at).format('YYYY-MM-DD HH:mm:ss')}
               </Descriptions.Item>
               <Descriptions.Item label="最后更新">
-                {selectedTask.updated_at ? dayjs(selectedTask.updated_at).format('YYYY-MM-DD HH:mm:ss') : '-'}
+                {(selectedTask.completed_at || selectedTask.created_at) ?
+                  dayjs(selectedTask.completed_at || selectedTask.created_at).format('YYYY-MM-DD HH:mm:ss') : '-'
+                }
               </Descriptions.Item>
               {selectedTask.progress !== undefined && (
                 <Descriptions.Item label="进度" span={2}>

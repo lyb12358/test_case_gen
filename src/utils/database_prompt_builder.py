@@ -7,7 +7,10 @@ from typing import Optional, Dict, Any, List
 
 from .config import Config
 from ..database.database import DatabaseManager
-from ..database.models import Prompt, PromptType, PromptStatus, BusinessType
+from ..database.models import (
+    Prompt, PromptType, PromptStatus, BusinessType,
+    BusinessTypeConfig, PromptCombination, PromptCombinationItem
+)
 from ..config.business_types import get_business_file_mapping, get_business_interface
 
 
@@ -27,11 +30,13 @@ class DatabasePromptBuilder:
         # Cache for frequently accessed prompts
         self._shared_content_cache: Optional[Dict[str, str]] = None
         self._template_cache: Optional[str] = None
+        self._combination_cache: Optional[Dict[str, str]] = None
 
     def _clear_cache(self):
         """Clear internal caches."""
         self._shared_content_cache = None
         self._template_cache = None
+        self._combination_cache = None
 
     def get_active_prompt_by_name(self, name: str, prompt_type: Optional[PromptType] = None) -> Optional[Prompt]:
         """
@@ -207,9 +212,72 @@ class DatabasePromptBuilder:
 
             return system_prompt.content if system_prompt else None
 
+    def get_prompt_combination(self, business_type: str) -> Optional[str]:
+        """
+        Get prompt combination for a business type using the new dynamic system.
+
+        Args:
+            business_type (str): Business type (e.g., RCC, RFD, ZAB, ZBA)
+
+        Returns:
+            Optional[str]: Combined prompt content or None if failed
+        """
+        if self._combination_cache and business_type in self._combination_cache:
+            return self._combination_cache[business_type]
+
+        with self.db_manager.get_session() as db:
+            # Get business type configuration
+            business_config = db.query(BusinessTypeConfig).filter(
+                BusinessTypeConfig.code == business_type,
+                BusinessTypeConfig.is_active == True
+            ).first()
+
+            if not business_config or not business_config.prompt_combination_id:
+                print(f"No active prompt combination found for business type: {business_type}")
+                return None
+
+            # Get prompt combination with all items
+            combination = db.query(PromptCombination).filter(
+                PromptCombination.id == business_config.prompt_combination_id,
+                PromptCombination.is_active == True,
+                PromptCombination.is_valid == True
+            ).first()
+
+            if not combination:
+                print(f"Invalid or inactive prompt combination for business type: {business_type}")
+                return None
+
+            # Get all prompt items in order
+            prompt_items = db.query(PromptCombinationItem).filter(
+                PromptCombinationItem.combination_id == combination.id
+            ).order_by(PromptCombinationItem.order).all()
+
+            if not prompt_items:
+                print(f"No prompt items found for combination: {combination.name}")
+                return None
+
+            # Build combined prompt
+            combined_content = []
+
+            for item in prompt_items:
+                if item.prompt:
+                    combined_content.append(f"=== {item.prompt.name} ===")
+                    combined_content.append(item.prompt.content)
+                    combined_content.append("")  # Add spacing between prompts
+
+            final_prompt = "\n".join(combined_content).strip()
+
+            # Cache the result
+            if self._combination_cache is None:
+                self._combination_cache = {}
+            self._combination_cache[business_type] = final_prompt
+
+            return final_prompt
+
     def build_prompt(self, business_type: str) -> Optional[str]:
         """
-        Build a complete prompt by combining template with business-specific content.
+        Build a complete prompt using the new prompt combination system.
+        Falls back to legacy method if no combination exists.
 
         Args:
             business_type (str): Business type (e.g., RCC, RFD, ZAB, ZBA)
@@ -218,6 +286,14 @@ class DatabasePromptBuilder:
             Optional[str]: Complete assembled prompt or None if failed
         """
         try:
+            # Try new prompt combination system first
+            combined_prompt = self.get_prompt_combination(business_type)
+            if combined_prompt:
+                return combined_prompt
+
+            print(f"Using legacy prompt building for {business_type} (no combination found)")
+
+            # Fallback to legacy method
             # Load template
             template = self.load_template()
             if template is None:
@@ -387,3 +463,5 @@ class DatabasePromptBuilder:
         # Reload caches
         self.load_shared_content()
         self.load_template()
+        # Clear combination cache
+        self._combination_cache = None

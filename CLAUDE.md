@@ -1,3 +1,22 @@
+<!-- OPENSPEC:START -->
+# OpenSpec Instructions
+
+These instructions are for AI assistants working in this project.
+
+Always open `@/openspec/AGENTS.md` when the request:
+- Mentions planning or proposals (words like proposal, spec, change, plan)
+- Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
+- Sounds ambiguous and you need the authoritative spec before coding
+
+Use `@/openspec/AGENTS.md` to learn:
+- How to create and apply change proposals
+- Spec format and conventions
+- Project structure and guidelines
+
+Keep this managed block so 'openspec update' can refresh the instructions.
+
+<!-- OPENSPEC:END -->
+
 # TSP Test Case Generation System
 
 A comprehensive enterprise-grade LLM-powered test case generation system for TSP (Telematics Service Provider) remote control business types, featuring modern React frontend, interactive knowledge graph visualization, and complete prompt management system.
@@ -6,6 +25,7 @@ A comprehensive enterprise-grade LLM-powered test case generation system for TSP
 
 ### Prerequisites
 - Python 3.9+
+- uv (modern Python package installer) - Install with `pip install uv` or `curl -LsSf https://astral.sh/uv/install.sh | sh`
 - MySQL 8.0+
 - Node.js 18+
 - OpenAI API key
@@ -17,13 +37,18 @@ A comprehensive enterprise-grade LLM-powered test case generation system for TSP
 git clone <repository-url>
 cd tsp-testcase-script
 
-# 2. Backend setup
-python -m venv .venv
-.venv\Scripts\activate  # Windows
-# source .venv/bin/activate  # Linux/Mac
+# 2. Backend setup with uv environment
+# Create and activate virtual environment using uv
+uv venv .venv
+source .venv/bin/activate  # Linux/Mac
+# or on Windows:
+# .venv\Scripts\activate
 
-# Install Python dependencies
+# Install Python dependencies using uv (recommended)
 uv pip install -r requirements.txt
+
+# Alternative: Use standard pip if uv is not available
+# pip install -r requirements.txt
 
 # 3. Configure environment variables
 cp .env.example .env
@@ -34,6 +59,8 @@ cp .env.example .env
 # Create MySQL database and user (see MYSQL_MIGRATION.md)
 # The system will auto-create tables on first run
 
+# Note: If migrating from existing setup, see MYSQL_MIGRATION.md for uv pip install commands
+
 # 5. Frontend setup
 cd web
 npm install
@@ -42,6 +69,8 @@ cd ..
 # 6. Start development servers
 # Backend API server (port 8000)
 python -m src.api.endpoints
+# or use the quick start script:
+# python start.py
 
 # Frontend dev server (port 5173) - in new terminal
 cd web && npm run dev
@@ -136,10 +165,12 @@ This is a comprehensive TSP business test case auto-generation platform with ent
 - **React Markdown 10.1.0**: Markdown rendering with syntax highlighting
 
 ### Development Tools
+- **uv**: Modern Python package installer and environment manager (recommended)
 - **ESLint 9.25.0**: Code quality and style enforcement
 - **Vite**: Hot module replacement and optimized builds
 - **npm**: Package management and scripting
 - **Python testing**: pytest, coverage, mypy, black
+- **Context7**: Library documentation lookup via MCP tools (mcp__context7__resolve-library-id, mcp__context7__get-library-docs)
 
 ## Project Architecture
 
@@ -360,6 +391,94 @@ python scripts/export_database.py
 # (modify scripts/export_database.py to select specific tables)
 ```
 
+## Library Research with Context7
+
+This project integrates Context7 MCP tools for comprehensive library documentation lookup. When working with unfamiliar code or libraries, use these tools to get up-to-date documentation and examples.
+
+### Available Context7 Tools
+
+#### mcp__context7__resolve-library-id
+Resolves a package/product name to a Context7-compatible library ID and returns a list of matching libraries.
+
+**Usage Examples:**
+```bash
+# When you need to understand a library better:
+mcp__context7__resolve-library-id("fastapi")
+mcp__context7__resolve-library-id("sqlalchemy")
+mcp__context7__resolve-library-id("react-query")
+mcp__context7__resolve-library-id("ant-design")
+```
+
+#### mcp__context7__get-library-docs
+Fetches up-to-date documentation for a library using the Context7-compatible library ID.
+
+**Usage Examples:**
+```bash
+# Get documentation for specific libraries:
+mcp__context7__get-library-docs("/fastapi")
+mcp__context7__get-library-docs("/vercel/next.js")
+mcp__context7__get-library-docs("/anthropics/claude-code")
+mcp__context7__get-library-docs("/vercel/next.js/v14.3.0-canary.87")
+```
+
+### Research Workflow for Unfamiliar Code
+
+When encountering unfamiliar libraries, frameworks, or code patterns:
+
+1. **Identify the Library**: Determine the main library/framework being used
+2. **Resolve Library ID**: Use `mcp__context7__resolve-library-id` to get the correct Context7 ID
+3. **Get Documentation**: Use `mcp__context7__get-library-docs` to retrieve comprehensive documentation
+4. **Focus on Topics**: Use the `topic` parameter to get specific documentation sections
+
+**Example Research Scenarios:**
+
+```python
+# When you see unfamiliar FastAPI patterns:
+# First resolve FastAPI, then get specific documentation:
+# mcp__context7__resolve-library-id("fastapi") → "/fastapi"
+# mcp__context7__get-library-docs("/fastapi", topic="middleware")
+
+# When working with SQLAlchemy complex queries:
+# mcp__context7__resolve-library-id("sqlalchemy") → "/sqlalchemy"
+# mcp__context7__get-library-docs("/sqlalchemy", topic="relationships")
+
+# When exploring React Query patterns:
+# mcp__context7__resolve-library-id("react-query") → "/tanstack/react-query"
+# mcp__context7__get-library-docs("/tanstack/react-query", topic="mutations")
+```
+
+### Key Libraries in This Project
+
+Use Context7 to research these core project libraries:
+
+#### Backend Libraries
+- **FastAPI**: Modern Python web framework
+- **SQLAlchemy**: Python ORM for database operations
+- **Pydantic**: Data validation and serialization
+- **OpenAI**: LLM client integration
+- **Uvicorn**: ASGI server
+
+#### Frontend Libraries
+- **React**: UI framework with hooks and concurrent features
+- **TypeScript**: Type-safe JavaScript development
+- **Ant Design**: Enterprise UI component library
+- **React Query**: Server state management
+- **Monaco Editor**: Professional code editor
+
+#### Database & Tools
+- **MySQL**: Production database
+- **PyMySQL**: MySQL database connector
+- **pandas**: Data manipulation library
+- **xlsxwriter**: Excel file generation
+
+### Best Practices for Library Research
+
+1. **Always Resolve First**: Use `resolve-library-id` before getting documentation
+2. **Use Specific Topics**: Focus documentation on specific features you're working with
+3. **Cross-Reference**: Compare Context7 docs with official documentation when needed
+4. **Version Awareness**: Include version numbers when working with specific releases
+5. **Pattern Recognition**: Use Context7 to understand common patterns and best practices
+
 ## Development Guidelines
 
 ### Environment Configuration
@@ -387,6 +506,70 @@ PORT=8000
 3. **Business Type Association**: Link prompts to specific business types when applicable
 4. **Template Variables**: Use consistent variable naming with {{variable}} format
 5. **Content Validation**: Use the validation API to ensure prompt quality
+
+### uv Environment Management
+Use `uv` for modern Python package management and environment isolation:
+
+```bash
+# Create new virtual environment
+uv venv .venv
+
+# Activate environment (Linux/Mac)
+source .venv/bin/activate
+
+# Activate environment (Windows)
+.venv\Scripts\activate
+
+# Install dependencies
+uv pip install -r requirements.txt
+
+# Install specific packages
+uv pip install fastapi sqlalchemy
+
+# Create requirements.txt from current environment
+uv pip freeze > requirements.txt
+
+# Remove environment (when needed)
+rm -rf .venv
+```
+
+**uv Benefits:**
+- Faster dependency installation and resolution
+- Better dependency conflict resolution
+- Cross-platform compatibility
+- Modern Python packaging standards (PEP 517/518)
+
+### Development Workflow with Context7
+
+When working with unfamiliar code patterns or libraries:
+
+```bash
+# Example: Researching unfamiliar SQLAlchemy patterns
+# 1. First, resolve the library ID
+# mcp__context7__resolve-library-id("sqlalchemy")
+
+# 2. Get specific documentation for your use case
+# mcp__context7__get-library-docs("/sqlalchemy", topic="relationships")
+
+# 3. Apply the knowledge to your code
+from sqlalchemy.orm import relationship
+from sqlalchemy import Column, Integer, String, ForeignKey
+
+class TestCase(Base):
+    __tablename__ = "test_cases"
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id"))
+
+    # Use the pattern you learned from Context7 docs
+    project = relationship("Project", back_populates="test_cases")
+```
+
+**Research Scenarios for This Project:**
+- **FastAPI middleware patterns**: `mcp__context7__get-library-docs("/fastapi", topic="middleware")`
+- **React Query mutations**: `mcp__context7__get-library-docs("/tanstack/react-query", topic="mutations")`
+- **Ant Design forms**: `mcp__context7__get-library-docs("/ant-design/design", topic="form")`
+- **SQLAlchemy relationships**: `mcp__context7__get-library-docs("/sqlalchemy", topic="relationships")`
 
 ### Database Operations
 ```python
@@ -541,8 +724,31 @@ uvicorn src.api.endpoints:app --host 0.0.0.0 --port 8000 --workers 4
 FROM python:3.9-slim
 
 WORKDIR /app
+# Install uv for faster dependency installation
+RUN pip install uv
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+
+# Use uv for faster dependency installation
+RUN uv pip install -r requirements.txt
+
+COPY . .
+RUN cd web && npm install && npm run build
+
+EXPOSE 8000
+CMD ["python", "-m", "src.api.endpoints"]
+```
+
+**Alternative Dockerfile with uv in production:**
+```dockerfile
+FROM python:3.9-slim
+
+WORKDIR /app
+# Install uv
+RUN pip install uv
+
+# Copy requirements and install with uv
+COPY requirements.txt .
+RUN uv pip install --system -r requirements.txt
 
 COPY . .
 RUN cd web && npm install && npm run build
@@ -585,6 +791,20 @@ CMD ["python", "-m", "src.api.endpoints"]
 - Validate JSON field formats in database
 - Review Monaco editor initialization
 
+**uv Environment Issues**
+- Ensure uv is installed: `pip install uv` or follow official installation guide
+- Check if virtual environment is activated: `which python` should show `.venv` path
+- If dependencies fail: Try `uv pip install --refresh <package>` for fresh resolution
+- For permission issues: Use `uv pip install --user <package>` or activate environment properly
+- Clear cache if needed: `uv cache clean`
+
+**Context7 Integration Issues**
+- Verify MCP tools are available in your Claude environment
+- Check tool names: `mcp__context7__resolve-library-id` and `mcp__context7__get-library-docs`
+- If library not found: Try alternative names or search for parent organizations
+- For version-specific docs: Include version in library ID (e.g., `/fastapi/v0.104.0`)
+- Network issues: Ensure internet connectivity for Context7 API access
+
 ### Debug Commands
 ```bash
 # Backend with debug logging
@@ -600,6 +820,24 @@ python -c "from src.database.database import DatabaseManager; from src.utils.con
 curl http://localhost:8000/business-types
 curl http://localhost:8000/knowledge-graph/stats
 curl http://localhost:8000/prompts/stats/overview
+
+# uv environment debugging
+# Check if uv is installed and version
+uv --version
+
+# Check current environment
+uv pip list
+
+# Verify virtual environment
+which python  # Should show .venv path if activated
+python --version
+
+# Test Context7 tools (if available in your environment)
+# Test library resolution
+# mcp__context7__resolve-library-id("fastapi")
+
+# Test documentation retrieval
+# mcp__context7__get-library-docs("/fastapi", topic="middleware")
 ```
 
 ## Performance Optimization
@@ -650,5 +888,14 @@ This is a **production-ready** enterprise-grade system with comprehensive capabi
 - **Security**: Proper authentication and authorization
 - **Performance**: Optimized for large datasets
 - **Documentation**: Comprehensive documentation and guides
+- **Context7 Integration**: Library documentation lookup for enhanced development
+- **uv Environment**: Modern Python package management for faster development
+
+### 🛠️ Developer Experience
+- **uv Package Management**: Faster dependency installation and resolution
+- **Context7 Documentation**: On-demand library research and learning
+- **Modern Tooling**: Latest development tools and best practices
+- **Rich Documentation**: Comprehensive guides for all aspects of development
+- **Troubleshooting Support**: Detailed debugging and issue resolution guides
 
 The system successfully bridges business requirements and automated test case generation using modern LLM technology, providing an intuitive interface for prompt management, test management, and visualization.
