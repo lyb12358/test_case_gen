@@ -1,12 +1,16 @@
+# -*- coding: utf-8 -*-
 """
 Excel conversion utilities for test cases.
 """
 
 import os
+import logging
 import pandas as pd
 import xlsxwriter
 from typing import Dict, Any, List, Optional
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 from ..models.test_case import TestCase, ExcelRow
 from ..utils.file_handler import ensure_directory_exists, generate_timestamped_filename
@@ -126,7 +130,6 @@ class ExcelConverter:
             return True
 
         except Exception as e:
-            print(f"Error creating Excel file: {e}")
             return False
 
     @staticmethod
@@ -155,11 +158,10 @@ class ExcelConverter:
                     test_case = TestCase(**case_data)
                     test_cases.append(test_case)
                 except Exception as e:
-                    print(f"Error parsing test case {case_data.get('id', 'unknown')}: {e}")
                     continue
 
             if not test_cases:
-                print("No valid test cases found in JSON data")
+                logger.info("No valid test cases found in JSON data")
                 return None
 
             # Convert to Excel rows
@@ -176,5 +178,4 @@ class ExcelConverter:
                 return None
 
         except Exception as e:
-            print(f"Error converting JSON to Excel: {e}")
             return None

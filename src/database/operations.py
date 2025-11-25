@@ -8,7 +8,11 @@ from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import delete, and_
 
-from .models import TestCaseGroup, TestCaseItem, GenerationJob, BusinessType, JobStatus, KnowledgeEntity, KnowledgeRelation, EntityType, TestCaseEntity, Project
+from .models import (
+    UnifiedTestCase, GenerationJob, BusinessType, JobStatus,
+    KnowledgeEntity, KnowledgeRelation, EntityType, TestCaseEntity, Project,
+    Prompt, PromptVersion, PromptCombination, PromptCombinationItem, BusinessTypeConfig
+)
 
 
 class DatabaseOperations:
@@ -135,7 +139,7 @@ class DatabaseOperations:
         """
         stats = {}
         for business_type in BusinessType:
-            test_case_count = self.db.query(TestCaseGroup).filter(TestCaseGroup.business_type == business_type).count()
+            test_case_count = self.db.query(object).filter(object.business_type == business_type).count()
             job_count = self.db.query(GenerationJob).filter(GenerationJob.business_type == business_type).count()
             stats[business_type.value] = {
                 "test_cases": test_case_count,
@@ -541,44 +545,48 @@ class DatabaseOperations:
 
         return relations
 
-    # ========== New TestCaseGroup and TestCaseItem Operations ==========
+    # ========== New object and UnifiedTestCase Operations ==========
 
-    def create_test_case_group(self, business_type: BusinessType, generation_metadata: Optional[Dict[str, Any]] = None, project_id: Optional[int] = None) -> TestCaseGroup:
+    def create_unified_test_case(self, test_case_data: Dict[str, Any]) -> UnifiedTestCase:
         """
-        Create a new test case group.
+        Create a new unified test case.
 
         Args:
-            business_type (BusinessType): Business type
-            generation_metadata (Optional[Dict[str, Any]]): Generation metadata
-            project_id (Optional[int]): Project ID
+            test_case_data (Dict[str, Any]): Test case data
 
         Returns:
-            TestCaseGroup: Created test case group
+            UnifiedTestCase: Created test case
         """
-        group = TestCaseGroup(
-            business_type=business_type,
-            generation_metadata=json.dumps(generation_metadata, ensure_ascii=False) if generation_metadata else None,
-            project_id=project_id
+        test_case = UnifiedTestCase(
+            title=test_case_data.get("title", ""),
+            description=test_case_data.get("description", ""),
+            business_type=test_case_data.get("business_type"),
+            project_id=test_case_data.get("project_id"),
+            status=test_case_data.get("status", "draft"),
+            test_case_data=test_case_data.get("test_case_data", {}),
+            metadata=test_case_data.get("metadata", {})
         )
-        self.db.add(group)
+        self.db.add(test_case)
         self.db.commit()
-        self.db.refresh(group)
-        return group
+        self.db.refresh(test_case)
+        return test_case
 
-    def create_test_case_item(self, group_id: int, test_case_data: Dict[str, Any], entity_order: Optional[float] = None) -> TestCaseItem:
+    def create_test_case_item(self, project_id: int, test_case_data: Dict[str, Any], entity_order: Optional[float] = None, test_point_id: Optional[int] = None) -> UnifiedTestCase:
         """
         Create a new test case item.
 
         Args:
-            group_id (int): Test case group ID
+            project_id (int): Project ID
             test_case_data (Dict[str, Any]): Test case data
             entity_order (Optional[float]): Order index
+            test_point_id (Optional[int]): Associated test point ID for two-stage generation
 
         Returns:
-            TestCaseItem: Created test case item
+            UnifiedTestCase: Created test case item
         """
-        item = TestCaseItem(
-            group_id=group_id,
+        item = UnifiedTestCase(
+            project_id=project_id,
+            test_point_id=test_point_id,
             test_case_id=test_case_data.get('id', ''),
             name=test_case_data.get('name', ''),
             description=test_case_data.get('description', ''),
@@ -596,48 +604,98 @@ class DatabaseOperations:
         self.db.refresh(item)
         return item
 
-    def create_test_case_items_batch(self, group_id: int, test_cases_list: List[Dict[str, Any]]) -> List[TestCaseItem]:
+    def create_test_case_items_batch(self, project_id: int, test_cases_list: List[Dict[str, Any]], test_point_id: Optional[int] = None) -> List[UnifiedTestCase]:
         """
         Create multiple test case items in batch.
 
         Args:
-            group_id (int): Test case group ID
+            project_id (int): Project ID
             test_cases_list (List[Dict[str, Any]]): List of test case data
+            test_point_id (Optional[int]): Associated test point ID for two-stage generation
 
         Returns:
-            List[TestCaseItem]: Created test case items
+            List[UnifiedTestCase]: Created test case items
         """
         items = []
         for idx, tc_data in enumerate(test_cases_list):
-            item = self.create_test_case_item(group_id, tc_data, float(idx + 1))
+            item = self.create_test_case_item(project_id, tc_data, float(idx + 1), test_point_id)
             items.append(item)
         return items
 
-    def get_test_case_groups_by_business_type(self, business_type: BusinessType) -> List[TestCaseGroup]:
+    def create_test_case_items_from_test_points(self, project_id: int, test_cases_list: List[Dict[str, Any]], test_points_mapping: Dict[str, int]) -> List[UnifiedTestCase]:
         """
-        Get test case groups by business type.
+        Create test case items from test points with proper test_point_id mapping.
+
+        Args:
+            project_id (int): Project ID
+            test_cases_list (List[Dict[str, Any]]): List of test case data
+            test_points_mapping (Dict[str, int]): Mapping from test point names/IDs to database test_point_id
+
+        Returns:
+            List[UnifiedTestCase]: Created test case items with proper test_point_id associations
+        """
+        items = []
+        for idx, tc_data in enumerate(test_cases_list):
+            # Try to find corresponding test point by name or ID
+            test_point_id = None
+
+            # Method 1: Match by test case name with test point title
+            test_case_name = tc_data.get('name', '')
+            for tp_name, tp_id in test_points_mapping.items():
+                if tp_name.lower() in test_case_name.lower() or test_case_name.lower() in tp_name.lower():
+                    test_point_id = tp_id
+                    break
+
+            # Method 2: Match by test_case_id pattern if available
+            if test_point_id is None and 'id' in tc_data:
+                tc_id = tc_data.get('id', '')
+                # Extract potential test point reference from test case ID
+                for tp_name, tp_id in test_points_mapping.items():
+                    if tp_name in tc_id or tc_id.replace('TC', 'TP') in tp_name:
+                        test_point_id = tp_id
+                        break
+
+            # Create test case item with associated test point ID
+            item = self.create_test_case_item(project_id, tc_data, float(idx + 1), test_point_id)
+            items.append(item)
+
+            # Log the association for debugging
+            if test_point_id:
+                print(f"[ASSOCIATION] Test case '{test_case_name}' associated with test_point_id {test_point_id}")
+            else:
+                print(f"[WARNING] No test point found for test case '{test_case_name}'")
+
+        return items
+
+    def get_unified_test_cases_by_business_type(self, business_type: BusinessType, project_id: Optional[int] = None) -> List[UnifiedTestCase]:
+        """
+        Get unified test cases by business type.
 
         Args:
             business_type (BusinessType): Business type
+            project_id (Optional[int]): Project ID for filtering
 
         Returns:
-            List[TestCaseGroup]: List of test case groups
+            List[UnifiedTestCase]: List of unified test cases
         """
-        return self.db.query(TestCaseGroup).filter(TestCaseGroup.business_type == business_type).all()
+        query = self.db.query(UnifiedTestCase).filter(UnifiedTestCase.business_type == business_type)
+        if project_id is not None:
+            query = query.filter(UnifiedTestCase.project_id == project_id)
+        return query.all()
 
-    def get_test_case_items_by_group_id(self, group_id: int) -> List[TestCaseItem]:
+    def get_test_case_items_by_project_id(self, project_id: int) -> List[UnifiedTestCase]:
         """
-        Get test case items by group ID.
+        Get test case items by project ID.
 
         Args:
-            group_id (int): Group ID
+            project_id (int): Project ID
 
         Returns:
-            List[TestCaseItem]: List of test case items
+            List[UnifiedTestCase]: List of test case items
         """
-        return self.db.query(TestCaseItem).filter(TestCaseItem.group_id == group_id).order_by(TestCaseItem.entity_order).all()
+        return self.db.query(UnifiedTestCase).filter(UnifiedTestCase.project_id == project_id).order_by(UnifiedTestCase.entity_order).all()
 
-    def get_test_case_item_by_id(self, item_id: int) -> Optional[TestCaseItem]:
+    def get_test_case_item_by_id(self, item_id: int) -> Optional[UnifiedTestCase]:
         """
         Get test case item by ID.
 
@@ -645,39 +703,37 @@ class DatabaseOperations:
             item_id (int): Test case item ID
 
         Returns:
-            Optional[TestCaseItem]: Test case item or None
+            Optional[UnifiedTestCase]: Test case item or None
         """
-        return self.db.query(TestCaseItem).filter(TestCaseItem.id == item_id).first()
+        return self.db.query(UnifiedTestCase).filter(UnifiedTestCase.id == item_id).first()
 
-    def delete_test_case_groups_by_business_type(self, business_type: BusinessType) -> int:
+    def delete_unified_test_cases_by_business_type(self, business_type: BusinessType, project_id: Optional[int] = None) -> int:
         """
-        Delete test case groups and their items by business type, including knowledge graph entities.
+        Delete unified test cases by business type, including knowledge graph entities.
 
         Args:
             business_type (BusinessType): Business type
+            project_id (Optional[int]): Project ID for filtering
 
         Returns:
-            int: Number of deleted groups
+            int: Number of deleted test cases
         """
-        groups = self.get_test_case_groups_by_business_type(business_type)
+        test_cases = self.get_unified_test_cases_by_business_type(business_type, project_id)
 
-        for group in groups:
-            items = self.get_test_case_items_by_group_id(group.id)
+        for test_case in test_cases:
+            # Delete knowledge graph entities and relations for this test case
+            self.delete_test_case_knowledge_entities_for_item(test_case.id, business_type)
 
-            # Delete knowledge graph entities and relations for each item
-            for item in items:
-                self.delete_test_case_knowledge_entities_for_item(item.id, business_type)
+            # Delete test case entity mappings
+            entities = self.db.query(TestCaseEntity).filter(TestCaseEntity.test_case_item_id == test_case.id).all()
+            for entity in entities:
+                self.db.delete(entity)
 
-                # Delete test case entity mappings
-                entities = self.db.query(TestCaseEntity).filter(TestCaseEntity.test_case_item_id == item.id).all()
-                for entity in entities:
-                    self.db.delete(entity)
+            # Delete the test case
+            self.db.delete(test_case)
 
-        # Delete the groups (cascade will delete items)
-        stmt = delete(TestCaseGroup).where(TestCaseGroup.business_type == business_type)
-        result = self.db.execute(stmt)
         self.db.commit()
-        return result.rowcount
+        return len(test_cases)
 
     def delete_test_case_knowledge_entities_for_item(self, test_case_item_id: int, business_type: BusinessType):
         """
@@ -760,7 +816,7 @@ class DatabaseOperations:
         self.db.commit()
         return deleted_entities_count, deleted_relations_count
 
-    def update_test_case_item(self, item_id: int, test_case_data: Dict[str, Any]) -> Optional[TestCaseItem]:
+    def update_test_case_item(self, item_id: int, test_case_data: Dict[str, Any]) -> Optional[UnifiedTestCase]:
         """
         Update a test case item.
 
@@ -769,7 +825,7 @@ class DatabaseOperations:
             test_case_data (Dict[str, Any]): Updated test case data
 
         Returns:
-            Optional[TestCaseItem]: Updated test case item or None
+            Optional[UnifiedTestCase]: Updated test case item or None
         """
         item = self.get_test_case_item_by_id(item_id)
         if item:
@@ -928,15 +984,16 @@ class DatabaseOperations:
         """
         stats = {}
 
-        # Test case groups count
-        stats['test_case_groups'] = self.db.query(TestCaseGroup).filter(
-            TestCaseGroup.project_id == project_id
+        # Unified test cases count (replaces test case groups)
+        from .models import UnifiedTestCase
+        stats['unified_test_cases'] = self.db.query(UnifiedTestCase).filter(
+            UnifiedTestCase.project_id == project_id
         ).count()
 
-        # Test case items count
-        from .models import TestCaseItem
-        stats['test_case_items'] = self.db.query(TestCaseItem).join(TestCaseGroup).filter(
-            TestCaseGroup.project_id == project_id
+        # Test points count (replaces test case items)
+        from .models import TestPoint
+        stats['test_points'] = self.db.query(TestPoint).filter(
+            TestPoint.project_id == project_id
         ).count()
 
         # Generation jobs count
@@ -977,3 +1034,171 @@ class DatabaseOperations:
                 is_active=True
             )
         return project
+
+    # Prompt dependency checking methods
+    def check_prompt_dependencies(self, prompt_id: int) -> Dict[str, Any]:
+        """
+        Check dependencies for a prompt before deletion.
+
+        Args:
+            prompt_id (int): ID of the prompt to check
+
+        Returns:
+            Dict[str, Any]: Dictionary containing all dependency information
+        """
+        dependencies = {
+            "prompt_id": prompt_id,
+            "prompt": None,
+            "combinations": [],
+            "versions": [],
+            "business_configs": [],
+            "can_delete": True,
+            "block_reason": None
+        }
+
+        # Get the prompt itself
+        prompt = self.db.query(Prompt).filter(Prompt.id == prompt_id).first()
+        if not prompt:
+            dependencies["can_delete"] = False
+            dependencies["block_reason"] = f"Prompt with ID {prompt_id} does not exist"
+            return dependencies
+
+        dependencies["prompt"] = {
+            "id": prompt.id,
+            "name": prompt.name,
+            "type": prompt.type.value,
+            "business_type": prompt.business_type.value if prompt.business_type else None,
+            "status": prompt.status.value,
+            "version": prompt.version
+        }
+
+        # Check for versions that will be deleted
+        versions = self.db.query(PromptVersion).filter(PromptVersion.prompt_id == prompt_id).all()
+        dependencies["versions"] = [
+            {
+                "id": version.id,
+                "version_number": version.version_number,
+                "created_at": version.created_at.isoformat() if version.created_at else None
+            }
+            for version in versions
+        ]
+
+        # Check for combinations that use this prompt
+        combination_items = self.db.query(PromptCombinationItem).filter(
+            PromptCombinationItem.prompt_id == prompt_id
+        ).all()
+
+        combination_ids = list(set(item.combination_id for item in combination_items))
+        combinations = self.db.query(PromptCombination).filter(
+            PromptCombination.id.in_(combination_ids)
+        ).all()
+
+        dependencies["combinations"] = [
+            {
+                "id": combo.id,
+                "name": combo.name,
+                "business_type": combo.business_type.value if combo.business_type else None,
+                "is_active": combo.is_active,
+                "description": combo.description
+            }
+            for combo in combinations
+        ]
+
+        # Check for business type configs that use combinations containing this prompt
+        if combination_ids:
+            # Note: prompt_combination_id doesn't exist, use test_point_combination_id and test_case_combination_id
+            business_configs = self.db.query(BusinessTypeConfig).filter(
+                (BusinessTypeConfig.test_point_combination_id.in_(combination_ids)) |
+                (BusinessTypeConfig.test_case_combination_id.in_(combination_ids))
+            ).all()
+
+            dependencies["business_configs"] = [
+                {
+                    "id": config.id,
+                    "code": config.code,
+                    "name": config.name,
+                    "is_active": config.is_active,
+                    "project_id": config.project_id
+                }
+                for config in business_configs
+            ]
+
+        # Determine if prompt can be deleted
+        if dependencies["combinations"]:
+            dependencies["can_delete"] = False
+            dependencies["block_reason"] = (
+                f"提示词被用于 {len(dependencies['combinations'])} 个提示词组合中。"
+                f"删除它将影响这些组合以及相关的业务类型配置。"
+            )
+
+        return dependencies
+
+    def check_multiple_prompt_dependencies(self, prompt_ids: List[int]) -> Dict[str, Any]:
+        """
+        Check dependencies for multiple prompts before batch deletion.
+
+        Args:
+            prompt_ids (List[int]): List of prompt IDs to check
+
+        Returns:
+            Dict[str, Any]: Dictionary containing all dependency information for multiple prompts
+        """
+        result = {
+            "prompts": [],
+            "combined_dependencies": {
+                "combinations": [],
+                "business_configs": []
+            },
+            "can_delete_all": True,
+            "block_reason": None
+        }
+
+        all_combination_ids = set()
+
+        for prompt_id in prompt_ids:
+            deps = self.check_prompt_dependencies(prompt_id)
+            result["prompts"].append(deps)
+
+            if not deps["can_delete"]:
+                result["can_delete_all"] = False
+                if not result["block_reason"]:
+                    result["block_reason"] = deps["block_reason"]
+
+            # Collect all combination IDs
+            all_combination_ids.update(combo["id"] for combo in deps["combinations"])
+
+        # Get unique combinations and business configs that will be affected
+        if all_combination_ids:
+            combinations = self.db.query(PromptCombination).filter(
+                PromptCombination.id.in_(list(all_combination_ids))
+            ).all()
+
+            result["combined_dependencies"]["combinations"] = [
+                {
+                    "id": combo.id,
+                    "name": combo.name,
+                    "business_type": combo.business_type.value if combo.business_type else None,
+                    "is_active": combo.is_active,
+                    "description": combo.description
+                }
+                for combo in combinations
+            ]
+
+            # Note: prompt_combination_id doesn't exist, use test_point_combination_id and test_case_combination_id
+            business_configs = self.db.query(BusinessTypeConfig).filter(
+                (BusinessTypeConfig.test_point_combination_id.in_(list(all_combination_ids))) |
+                (BusinessTypeConfig.test_case_combination_id.in_(list(all_combination_ids)))
+            ).all()
+
+            result["combined_dependencies"]["business_configs"] = [
+                {
+                    "id": config.id,
+                    "code": config.code,
+                    "name": config.name,
+                    "is_active": config.is_active,
+                    "project_id": config.project_id
+                }
+                for config in business_configs
+            ]
+
+        return result

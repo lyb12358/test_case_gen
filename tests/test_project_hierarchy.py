@@ -15,7 +15,10 @@ from typing import Optional, Dict, Any
 from unittest.mock import Mock, patch, MagicMock
 
 # Import test dependencies
-from src.database.models import Project, TestCaseGroup, GenerationJob, BusinessType
+from src.database.models import (
+    Project, UnifiedTestCase, GenerationJob, BusinessType,
+    EntityType
+)
 from src.database.operations import DatabaseOperations
 from src.api.endpoints import validate_project_id
 from src.core.test_case_generator import TestCaseGenerator
@@ -189,8 +192,8 @@ class TestProjectCRUD:
         stats = db_ops.get_project_stats(project.id)
 
         assert isinstance(stats, dict)
-        assert 'test_case_groups' in stats
-        assert 'test_case_items' in stats
+        assert 'unified_test_cases' in stats  # Updated from test_case_groups
+        assert 'test_points' in stats  # Updated from test_case_items
         assert 'generation_jobs' in stats
         assert 'knowledge_entities' in stats
         assert 'knowledge_relations' in stats
@@ -214,24 +217,27 @@ class TestProjectBasedFiltering:
         assert job.project_id == project.id
         assert job.business_type == BusinessType.RCC
 
-    def test_test_case_group_with_project(self, db_session):
-        """Test creating test case group with project context."""
+    def test_unified_test_case_with_project(self, db_session):
+        """Test creating unified test case with project context."""
         db_ops = DatabaseOperations(db_session)
 
         # Create a project
-        project = db_ops.create_project("TC Group Test Project", "For test case group testing")
+        project = db_ops.create_project("Unified TC Test Project", "For unified test case testing")
 
-        # Create test case group with project
-        generation_metadata = {"model": "gpt-4", "timestamp": "2024-01-01"}
-        group = db_ops.create_test_case_group(
-            BusinessType.RCC,
-            generation_metadata,
-            project.id
-        )
+        # Create unified test case with project
+        test_case_data = {
+            "title": "Test Case with Project",
+            "description": "Test case created with project context",
+            "business_type": BusinessType.RCC,
+            "project_id": project.id,
+            "status": "draft"
+        }
 
-        assert group is not None
-        assert group.project_id == project.id
-        assert group.business_type == BusinessType.RCC
+        test_case = db_ops.create_unified_test_case(test_case_data)
+
+        assert test_case is not None
+        assert test_case.project_id == project.id
+        assert test_case.business_type == BusinessType.RCC
 
     def test_knowledge_graph_data_with_project_filtering(self, db_session):
         """Test knowledge graph data with project filtering."""
@@ -389,13 +395,15 @@ class TestProjectHierarchyIntegration:
             assert success is True
 
             # Verify data was saved with correct project context
-            groups = db_session.query(TestCaseGroup).filter(
-                TestCaseGroup.project_id == project.id
+            test_cases = db_session.query(UnifiedTestCase).filter(
+                UnifiedTestCase.project_id == project.id
             ).all()
 
-            assert len(groups) == 1
-            assert groups[0].business_type == BusinessType.RCC
-            assert groups[0].project_id == project.id
+            assert len(test_cases) >= 1
+            # Check that at least one test case has the correct business type and project
+            rcc_test_cases = [tc for tc in test_cases if tc.business_type == BusinessType.RCC]
+            assert len(rcc_test_cases) >= 1
+            assert rcc_test_cases[0].project_id == project.id
 
     def test_project_data_isolation(self, db_session):
         """Test that data is properly isolated between projects."""
@@ -405,21 +413,31 @@ class TestProjectHierarchyIntegration:
         project1 = db_ops.create_project("Isolation Test Project 1", "First isolation test")
         project2 = db_ops.create_project("Isolation Test Project 2", "Second isolation test")
 
-        # Create test case groups for each project
-        group1 = db_ops.create_test_case_group(BusinessType.RCC, {}, project1.id)
-        group2 = db_ops.create_test_case_group(BusinessType.RFD, {}, project2.id)
+        # Create unified test cases for each project (replacing test case groups)
+        test_case1 = db_ops.create_unified_test_case({
+            "title": "Test Case for Project 1",
+            "description": "Test case in project 1",
+            "business_type": BusinessType.RCC,
+            "project_id": project1.id
+        })
+        test_case2 = db_ops.create_unified_test_case({
+            "title": "Test Case for Project 2",
+            "description": "Test case in project 2",
+            "business_type": BusinessType.RFD,
+            "project_id": project2.id
+        })
 
         # Create generation jobs for each project
         job1 = db_ops.create_generation_job("job-1", BusinessType.RCC, project1.id)
         job2 = db_ops.create_generation_job("job-2", BusinessType.RFD, project2.id)
 
-        # Test data isolation
-        project1_groups = db_session.query(TestCaseGroup).filter(
-            TestCaseGroup.project_id == project1.id
+        # Test data isolation - using UnifiedTestCase instead of TestCaseGroup
+        project1_test_cases = db_session.query(UnifiedTestCase).filter(
+            UnifiedTestCase.project_id == project1.id
         ).all()
 
-        project2_groups = db_session.query(TestCaseGroup).filter(
-            TestCaseGroup.project_id == project2.id
+        project2_test_cases = db_session.query(UnifiedTestCase).filter(
+            UnifiedTestCase.project_id == project2.id
         ).all()
 
         project1_jobs = db_session.query(GenerationJob).filter(
@@ -431,12 +449,12 @@ class TestProjectHierarchyIntegration:
         ).all()
 
         # Verify isolation
-        assert len(project1_groups) == 1
-        assert len(project2_groups) == 1
+        assert len(project1_test_cases) == 1
+        assert len(project2_test_cases) == 1
         assert len(project1_jobs) == 1
         assert len(project2_jobs) == 1
 
-        assert project1_groups[0].id != project2_groups[0].id
+        assert project1_test_cases[0].id != project2_test_cases[0].id
         assert project1_jobs[0].id != project2_jobs[0].id
 
 

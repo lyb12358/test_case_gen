@@ -42,6 +42,7 @@ const { TextArea } = Input;
 const ProjectManager: React.FC = () => {
   const { currentProject, projects, loadProjects, selectProject } = useProject();
   const [loading, setLoading] = useState(false);
+  const [showInactive, setShowInactive] = useState(false);
   const [projectsList, setProjectsList] = useState<Project[]>([]);
   const [projectStats, setProjectStats] = useState<Record<number, ProjectStats>>({});
   const [modalVisible, setModalVisible] = useState(false);
@@ -53,10 +54,14 @@ const ProjectManager: React.FC = () => {
     loadProjectData();
   }, []);
 
+  useEffect(() => {
+    loadProjectData();
+  }, [showInactive]);
+
   const loadProjectData = async () => {
     try {
       setLoading(true);
-      await loadProjects();
+      await loadProjects(!showInactive);
 
       // 获取每个项目的统计信息
       const statsPromises = projects.map(async (project) => {
@@ -98,13 +103,13 @@ const ProjectManager: React.FC = () => {
 
   const handleDeleteProject = async (project: Project) => {
     if (project.name === '远控场景') {
-      message.error('不能删除默认的"远控场景"项目');
+      message.error('不能停用默认的"远控场景"项目');
       return;
     }
 
     try {
       await projectService.deleteProject(project.id);
-      message.success(`项目 "${project.name}" 已删除`);
+      message.success(`项目 "${project.name}" 已停用，可通过"显示停用项目"查看`);
       await loadProjectData();
 
       // 如果删除的是当前项目，切换到默认项目
@@ -184,8 +189,8 @@ const ProjectManager: React.FC = () => {
         return (
           <Space direction="vertical" size="small" style={{ width: '100%' }}>
             <div>
-              <Text type="secondary">组: </Text>
-              <Text strong>{stats?.test_case_groups_count || 0}</Text>
+              <Text type="secondary">测试点: </Text>
+              <Text strong>{stats?.test_points_count || 0}</Text>
             </div>
             <div>
               <Text type="secondary">用例: </Text>
@@ -221,7 +226,7 @@ const ProjectManager: React.FC = () => {
       render: (isActive: boolean) => (
         <Badge
           status={isActive ? 'success' : 'default'}
-          text={isActive ? '激活' : '停用'}
+          text={isActive ? '启用' : '停用'}
         />
       ),
     },
@@ -253,13 +258,19 @@ const ProjectManager: React.FC = () => {
           </Tooltip>
           {record.name !== '远控场景' && (
             <Popconfirm
-              title="确定要删除这个项目吗？"
-              description="删除后，项目下的所有数据将被标记为已删除。"
+              title="确定要停用这个项目吗？"
+              description={
+                <div>
+                  <div>• 项目将被停用而不是永久删除</div>
+                  <div>• 停用后将不会在默认项目列表中显示</div>
+                  <div>• 可通过"显示停用项目"开关查看和重新启用</div>
+                </div>
+              }
               onConfirm={() => handleDeleteProject(record)}
-              okText="确定"
+              okText="确定停用"
               cancelText="取消"
             >
-              <Tooltip title="删除项目">
+              <Tooltip title="停用项目">
                 <Button
                   type="text"
                   danger
@@ -283,7 +294,18 @@ const ProjectManager: React.FC = () => {
   return (
     <div style={{ padding: '24px' }}>
       {/* 页面操作按钮 */}
-      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Space>
+          <Text>
+            显示停用项目
+          </Text>
+          <Switch
+            checked={showInactive}
+            onChange={setShowInactive}
+            checkedChildren="显示"
+            unCheckedChildren="隐藏"
+          />
+        </Space>
         <Space>
           <Button
             icon={<ReloadOutlined />}
@@ -317,7 +339,7 @@ const ProjectManager: React.FC = () => {
         <Col span={6}>
           <Card>
             <Statistic
-              title="激活项目"
+              title="启用项目"
               value={totalStats.activeProjects}
               prefix={<TeamOutlined />}
               valueStyle={{ color: '#52c41a' }}
@@ -438,7 +460,7 @@ const ProjectManager: React.FC = () => {
             label="项目状态"
             valuePropName="checked"
           >
-            <Switch checkedChildren="激活" unCheckedChildren="停用" />
+            <Switch checkedChildren="启用" unCheckedChildren="停用" />
           </Form.Item>
 
           <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>

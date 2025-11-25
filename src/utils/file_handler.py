@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 File handling utilities.
 """
@@ -22,10 +23,8 @@ def load_text_file(file_path: str, encoding: str = 'utf-8') -> Optional[str]:
         with open(file_path, 'r', encoding=encoding) as f:
             return f.read()
     except FileNotFoundError:
-        print(f"Error: Could not find file - {file_path}")
         return None
     except Exception as e:
-        print(f"Error: Could not read file {file_path} - {e}")
         return None
 
 
@@ -44,13 +43,10 @@ def load_json_file(file_path: str, encoding: str = 'utf-8') -> Optional[Dict[str
         with open(file_path, 'r', encoding=encoding) as f:
             return json.load(f)
     except FileNotFoundError:
-        print(f"Error: Could not find JSON file: {file_path}")
         return None
     except json.JSONDecodeError as e:
-        print(f"Error: Invalid JSON in file: {file_path} - {e}")
         return None
     except Exception as e:
-        print(f"Error: Could not read JSON file {file_path} - {e}")
         return None
 
 
@@ -74,7 +70,6 @@ def save_json_file(data: Dict[str, Any], file_path: str, encoding: str = 'utf-8'
             json.dump(data, f, indent=2, ensure_ascii=False)
         return True
     except Exception as e:
-        print(f"Error: Could not save JSON file {file_path} - {e}")
         return False
 
 

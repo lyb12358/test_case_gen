@@ -2,7 +2,7 @@
  * API service for prompt management.
  */
 
-import axios from 'axios';
+import apiClient from './api';
 import {
   Prompt,
   PromptSummary,
@@ -22,65 +22,33 @@ import {
   PromptStatistics,
   PromptType,
   PromptStatus,
+  GenerationStage,
   BusinessType
 } from '../types/prompts';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-
-// Axios instance
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-// Request interceptor
-api.interceptors.request.use(
-  (config) => {
-    console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
-
-// Response interceptor
-api.interceptors.response.use(
-  (response) => {
-    return response;
-  },
-  (error) => {
-    console.error('API Error:', error.response?.data || error.message);
-    return Promise.reject(error);
-  }
-);
 
 // Category API
 export const categoryService = {
   // Get all categories
   getCategories: async (): Promise<PromptCategory[]> => {
-    const response = await api.get('/api/v1/prompts/categories');
+    const response = await apiClient.get('/api/v1/prompts/categories');
     return response.data;
   },
 
   // Create category
   createCategory: async (category: PromptCategoryCreate): Promise<PromptCategory> => {
-    const response = await api.post('/api/v1/prompts/categories', category);
+    const response = await apiClient.post('/api/v1/prompts/categories', category);
     return response.data;
   },
 
   // Update category
   updateCategory: async (id: number, category: PromptCategoryUpdate): Promise<PromptCategory> => {
-    const response = await api.put(`/api/v1/prompts/categories/${id}`, category);
+    const response = await apiClient.put(`/api/v1/prompts/categories/${id}`, category);
     return response.data;
   },
 
   // Delete category
   deleteCategory: async (id: number): Promise<void> => {
-    await api.delete(`/api/v1/prompts/categories/${id}`);
+    await apiClient.delete(`/api/v1/prompts/categories/${id}`);
   },
 };
 
@@ -93,40 +61,53 @@ export const promptService = {
     type?: PromptType;
     business_type?: BusinessType;
     status?: PromptStatus;
+    generation_stage?: GenerationStage;
     category_id?: number;
     search?: string;
     project_id?: number;
   }): Promise<PromptListResponse> => {
-    const response = await api.get('/api/v1/prompts/', { params });
+    const response = await apiClient.get('/api/v1/prompts', { params });
     return response.data;
   },
 
   // Get specific prompt
   getPrompt: async (id: number): Promise<Prompt> => {
-    const response = await api.get(`/api/v1/prompts/${id}`);
+    const response = await apiClient.get(`/api/v1/prompts/${id}`);
     return response.data;
   },
 
   // Create prompt
   createPrompt: async (prompt: PromptCreate): Promise<Prompt> => {
-    const response = await api.post('/api/v1/prompts/', prompt);
+    const response = await apiClient.post('/api/v1/prompts', prompt);
     return response.data;
   },
 
   // Update prompt
   updatePrompt: async (id: number, prompt: PromptUpdate): Promise<Prompt> => {
-    const response = await api.put(`/api/v1/prompts/${id}`, prompt);
+    const response = await apiClient.put(`/api/v1/prompts/${id}`, prompt);
+    return response.data;
+  },
+
+  // Get delete preview for single prompt
+  getDeletePreview: async (id: number): Promise<any> => {
+    const response = await apiClient.get(`/api/v1/prompts/${id}/delete-preview`);
+    return response.data;
+  },
+
+  // Get delete preview for batch prompts
+  getBatchDeletePreview: async (ids: number[]): Promise<any> => {
+    const response = await apiClient.post('/api/v1/prompts/batch-delete-preview', ids);
     return response.data;
   },
 
   // Delete prompt
   deletePrompt: async (id: number): Promise<void> => {
-    await api.delete(`/api/v1/prompts/${id}`);
+    await apiClient.delete(`/api/v1/prompts/${id}`);
   },
 
   // Clone prompt
   clonePrompt: async (id: number): Promise<Prompt> => {
-    const response = await api.post(`/api/v1/prompts/${id}/clone`);
+    const response = await apiClient.post(`/api/v1/prompts/${id}/clone`);
     return response.data;
   },
 };
@@ -135,19 +116,19 @@ export const promptService = {
 export const searchService = {
   // Advanced search
   searchPrompts: async (searchRequest: PromptSearchRequest): Promise<PromptListResponse> => {
-    const response = await api.post('/api/v1/prompts/search', searchRequest);
+    const response = await apiClient.post('/api/v1/prompts/search', searchRequest);
     return response.data;
   },
 
   // Preview prompt
   previewPrompt: async (request: PromptPreviewRequest): Promise<PromptPreviewResponse> => {
-    const response = await api.post('/api/v1/prompts/preview', request);
+    const response = await apiClient.post('/api/v1/prompts/preview', request);
     return response.data;
   },
 
   // Validate prompt
   validatePrompt: async (id: number): Promise<PromptValidationResponse> => {
-    const response = await api.post(`/api/v1/prompts/${id}/validate`);
+    const response = await apiClient.post(`/api/v1/prompts/${id}/validate`);
     return response.data;
   },
 };
@@ -156,7 +137,7 @@ export const searchService = {
 export const buildService = {
   // Build prompt for business type
   buildPromptForBusiness: async (businessType: string): Promise<{ content: string; business_type: string }> => {
-    const response = await api.get(`/api/v1/prompts/build/${businessType}`);
+    const response = await apiClient.get(`/api/v1/prompts/build/${businessType}`);
     return response.data;
   },
 };
@@ -166,7 +147,7 @@ export const statsService = {
   // Get overview statistics
   getOverviewStats: async (projectId?: number): Promise<PromptStatistics> => {
     const params = projectId ? { project_id: projectId } : {};
-    const response = await api.get('/api/v1/prompts/stats/overview', { params });
+    const response = await apiClient.get('/api/v1/prompts/stats/overview', { params });
     return response.data;
   },
 };
@@ -175,19 +156,19 @@ export const statsService = {
 export const templateService = {
   // Get all templates
   getTemplates: async (): Promise<PromptTemplate[]> => {
-    const response = await api.get('/api/v1/prompts/templates');
+    const response = await apiClient.get('/api/v1/prompts/templates');
     return response.data;
   },
 
   // Create template
   createTemplate: async (template: PromptTemplateCreate): Promise<PromptTemplate> => {
-    const response = await api.post('/api/v1/prompts/templates', template);
+    const response = await apiClient.post('/api/v1/prompts/templates', template);
     return response.data;
   },
 
   // Delete template
   deleteTemplate: async (id: number): Promise<void> => {
-    await api.delete(`/api/v1/prompts/templates/${id}`);
+    await apiClient.delete(`/api/v1/prompts/templates/${id}`);
   },
 };
 
@@ -236,8 +217,20 @@ export const promptUtils = {
         return 'green';
       case 'shared_content':
         return 'orange';
-      case 'requirements':
-        return 'cyan';
+      default:
+        return 'default';
+    }
+  },
+
+  // Get generation stage color
+  getGenerationStageColor: (generationStage: GenerationStage): string => {
+    switch (generationStage) {
+      case 'test_point':
+        return 'blue';
+      case 'test_case':
+        return 'purple';
+      case 'general':
+        return 'green';
       default:
         return 'default';
     }
@@ -296,12 +289,62 @@ export const promptUtils = {
       errors.push('内容过长');
     }
 
-    // Check for unmatched template variables
-    const openBraces = (content.match(/\{\{/g) || []).length;
-    const closeBraces = (content.match(/\}\}/g) || []).length;
-    if (openBraces !== closeBraces) {
-      errors.push('模板变量括号不匹配');
-    }
+    // Check for unmatched template variables (improved logic)
+    const validateTemplateVariables = (text: string): string[] => {
+      const validationErrors: string[] = [];
+
+      try {
+        // Remove code blocks to avoid false positives
+        const codeBlockPattern = /```[\s\S]*?```/g;
+        const inlineCodePattern = /`[^`]*`/g;
+        const jsonBlockPattern = /\{[^{}]*\}[^{}]*\{[^{}]*\}/g;
+
+        const cleanText = text
+          .replace(codeBlockPattern, '')
+          .replace(inlineCodePattern, '');
+
+        // Find all template variable patterns
+        const templatePattern = /\{\{([^}]+)\}\}/g;
+        const incompletePattern = /\{\{([^}]*)$/gm;
+
+        const matches = [...cleanText.matchAll(templatePattern)];
+        const incompleteMatches = [...cleanText.matchAll(incompletePattern)];
+
+        // Check for incomplete template variables ({{ without closing }})
+        if (incompleteMatches.length > 0) {
+          validationErrors.push('发现未闭合的模板变量');
+        }
+
+        // Check for variables with only whitespace
+        const emptyVariables = matches.filter(match =>
+          match[1] && match[1].trim() === ''
+        );
+        if (emptyVariables.length > 0) {
+          validationErrors.push('模板变量不能为空');
+        }
+
+        // Additional validation: check for common template variable patterns
+        const invalidPatterns = [
+          /\{\{\s*\}/,  // {{}}
+          /\{\{[^}]*\{\{/, // {{nested {{
+        ];
+
+        for (const pattern of invalidPatterns) {
+          if (pattern.test(cleanText)) {
+            validationErrors.push('模板变量格式不正确');
+            break;
+          }
+        }
+      } catch (error) {
+        console.warn('Template variable validation error:', error);
+        // Don't fail completely if validation has an error
+      }
+
+      return validationErrors;
+    };
+
+    const templateValidationErrors = validateTemplateVariables(content);
+    errors.push(...templateValidationErrors);
 
     return {
       isValid: errors.length === 0,

@@ -7,7 +7,7 @@ instead of hardcoded enums, establishing database-driven architecture.
 
 from datetime import datetime
 from typing import List, Optional, Dict, Any, Union, Literal
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 # Import configuration service for validation
 from src.services.config_service import config_service
@@ -20,17 +20,21 @@ PromptTypeLiteral = Literal[
 PromptStatusLiteral = Literal[
     "draft", "active", "archived", "deprecated"
 ]
+GenerationStageLiteral = Literal[
+    "test_point", "test_case", "general"
+]
 
 
 # Base Models
 class BasePromptModel(BaseModel):
     """Base model for prompt-related objects."""
 
-    class Config:
-        from_attributes = True
-        json_encoders = {
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_encoders={
             datetime: lambda v: v.isoformat()
         }
+    )
 
 
 class PromptCategoryBase(BasePromptModel):
@@ -64,10 +68,11 @@ class PromptBase(BasePromptModel):
     """Base model for prompts."""
     project_id: int = Field(..., description="Project ID")
     name: str = Field(..., description="Prompt name", min_length=1, max_length=200)
-    content: str = Field(..., description="Prompt content", min_length=1)
+    content: str = Field(..., description="Prompt content", min_length=0)
     type: str = Field(..., description="Prompt type")
     business_type: Optional[str] = Field(default=None, description="Associated business type")
     status: str = Field(default="draft", description="Prompt status")
+    generation_stage: Optional[str] = Field(default=None, description="Generation stage type")
 
     # Metadata
     author: Optional[str] = Field(default=None, description="Author name", max_length=100)
@@ -80,19 +85,22 @@ class PromptBase(BasePromptModel):
     category_id: Optional[int] = Field(default=None, description="Category ID")
     file_path: Optional[str] = Field(default=None, description="Original file path")
 
-    @validator('type')
+    @field_validator('type')
+    @classmethod
     def validate_prompt_type(cls, v):
         if not config_service.validate_prompt_type(v):
             raise ValueError(f"Invalid prompt type: {v}")
         return v
 
-    @validator('business_type')
+    @field_validator('business_type')
+    @classmethod
     def validate_business_type(cls, v):
         if v is not None and not config_service.validate_business_type(v):
             raise ValueError(f"Invalid business type: {v}")
         return v
 
-    @validator('status')
+    @field_validator('status')
+    @classmethod
     def validate_prompt_status(cls, v):
         if not config_service.validate_prompt_status(v):
             raise ValueError(f"Invalid prompt status: {v}")
@@ -122,19 +130,22 @@ class PromptUpdate(BasePromptModel):
     # Organization
     category_id: Optional[int] = Field(default=None, description="Category ID")
 
-    @validator('type')
+    @field_validator('type')
+    @classmethod
     def validate_prompt_type(cls, v):
         if v is not None and not config_service.validate_prompt_type(v):
             raise ValueError(f"Invalid prompt type: {v}")
         return v
 
-    @validator('business_type')
+    @field_validator('business_type')
+    @classmethod
     def validate_business_type(cls, v):
         if v is not None and not config_service.validate_business_type(v):
             raise ValueError(f"Invalid business type: {v}")
         return v
 
-    @validator('status')
+    @field_validator('status')
+    @classmethod
     def validate_prompt_status(cls, v):
         if v is not None and not config_service.validate_prompt_status(v):
             raise ValueError(f"Invalid prompt status: {v}")
@@ -160,6 +171,7 @@ class PromptSummary(BasePromptModel):
     type: str = Field(..., description="Prompt type")
     business_type: Optional[str] = Field(default=None, description="Associated business type")
     status: str = Field(..., description="Prompt status")
+    generation_stage: Optional[str] = Field(default=None, description="Generation stage type")
     author: Optional[str] = Field(default=None, description="Author name")
     version: str = Field(..., description="Version number")
     created_at: datetime = Field(..., description="Creation timestamp")
@@ -233,23 +245,15 @@ class PromptSearchRequest(BaseModel):
     type: Optional[str] = Field(default=None, description="Filter by type")
     business_type: Optional[str] = Field(default=None, description="Filter by business type")
     status: Optional[str] = Field(default=None, description="Filter by status")
+    generation_stage: Optional[str] = Field(default=None, description="Filter by generation stage")
     category_id: Optional[int] = Field(default=None, description="Filter by category")
     tags: Optional[List[str]] = Field(default=None, description="Filter by tags")
     author: Optional[str] = Field(default=None, description="Filter by author")
+    project_id: Optional[int] = Field(default=None, description="Filter by project ID")
     page: int = Field(default=1, description="Page number", ge=1)
     size: int = Field(default=20, description="Page size", ge=1, le=100)
 
 
-class PromptPreviewRequest(BaseModel):
-    """Request model for prompt preview."""
-    content: str = Field(..., description="Prompt content to preview")
-    variables: Optional[Dict[str, str]] = Field(default=None, description="Variable values for template rendering")
-
-
-class PromptPreviewResponse(BaseModel):
-    """Response model for prompt preview."""
-    rendered_content: str = Field(..., description="Rendered prompt content")
-    detected_variables: List[str] = Field(..., description="Detected template variables")
 
 
 class PromptValidationResponse(BaseModel):
@@ -308,4 +312,25 @@ class PromptStatistics(BaseModel):
 
     prompts_by_type: Dict[str, int] = Field(..., description="Prompts grouped by type")
     prompts_by_business_type: Dict[str, int] = Field(..., description="Prompts grouped by business type")
+    prompts_by_generation_stage: Dict[str, int] = Field(..., description="Prompts grouped by generation stage")
     recent_activity: List[PromptSummary] = Field(..., description="Recently updated prompts")
+    most_recent: List[PromptSummary] = Field(..., description="Most recently updated prompts")
+
+
+# Preview Models
+class PromptPreviewRequest(BaseModel):
+    """Request model for prompt preview."""
+    name: str = Field(..., description="Prompt name", min_length=1, max_length=200)
+    content: str = Field(..., description="Prompt content", min_length=1)
+    type: str = Field(..., description="Prompt type")
+    business_type: Optional[str] = Field(default=None, description="Associated business type")
+    generation_stage: Optional[str] = Field(default=None, description="Generation stage")
+    variables: Optional[Dict[str, Any]] = Field(default=None, description="Template variables for preview")
+
+
+class PromptPreviewResponse(BaseModel):
+    """Response model for prompt preview."""
+    rendered_content: str = Field(..., description="Rendered prompt content")
+    estimated_tokens: int = Field(..., description="Estimated token count")
+    preview_metadata: Dict[str, Any] = Field(..., description="Preview metadata")
+    validation_warnings: List[str] = Field(default_factory=list, description="Validation warnings")

@@ -1,11 +1,18 @@
+# -*- coding: utf-8 -*-
 """
 API endpoints for test case generation service using FastAPI.
 Refactored to support business type parameters and database integration.
 """
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Query, APIRouter
+# 导入编码配置以确保中文支持
+from ..utils.encoding_config import setup_encoding_environment
+
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Query, APIRouter, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+import uuid
+from .dependencies import get_db
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any, Annotated
 import asyncio
@@ -13,6 +20,7 @@ import uuid
 import os
 import json
 import io
+import logging
 from datetime import datetime
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -21,15 +29,50 @@ from ..core.test_case_generator import TestCaseGenerator
 from ..utils.config import Config
 from ..database.database import DatabaseManager
 from ..database.operations import DatabaseOperations
-from ..database.models import BusinessType, JobStatus, EntityType, BusinessTypeConfig, Project, GenerationJob
+from ..database.models import BusinessType, JobStatus, EntityType, BusinessTypeConfig, Project, GenerationJob, UnifiedTestCaseStatus
 from ..core.business_data_extractor import BusinessDataExtractor
 from ..core.excel_converter import ExcelConverter
 from ..models.test_case import TestCase
 from ..models.project import ProjectCreate, ProjectUpdate, ProjectResponse, ProjectListResponse, ProjectStats, ProjectStatsResponse
+from ..models.test_point import (
+    TestPoint, TestPointCreate, TestPointUpdate,
+    BatchTestCaseGenerationRequest, BatchTestPointGenerationRequest, BatchGenerationResponse
+)
+from .dependencies import get_db, get_current_project
 from .prompt_endpoints import router as prompt_router
 from .config_endpoints import router as config_router
 from .business_endpoints import router as business_router
+from .test_point_endpoints import router as test_point_router
+from .consistency_endpoints import router as consistency_router
+from .generation_endpoints import router as generation_router
+from .unified_test_case_endpoints import router as unified_test_case_router
+from ..middleware.error_handler import setup_error_handler
+from ..websocket.endpoints import router as websocket_router
 
+
+class RequestIDMiddleware(BaseHTTPMiddleware):
+    """请求ID中间件，为每个请求添加唯一标识符。"""
+
+    async def dispatch(self, request: Request, call_next):
+        # 生成请求ID
+        request_id = str(uuid.uuid4())
+        request.state.request_id = request_id
+
+        # 添加响应头
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+
+        return response
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+# 设置编码环境以确保中文支持
+setup_encoding_environment()
+
+# 初始化数据库管理器和配置
+config = Config()
+db_manager = DatabaseManager(config)
 
 # Create main router for core endpoints
 main_router = APIRouter(
@@ -63,10 +106,10 @@ class TaskStatusResponse(BaseModel):
     test_case_id: Optional[int] = None
 
 
-class TestCaseItemResponse(BaseModel):
+class UnifiedTestCaseResponse(BaseModel):
     """Response model for individual test case item."""
     id: int
-    group_id: int
+    project_id: int
     test_case_id: str
     name: str
     description: Optional[str] = None
@@ -90,14 +133,14 @@ class TestCaseGroupResponse(BaseModel):
     generation_metadata: Optional[Dict[str, Any]] = None
     created_at: str
     updated_at: Optional[str] = None
-    test_case_items: List[TestCaseItemResponse] = []
+    test_case_items: List[UnifiedTestCaseResponse] = []
 
 
 class TestCasesListResponse(BaseModel):
     """Response model for list of test cases."""
     business_type: Optional[str] = None
     count: int
-    test_case_groups: List[TestCaseGroupResponse]
+    projects: List[TestCaseGroupResponse]
 
 
 class BusinessTypeResponse(BaseModel):
@@ -197,6 +240,19 @@ class GraphRelationResponse(BaseModel):
     created_at: str
 
 
+# Two-stage generation models
+class GenerateTestCasesFromPointsRequest(BaseModel):
+    """Request model for generating test cases from test points."""
+    business_type: str
+    test_points: Dict[str, Any]
+
+
+class SetBusinessTypeConfigRequest(BaseModel):
+    """Request model for setting business type configuration."""
+    test_point_combination_id: Optional[int] = None  # For test_point
+    test_case_combination_id: Optional[int] = None  # For test_case
+
+
 # Utility functions for project validation
 def validate_project_id(project_id: Optional[int], db: Session, use_default: bool = True) -> Project:
     """
@@ -280,25 +336,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configuration and database
+# Setup request ID middleware for better tracking
+app.add_middleware(RequestIDMiddleware)
+
+# Setup error handling middleware
+setup_error_handler(app)
+
+# Configuration
 config = Config()
-db_manager = DatabaseManager(config)
 
 # Router registration will be done at the end of the file
 # after all function definitions have been processed
-
-
-def get_db():
-    """Proper FastAPI dependency for database session."""
-    session = db_manager.SessionLocal()
-    try:
-        yield session
-        session.commit()
-    except Exception as e:
-        session.rollback()
-        raise
-    finally:
-        session.close()
 
 
 # Task progress data (for additional metadata during execution)
@@ -337,7 +385,7 @@ async def root():
 
 # Project Management Endpoints
 @main_router.get("/projects", response_model=ProjectListResponse, tags=["projects"])
-async def get_projects(active_only: bool = True, db: Session = Depends(get_db)):
+async def get_projects(active_only: bool = True, db = Depends(get_db)):
     """
     Get all projects.
 
@@ -348,32 +396,29 @@ async def get_projects(active_only: bool = True, db: Session = Depends(get_db)):
     Returns:
         ProjectListResponse: List of projects
     """
-    try:
-        db_ops = DatabaseOperations(db)
-        projects = db_ops.get_all_projects(active_only=active_only)
+    db_ops = DatabaseOperations(db)
+    projects = db_ops.get_all_projects(active_only=active_only)
 
-        project_responses = [
-            ProjectResponse(
-                id=project.id,
-                name=project.name,
-                description=project.description,
-                is_active=project.is_active,
-                created_at=project.created_at,
-                updated_at=project.updated_at
-            )
-            for project in projects
-        ]
-
-        return ProjectListResponse(
-            projects=project_responses,
-            total=len(project_responses)
+    project_responses = [
+        ProjectResponse(
+            id=project.id,
+            name=project.name,
+            description=project.description,
+            is_active=project.is_active,
+            created_at=project.created_at.isoformat(),
+            updated_at=project.updated_at.isoformat()
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get projects: {str(e)}")
+        for project in projects
+    ]
+
+    return ProjectListResponse(
+        projects=project_responses,
+        total=len(project_responses)
+    )
 
 
 @main_router.post("/projects", response_model=ProjectResponse, tags=["projects"])
-async def create_project(project_data: ProjectCreate, db: Session = Depends(get_db)):
+async def create_project(project_data: ProjectCreate, db = Depends(get_db)):
     """
     Create a new project.
 
@@ -384,36 +429,31 @@ async def create_project(project_data: ProjectCreate, db: Session = Depends(get_
     Returns:
         ProjectResponse: Created project
     """
-    try:
-        db_ops = DatabaseOperations(db)
+    db_ops = DatabaseOperations(db)
 
-        # Check if project name already exists
-        existing_project = db_ops.get_project_by_name(project_data.name)
-        if existing_project:
-            raise HTTPException(status_code=400, detail=f"Project with name '{project_data.name}' already exists")
+    # Check if project name already exists
+    existing_project = db_ops.get_project_by_name(project_data.name)
+    if existing_project:
+        raise HTTPException(status_code=400, detail=f"Project with name '{project_data.name}' already exists")
 
-        project = db_ops.create_project(
-            name=project_data.name,
-            description=project_data.description,
-            is_active=project_data.is_active
-        )
+    project = db_ops.create_project(
+        name=project_data.name,
+        description=project_data.description,
+        is_active=project_data.is_active
+    )
 
-        return ProjectResponse(
-            id=project.id,
-            name=project.name,
-            description=project.description,
-            is_active=project.is_active,
-            created_at=project.created_at,
-            updated_at=project.updated_at
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create project: {str(e)}")
+    return ProjectResponse(
+        id=project.id,
+        name=project.name,
+        description=project.description,
+        is_active=project.is_active,
+        created_at=project.created_at.isoformat(),
+        updated_at=project.updated_at.isoformat()
+    )
 
 
 @main_router.get("/projects/{project_id}", response_model=ProjectResponse, tags=["projects"])
-async def get_project(project_id: int, db: Session = Depends(get_db)):
+async def get_project(project_id: int, db = Depends(get_db)):
     """
     Get project details.
 
@@ -424,29 +464,24 @@ async def get_project(project_id: int, db: Session = Depends(get_db)):
     Returns:
         ProjectResponse: Project details
     """
-    try:
-        db_ops = DatabaseOperations(db)
-        project = db_ops.get_project(project_id)
+    db_ops = DatabaseOperations(db)
+    project = db_ops.get_project(project_id)
 
-        if not project:
-            raise HTTPException(status_code=404, detail=f"Project with ID {project_id} not found")
+    if not project:
+        raise HTTPException(status_code=404, detail=f"项目ID {project_id} 未找到")
 
-        return ProjectResponse(
-            id=project.id,
-            name=project.name,
-            description=project.description,
-            is_active=project.is_active,
-            created_at=project.created_at,
-            updated_at=project.updated_at
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get project: {str(e)}")
+    return ProjectResponse(
+        id=project.id,
+        name=project.name,
+        description=project.description,
+        is_active=project.is_active,
+        created_at=project.created_at.isoformat(),
+        updated_at=project.updated_at.isoformat()
+    )
 
 
 @main_router.put("/projects/{project_id}", response_model=ProjectResponse, tags=["projects"])
-async def update_project(project_id: int, project_data: ProjectUpdate, db: Session = Depends(get_db)):
+async def update_project(project_id: int, project_data: ProjectUpdate, db = Depends(get_db)):
     """
     Update a project.
 
@@ -464,7 +499,7 @@ async def update_project(project_id: int, project_data: ProjectUpdate, db: Sessi
         # Check if project exists
         existing_project = db_ops.get_project(project_id)
         if not existing_project:
-            raise HTTPException(status_code=404, detail=f"Project with ID {project_id} not found")
+            raise HTTPException(status_code=404, detail=f"项目ID {project_id} 未找到")
 
         # Check if new name conflicts with existing project
         if project_data.name and project_data.name != existing_project.name:
@@ -498,7 +533,7 @@ async def update_project(project_id: int, project_data: ProjectUpdate, db: Sessi
 
 
 @main_router.delete("/projects/{project_id}", tags=["projects"])
-async def delete_project(project_id: int, soft_delete: bool = True, db: Session = Depends(get_db)):
+async def delete_project(project_id: int, soft_delete: bool = True, db = Depends(get_db)):
     """
     Delete a project.
 
@@ -516,7 +551,7 @@ async def delete_project(project_id: int, soft_delete: bool = True, db: Session 
         # Check if project exists
         project = db_ops.get_project(project_id)
         if not project:
-            raise HTTPException(status_code=404, detail=f"Project with ID {project_id} not found")
+            raise HTTPException(status_code=404, detail=f"项目ID {project_id} 未找到")
 
         # Prevent deletion of the default project
         if project.name == "远控场景":
@@ -539,7 +574,7 @@ async def delete_project(project_id: int, soft_delete: bool = True, db: Session 
 
 
 @main_router.get("/projects/{project_id}/stats", response_model=ProjectStatsResponse, tags=["projects"])
-async def get_project_stats(project_id: int, db: Session = Depends(get_db)):
+async def get_project_stats(project_id: int, db = Depends(get_db)):
     """
     Get statistics for a project.
 
@@ -556,7 +591,7 @@ async def get_project_stats(project_id: int, db: Session = Depends(get_db)):
         # Check if project exists
         project = db_ops.get_project(project_id)
         if not project:
-            raise HTTPException(status_code=404, detail=f"Project with ID {project_id} not found")
+            raise HTTPException(status_code=404, detail=f"项目ID {project_id} 未找到")
 
         # Get project statistics
         stats = db_ops.get_project_stats(project_id)
@@ -564,8 +599,8 @@ async def get_project_stats(project_id: int, db: Session = Depends(get_db)):
         project_stats = ProjectStats(
             project_id=project_id,
             project_name=project.name,
-            test_case_groups_count=stats.get('test_case_groups', 0),
-            test_cases_count=stats.get('test_case_items', 0),
+            projects_count=1,  # Current project count (single project)
+            test_cases_count=stats.get('unified_test_cases', 0),
             generation_jobs_count=stats.get('generation_jobs', 0),
             knowledge_entities_count=stats.get('knowledge_entities', 0),
             prompts_count=stats.get('prompts', 0)
@@ -628,7 +663,7 @@ async def generate_test_cases_for_business(
     except ValueError:
         # If enum doesn't exist, we'll handle this in the background task
         business_enum = None
-        print(f"[WARNING] Business type '{request.business_type}' exists in new system but not in legacy enum")
+        logger.warning(f"Business type '{request.business_type}' exists in new system but not in legacy enum")
 
     # Validate project ID (with backward compatibility)
     project = validate_project_id(project_id, db, use_default=True)
@@ -693,7 +728,7 @@ async def get_task_status(task_id: str):
         job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
 
         if not job:
-            raise HTTPException(status_code=404, detail="Task not found")
+            raise HTTPException(status_code=404, detail="任务未找到")
 
         # Get project information for the job
         project_name = None
@@ -743,16 +778,16 @@ async def export_test_cases_to_excel(
 
         # Get test case data from database
         with db_manager.get_session() as db:
-            from ..database.models import TestCaseGroup, TestCaseItem
+            from ..database.models import Project, UnifiedTestCase
 
             # Build query with business type and project filtering
-            query = db.query(TestCaseGroup)
+            query = db.query(Project)
             if business_enum:
-                query = query.filter(TestCaseGroup.business_type == business_enum)
+                query = query.filter(Project.business_type == business_enum)
             if project_id:
-                query = query.filter(TestCaseGroup.project_id == project_id)
+                query = query.filter(Project.project_id == project_id)
 
-            groups = query.order_by(TestCaseGroup.created_at.desc()).all()
+            groups = query.order_by(Project.created_at.desc()).all()
 
             if not groups:
                 raise HTTPException(
@@ -763,9 +798,9 @@ async def export_test_cases_to_excel(
             # Convert test case items to TestCase objects
             test_cases = []
             for group in groups:
-                items = db.query(TestCaseItem).filter(
-                    TestCaseItem.group_id == group.id
-                ).order_by(TestCaseItem.entity_order.asc()).all()
+                items = db.query(UnifiedTestCase).filter(
+                    UnifiedTestCase.project_id == group.id
+                ).order_by(UnifiedTestCase.entity_order.asc()).all()
 
                 for item in items:
                     # Parse JSON fields
@@ -850,7 +885,7 @@ async def export_test_cases_to_excel(
 async def get_test_cases_by_business_type(
     business_type: str,
     project_id: Optional[int] = None,
-    db: Session = Depends(get_db)
+    db = Depends(get_db)
 ):
     """
     Get test cases for a specific business type.
@@ -878,25 +913,25 @@ async def get_test_cases_by_business_type(
     effective_project_id = project.id if project_id is None else project_id
 
     # Get test case groups from database
-    from ..database.models import TestCaseGroup, TestCaseItem, Project
+    from ..database.models import Project, UnifiedTestCase, Project
     db_operations = DatabaseOperations(db)
 
     # Build query with project filtering
-    query = db.query(TestCaseGroup).filter(TestCaseGroup.business_type == business_enum)
-    query = query.filter(TestCaseGroup.project_id == effective_project_id)
+    query = db.query(Project).filter(Project.business_type == business_enum)
+    query = query.filter(Project.project_id == effective_project_id)
 
     # Join with Project to get project name
-    query = query.join(Project, TestCaseGroup.project_id == Project.id)
+    query = query.join(Project, Project.project_id == Project.id)
 
-    groups = query.order_by(TestCaseGroup.created_at.desc()).all()
+    groups = query.order_by(Project.created_at.desc()).all()
 
     # Convert to response format
-    group_responses = []
+    
     for group in groups:
         # Get test case items for this group
-        items = db.query(TestCaseItem).filter(
-            TestCaseItem.group_id == group.id
-        ).order_by(TestCaseItem.entity_order.asc()).all()
+        items = db.query(UnifiedTestCase).filter(
+            UnifiedTestCase.project_id == group.id
+        ).order_by(UnifiedTestCase.entity_order.asc()).all()
 
         # Convert items to response format
         item_responses = []
@@ -906,9 +941,9 @@ async def get_test_cases_by_business_type(
             steps = json.loads(item.steps) if item.steps else []
             expected_result = json.loads(item.expected_result) if item.expected_result else []
 
-            item_responses.append(TestCaseItemResponse(
+            item_responses.append(UnifiedTestCaseResponse(
                 id=item.id,
-                group_id=item.group_id,
+                project_id=item.project_id,
                 test_case_id=item.test_case_id,
                 name=item.name,
                 description=item.description,
@@ -931,27 +966,18 @@ async def get_test_cases_by_business_type(
             except:
                 pass
 
-        group_responses.append(TestCaseGroupResponse(
-            id=group.id,
-            project_id=group.project_id or effective_project_id,
-            business_type=group.business_type.value,
-            generation_metadata=generation_metadata,
-            created_at=group.created_at.isoformat(),
-            updated_at=group.updated_at.isoformat() if group.updated_at else None,
-            test_case_items=item_responses
-        ))
-
+        
         return TestCasesListResponse(
             business_type=business_enum.value,
-            count=len(group_responses),
-            test_case_groups=group_responses
+            count=len(test_cases),
+            test_cases=test_cases
         )
 
 
 @main_router.get("/test-cases", response_model=TestCasesListResponse, tags=["test-cases"])
 async def get_all_test_cases(
     project_id: Optional[int] = None,
-    db: Session = Depends(get_db)
+    db = Depends(get_db)
 ):
     """
     Get all test cases from all business types.
@@ -969,70 +995,45 @@ async def get_all_test_cases(
     effective_project_id = project.id if project_id is None else project_id
 
     # Get all test case groups from database
-    from ..database.models import TestCaseGroup, TestCaseItem
+    from ..database.models import Project, UnifiedTestCase
     db_operations = DatabaseOperations(db)
 
-    # Get all test case groups with project filtering (always filter by project)
-    query = db.query(TestCaseGroup)
+    # Get all test cases with project filtering (always filter by project)
+    query = db.query(UnifiedTestCase)
     if effective_project_id:
-        query = query.filter(TestCaseGroup.project_id == effective_project_id)
-    groups = query.order_by(TestCaseGroup.created_at.desc()).all()
+        query = query.filter(UnifiedTestCase.project_id == effective_project_id)
+    test_cases = query.order_by(UnifiedTestCase.created_at.desc()).all()
 
-    # Convert to response format
-    group_responses = []
-    for group in groups:
-        # Get test case items for this group
-        items = db.query(TestCaseItem).filter(
-            TestCaseItem.group_id == group.id
-        ).order_by(TestCaseItem.entity_order.asc()).all()
+    # Convert all test cases to response format
+    all_test_cases = []
+    for test_case in test_cases:
+        # Parse JSON fields
+        preconditions = json.loads(test_case.preconditions) if test_case.preconditions else []
+        steps = json.loads(test_case.steps) if test_case.steps else []
+        expected_result = json.loads(test_case.expected_result) if test_case.expected_result else []
 
-        # Convert items to response format
-        item_responses = []
-        for item in items:
-            # Parse JSON fields
-            preconditions = json.loads(item.preconditions) if item.preconditions else []
-            steps = json.loads(item.steps) if item.steps else []
-            expected_result = json.loads(item.expected_result) if item.expected_result else []
-
-            item_responses.append(TestCaseItemResponse(
-                id=item.id,
-                group_id=item.group_id,
-                test_case_id=item.test_case_id,
-                name=item.name,
-                description=item.description,
-                module=item.module,
-                functional_module=item.functional_module,
-                functional_domain=item.functional_domain,
-                preconditions=preconditions,
-                steps=steps,
-                expected_result=expected_result,
-                remarks=item.remarks,
-                entity_order=item.entity_order,
-                created_at=item.created_at.isoformat()
-            ))
-
-        # Parse generation metadata
-        generation_metadata = None
-        if group.generation_metadata:
-            try:
-                generation_metadata = json.loads(group.generation_metadata)
-            except:
-                pass
-
-        group_responses.append(TestCaseGroupResponse(
-            id=group.id,
-            project_id=group.project_id or effective_project_id,
-            business_type=group.business_type.value,
-            generation_metadata=generation_metadata,
-            created_at=group.created_at.isoformat(),
-            updated_at=group.updated_at.isoformat() if group.updated_at else None,
-            test_case_items=item_responses
+        all_test_cases.append(UnifiedTestCaseResponse(
+            id=test_case.id,
+            project_id=test_case.project_id,
+            test_case_id=test_case.test_case_id,
+            name=test_case.name,
+            description=test_case.description,
+            business_type=test_case.business_type,
+            module=test_case.module,
+            functional_module=test_case.functional_module,
+            functional_domain=test_case.functional_domain,
+            preconditions=preconditions,
+            steps=steps,
+            expected_result=expected_result,
+            remarks=test_case.remarks,
+            entity_order=test_case.entity_order,
+            created_at=test_case.created_at.isoformat()
         ))
 
     return TestCasesListResponse(
-        business_type=None,
-        count=len(group_responses),
-        test_case_groups=group_responses
+        business_type=None,  # All business types
+        count=len(all_test_cases),
+        projects=[]  # Return empty projects list for now since this API structure needs redesign
     )
 
 
@@ -1066,13 +1067,13 @@ async def delete_test_cases_by_business_type(
         db_operations = DatabaseOperations(db)
 
         # Get test case groups to delete before removing them
-        from ..database.models import (TestCaseGroup, TestCaseItem, TestCaseEntity,
+        from ..database.models import (Project, UnifiedTestCase, TestCaseEntity,
                                      KnowledgeEntity, KnowledgeRelation, EntityType)
 
         # Build query with business type and project filtering
-        query = db.query(TestCaseGroup).filter(TestCaseGroup.business_type == business_enum)
+        query = db.query(Project).filter(Project.business_type == business_enum)
         if project_id:
-            query = query.filter(TestCaseGroup.project_id == project_id)
+            query = query.filter(Project.project_id == project_id)
         groups = query.all()
 
         if not groups:
@@ -1089,8 +1090,8 @@ async def delete_test_cases_by_business_type(
 
         for group in groups:
             # Get test case items for this group
-            items = db.query(TestCaseItem).filter(
-                TestCaseItem.group_id == group.id
+            items = db.query(UnifiedTestCase).filter(
+                UnifiedTestCase.project_id == group.id
             ).all()
 
             # Delete test case entities and related knowledge graph data for each item
@@ -1144,117 +1145,80 @@ async def delete_test_cases_by_business_type(
     }
 
 
-@main_router.get("/business-types", response_model=BusinessTypeResponse, tags=["business-types"])
-async def get_business_types(
-    project_id: Optional[int] = None,
-    db: Session = Depends(get_db)
-):
-    """
-    Get list of supported business types from database, filtered by project.
+# DEPRECATED: This endpoint has been moved to business_endpoints.py and config_endpoints.py
+# to avoid route conflicts. Use /api/v1/business/business-types or /api/v1/config/business-types instead.
+# @main_router.get("/business-types", response_model=BusinessTypeResponse, tags=["business-types"])
+# async def get_business_types(
+    # DEPRECATED: Get list of supported business types from database, filtered by project.
+    # This functionality has been moved to business_endpoints.py and config_endpoints.py
+    #
+    # Args:
+    #     project_id (Optional[int]): Project ID to filter business types by project
+    #     db (Session): Database session
+    #
+    # Returns:
+    #     BusinessTypeResponse: List of supported business types for the specified project
+    # """
+    # # Validate project ID if provided
+    # project = validate_project_id(project_id, db, use_default=False)
+    #
+    # try:
+    #     # Get business types configured for this project
+    #     if project_id:
+    #         business_type_configs = db.query(BusinessTypeConfig).filter(
+    #             BusinessTypeConfig.project_id == project_id,
+    #             BusinessTypeConfig.is_active == True
+    #         ).order_by(BusinessTypeConfig.code).all()
+    #     else:
+    #         # Return all active business types if no project specified
+    #         business_type_configs = db.query(BusinessTypeConfig).filter(
+    #             BusinessTypeConfig.is_active == True
+    #         ).order_by(BusinessTypeConfig.code).all()
+    #
+    #     business_types = [config.code for config in business_type_configs]
+    #     return BusinessTypeResponse(business_types=business_types)
+    #
+    # except Exception as e:
+    #     raise HTTPException(status_code=500, detail=f"Failed to get business types: {str(e)}")
 
-    Args:
-        project_id (Optional[int]): Project ID to filter business types by project
-        db (Session): Database session
 
-    Returns:
-        BusinessTypeResponse: List of supported business types for the specified project
-    """
-    # Validate project ID if provided
-    project = validate_project_id(project_id, db, use_default=False)
-
-    try:
-        # Get business types configured for this project
-        if project_id:
-            business_type_configs = db.query(BusinessTypeConfig).filter(
-                BusinessTypeConfig.project_id == project_id,
-                BusinessTypeConfig.is_active == True
-            ).order_by(BusinessTypeConfig.code).all()
-        else:
-            # Return all active business types if no project specified
-            business_type_configs = db.query(BusinessTypeConfig).filter(
-                BusinessTypeConfig.is_active == True
-            ).order_by(BusinessTypeConfig.code).all()
-
-        business_types = [config.code for config in business_type_configs]
-        return BusinessTypeResponse(business_types=business_types)
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get business types: {str(e)}")
-
-
-@main_router.get("/business-types/mapping", response_model=BusinessTypeMappingResponse, tags=["business-types"])
-async def get_business_types_mapping(
-    project_id: Optional[int] = None,
-    db: Session = Depends(get_db)
-):
-    """
-    Get business type mapping with names and descriptions from database.
-
-    Args:
-        project_id (Optional[int]): Project ID to filter business types by project
-        db (Session): Database session
-
-    Returns:
-        BusinessTypeMappingResponse: Dictionary of business type mappings with names and descriptions
-    """
-    # Validate project ID if provided (but don't require default for business types)
-    validate_project_id(project_id, db, use_default=False)
-
-    try:
-        # Get active business types from database
-        # Note: Business types are global, not project-specific, but we validate project context
-        business_type_configs = db.query(BusinessTypeConfig).filter(
-            BusinessTypeConfig.is_active == True
-        ).order_by(BusinessTypeConfig.code).all()
-
-        business_mapping = {}
-        for config in business_type_configs:
-            business_mapping[config.code] = {
-                "name": config.name,
-                "description": config.description or f"业务类型 {config.code} 的功能描述"
-            }
-
-        return BusinessTypeMappingResponse(business_types=business_mapping)
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get business types mapping: {str(e)}")
 
 
 @main_router.get("/tasks", tags=["tasks"])
-async def list_tasks(project_id: Optional[int] = None):
+async def list_tasks(project_id: Optional[int] = None, db = Depends(get_db)):
     """
     List all tasks and their status.
 
     Args:
         project_id (Optional[int]): Project ID to filter tasks by project
+        db (Session): Database session
 
     Returns:
         Dict: List of all tasks
     """
     tasks = []
     # Get all jobs from database and access all properties within the session
-    with db_manager.get_session() as db:
-        from ..database.models import GenerationJob
+    from ..database.models import GenerationJob
 
-        # Build query with optional project filtering
-        query = db.query(GenerationJob)
-        if project_id:
-            query = query.filter(GenerationJob.project_id == project_id)
-        jobs = query.all()
+    # Build query with optional project filtering
+    query = db.query(GenerationJob)
+    if project_id:
+        query = query.filter(GenerationJob.project_id == project_id)
+    jobs = query.all()
 
-        for job in jobs:
-            # Get additional progress info from memory if available
-            progress_info = task_progress.get(job.id, {})
+    for job in jobs:
+        # Get additional progress info from memory if available
+        progress_info = task_progress.get(job.id, {})
 
-            tasks.append({
-                "task_id": job.id,
-                "status": job.status.value,
-                "progress": progress_info.get("progress"),
-                "business_type": job.business_type.value,
-                "error": job.error_message,
-                "created_at": job.created_at.isoformat() if job.created_at else None,
-                "completed_at": job.completed_at.isoformat() if job.completed_at else None
-            })
+        tasks.append({
+            "task_id": job.id,
+            "status": job.status.value,
+            "progress": progress_info.get("progress"),
+            "business_type": job.business_type.value,
+            "error": job.error_message,
+            "created_at": job.created_at.isoformat() if job.created_at else None,
+            "completed_at": job.completed_at.isoformat() if job.completed_at else None
+        })
 
     return {"tasks": tasks}
 
@@ -1275,7 +1239,7 @@ async def delete_task(task_id: str):
         from ..database.models import GenerationJob
         job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
         if not job:
-            raise HTTPException(status_code=404, detail="Task not found")
+            raise HTTPException(status_code=404, detail="任务未找到")
         db.delete(job)
         db.commit()
 
@@ -1306,8 +1270,8 @@ async def generate_test_cases_background(task_id: str, business_type: str, proje
     start_time = time.time()
 
     try:
-        print(f"[START] Background task started for {business_type} (ID: {task_id[:8]}...)")
-        print(f"[PARAMS] Task ID: {task_id}, Business Type: {business_type}, Project ID: {project_id}")
+        logger.info(f"Background task started for {business_type} (ID: {task_id[:8]}...)")
+        logger.debug(f"Task ID: {task_id}, Business Type: {business_type}, Project ID: {project_id}")
 
         # Validate input parameters
         if not task_id:
@@ -1333,7 +1297,7 @@ async def generate_test_cases_background(task_id: str, business_type: str, proje
 
         # Run blocking LLM operations in thread pool
         try:
-            print(f"[LLM] Starting LLM generation in thread pool...")
+            logger.debug("Starting LLM generation in thread pool...")
             gen_start = time.time()
 
             # Create a separate function for the blocking operations
@@ -1343,23 +1307,17 @@ async def generate_test_cases_background(task_id: str, business_type: str, proje
             # Run in thread pool to avoid blocking event loop
             loop = asyncio.get_event_loop()
             test_cases_data = await loop.run_in_executor(None, run_blocking_generation)
-
-            print(f"[LLM] Generation completed | Time: {time.time() - gen_start:.2f}s")
         except Exception as e:
-            print(f"[ERROR] Generation failed: {str(e)[:100]}...")
             raise Exception(f"Generation failed for {business_type}: {str(e)}") from e
 
         task_progress[task_id]["progress"] = 70
 
         # Save to database (also run in thread pool if it might be blocking)
         try:
-            print(f"[DB] Starting database save...")
             db_start = time.time()
 
             def run_database_save():
-                print(f"[DB_SAVE] Starting database save with project_id: {project_id}")
                 result = generator.save_to_database(test_cases_data, business_type, project_id)
-                print(f"[DB_SAVE] Database save completed, result: {result}")
                 return result
 
             # Run database operations in thread pool
@@ -1367,19 +1325,17 @@ async def generate_test_cases_background(task_id: str, business_type: str, proje
 
             if not success:
                 raise Exception("Failed to save test cases to database")
-            print(f"[DB] Database save completed | Time: {time.time() - db_start:.2f}s")
         except Exception as e:
-            print(f"[ERROR] Database save failed: {str(e)[:100]}...")
             raise Exception(f"Database save failed for {business_type}: {str(e)}") from e
 
         task_progress[task_id]["progress"] = 90
 
         # Get the created test case group ID (quick operation)
         with db_manager.get_session() as db:
-            from ..database.models import TestCaseGroup
-            group = db.query(TestCaseGroup).filter(
-                TestCaseGroup.business_type == BusinessType(business_type.upper())
-            ).order_by(TestCaseGroup.created_at.desc()).first()
+            from ..database.models import Project
+            group = db.query(Project).filter(
+                Project.business_type == BusinessType(business_type.upper())
+            ).order_by(Project.created_at.desc()).first()
 
             if group:
                 task_progress[task_id]["test_case_id"] = group.id
@@ -1396,12 +1352,9 @@ async def generate_test_cases_background(task_id: str, business_type: str, proje
         task_progress[task_id]["progress"] = 100
         total_time = time.time() - start_time
 
-        print(f"[DONE] Background task completed for {business_type} | Total time: {total_time:.2f}s")
-
     except Exception as e:
         total_time = time.time() - start_time
         error_message = str(e)
-        print(f"[ERROR] Background task failed for {business_type} | Time: {total_time:.2f}s | Error: {error_message[:100]}...")
 
         # Update failed status in database
         with db_manager.get_session() as db:
@@ -1417,13 +1370,439 @@ async def generate_test_cases_background(task_id: str, business_type: str, proje
             del task_progress[task_id]
 
 
+# ========================================
+# TWO-STAGE GENERATION BACKGROUND TASKS
+# ========================================
+
+async def generate_test_points_background(task_id: str, business_type: str, project_id: int):
+    """Background task for generating test points (Stage 1)."""
+    import time
+
+    start_time = time.time()
+
+    task_progress[task_id] = {
+        "status": "running",
+        "progress": 0,
+        "message": "开始生成测试点...",
+        "business_type": business_type,
+        "project_id": project_id
+    }
+
+    try:
+        config = Config()
+        generator = TestCaseGenerator(config)
+
+        # Update progress: Starting
+        with DatabaseManager(config).get_session() as db:
+            from ..database.models import GenerationJob, JobStatus
+            job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
+            if job:
+                job.status = JobStatus.RUNNING
+                job.current_step = 1
+                job.step_description = "开始生成测试点..."
+                db.commit()
+
+        task_progress[task_id]["progress"] = 10
+
+        # Generate test points
+        test_points_result = generator.generate_test_points(business_type)
+        if test_points_result is None:
+            raise RuntimeError("测试点生成失败")
+
+        # Update progress: Completed
+        task_progress[task_id]["progress"] = 80
+        task_progress[task_id]["message"] = "测试点生成完成，正在保存结果..."
+
+        # Save test points to job result
+        with DatabaseManager(config).get_session() as db:
+            job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
+            if job:
+                job.result_data = json.dumps(test_points_result, ensure_ascii=False)
+                job.current_step = 2
+                job.step_description = "测试点生成完成"
+                db.commit()
+
+        task_progress[task_id]["progress"] = 100
+        task_progress[task_id]["message"] = "测试点生成任务完成"
+
+        # Update completion status
+        with DatabaseManager(config).get_session() as db:
+            job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
+            if job:
+                job.status = JobStatus.COMPLETED
+                job.completed_at = datetime.now()
+                db.commit()
+
+        total_time = time.time() - start_time
+
+    except Exception as e:
+        total_time = time.time() - start_time
+        error_message = str(e)
+
+        # Update failed status
+        with DatabaseManager(config).get_session() as db:
+            job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
+            if job:
+                job.status = JobStatus.FAILED
+                job.error_message = error_message[:2000] + "..." if len(error_message) > 2000 else error_message
+                db.commit()
+
+        task_progress[task_id]["status"] = "failed"
+        task_progress[task_id]["error"] = error_message
+
+        if task_id in task_progress:
+            del task_progress[task_id]
+
+
+async def generate_test_cases_from_points_background(task_id: str, business_type: str, test_points: Dict[str, Any], project_id: int):
+    """Background task for generating test cases from test points (Stage 2)."""
+    import time
+
+    start_time = time.time()
+
+    task_progress[task_id] = {
+        "status": "running",
+        "progress": 0,
+        "message": "开始基于测试点生成测试用例...",
+        "business_type": business_type,
+        "project_id": project_id
+    }
+
+    try:
+        config = Config()
+        generator = TestCaseGenerator(config)
+
+        # Update progress: Starting
+        with DatabaseManager(config).get_session() as db:
+            from ..database.models import GenerationJob, JobStatus
+            job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
+            if job:
+                job.status = JobStatus.RUNNING
+                job.current_step = 1
+                job.step_description = "开始基于测试点生成测试用例..."
+                db.commit()
+
+        task_progress[task_id]["progress"] = 10
+
+        # Generate test cases from test points
+        test_cases_result = generator.generate_test_cases_from_points(business_type, test_points)
+        if test_cases_result is None:
+            raise RuntimeError("基于测试点的测试用例生成失败")
+
+        # Update progress: Completed
+        task_progress[task_id]["progress"] = 80
+        task_progress[task_id]["message"] = "测试用例生成完成，正在保存结果..."
+
+        # Save test cases to job result
+        with DatabaseManager(config).get_session() as db:
+            job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
+            if job:
+                complete_result = {
+                    "test_points": test_points,
+                    "test_cases": test_cases_result
+                }
+                job.result_data = json.dumps(complete_result, ensure_ascii=False)
+                job.current_step = 2
+                job.step_description = "测试用例生成完成"
+                db.commit()
+
+        task_progress[task_id]["progress"] = 100
+        task_progress[task_id]["message"] = "基于测试点的测试用例生成任务完成"
+
+        # Update completion status
+        with DatabaseManager(config).get_session() as db:
+            job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
+            if job:
+                job.status = JobStatus.COMPLETED
+                job.completed_at = datetime.now()
+                db.commit()
+
+        total_time = time.time() - start_time
+
+    except Exception as e:
+        total_time = time.time() - start_time
+        error_message = str(e)
+
+        # Update failed status
+        with DatabaseManager(config).get_session() as db:
+            job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
+            if job:
+                job.status = JobStatus.FAILED
+                job.error_message = error_message[:2000] + "..." if len(error_message) > 2000 else error_message
+                db.commit()
+
+        task_progress[task_id]["status"] = "failed"
+        task_progress[task_id]["error"] = error_message
+
+        if task_id in task_progress:
+            del task_progress[task_id]
+
+
+async def generate_test_cases_two_stage_background(task_id: str, business_type: str, project_id: int):
+    """Background task for complete two-stage test case generation."""
+    import time
+
+    start_time = time.time()
+
+    task_progress[task_id] = {
+        "status": "running",
+        "progress": 0,
+        "message": "开始两阶段测试生成...",
+        "business_type": business_type,
+        "project_id": project_id
+    }
+
+    try:
+        config = Config()
+        generator = TestCaseGenerator(config)
+
+        # Stage 1: Generate test points
+
+        # Update progress for Stage 1
+        with DatabaseManager(config).get_session() as db:
+            from ..database.models import GenerationJob, JobStatus
+            job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
+            if job:
+                job.status = JobStatus.RUNNING
+                job.current_step = 1
+                job.step_description = "阶段 1: 生成测试点..."
+                db.commit()
+
+        task_progress[task_id]["progress"] = 15
+        task_progress[task_id]["message"] = "阶段 1: 生成测试点..."
+
+        test_points_result = generator.generate_test_points(business_type)
+        if test_points_result is None:
+            raise RuntimeError("阶段 1 失败：测试点生成失败")
+
+        # Update progress after Stage 1
+        task_progress[task_id]["progress"] = 45
+        task_progress[task_id]["message"] = "阶段 1 完成，准备阶段 2..."
+
+        # Stage 2: Generate test cases from test points
+
+        # Update progress for Stage 2
+        with DatabaseManager(config).get_session() as db:
+            job = db.query(GenerationJob).filter(GenerationJob).filter(GenerationJob.id == task_id).first()
+            if job:
+                job.current_step = 4
+                job.step_description = "阶段 2: 基于测试点生成测试用例..."
+                db.commit()
+
+        task_progress[task_id]["progress"] = 50
+        task_progress[task_id]["message"] = "阶段 2: 基于测试点生成测试用例..."
+
+        test_cases_result = generator.generate_test_cases_from_points(business_type, test_points_result)
+        if test_cases_result is None:
+            raise RuntimeError("阶段 2 失败：测试用例生成失败")
+
+        # Save complete result with test points data included
+        # We need to combine test_points and test_cases for proper database storage
+        combined_result = test_points_result.copy() if test_points_result else {}
+        if test_cases_result and 'test_cases' in test_cases_result:
+            combined_result['test_cases'] = test_cases_result['test_cases']
+
+        # Save test cases to database with test points metadata
+
+        # Update progress: Finalizing
+        task_progress[task_id]["progress"] = 85
+        task_progress[task_id]["message"] = "两阶段生成完成，正在保存结果..."
+
+        # First, save test points to database
+        if test_points_result:
+            test_point_generator = generator.test_point_generator if hasattr(generator, 'test_point_generator') else None
+            if test_point_generator:
+                project_id = test_point_generator.save_test_points_to_database(test_points_result, business_type, project_id)
+                if project_id:
+                    task_progress[task_id]["message"] = "测试点已保存到数据库，正在保存测试用例..."
+                else:
+                    task_progress[task_id]["message"] = "测试点保存失败，但继续保存测试用例..."
+
+        # Save test cases to database with test points metadata
+        if test_cases_result:
+            # Ensure the combined result has test points data for proper associations
+            save_result = generator.save_test_cases_to_database(combined_result, business_type, project_id)
+            if save_result:
+                task_progress[task_id]["message"] = "测试用例已保存到数据库..."
+            else:
+                task_progress[task_id]["message"] = "测试用例保存失败..."
+
+        # Save complete result to job
+        with DatabaseManager(config).get_session() as db:
+            job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
+            if job:
+                job.result_data = json.dumps(combined_result, ensure_ascii=False)
+                job.current_step = 6
+                job.step_description = "两阶段生成完成"
+                db.commit()
+
+        task_progress[task_id]["progress"] = 100
+        task_progress[task_id]["message"] = "两阶段测试生成任务完成"
+
+        # Update completion status
+        with DatabaseManager(config).get_session() as db:
+            job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
+            if job:
+                job.status = JobStatus.COMPLETED
+                job.completed_at = datetime.now()
+                db.commit()
+
+        total_time = time.time() - start_time
+
+    except Exception as e:
+        total_time = time.time() - start_time
+        error_message = str(e)
+
+        # Update failed status
+        with DatabaseManager(config).get_session() as db:
+            job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
+            if job:
+                job.status = JobStatus.FAILED
+                job.error_message = error_message[:2000] + "..." if len(error_message) > 2000 else error_message
+                db.commit()
+
+        task_progress[task_id]["status"] = "failed"
+        task_progress[task_id]["error"] = error_message
+
+        if task_id in task_progress:
+            del task_progress[task_id]
+
+
+async def batch_generate_test_cases_background(
+    task_id: str,
+    business_types: List[str],
+    additional_context: Optional[Dict[str, Any]],
+    project_id: int
+):
+    """
+    Background task for batch generating test cases for multiple business types.
+
+    Args:
+        task_id: Unique task identifier
+        business_types: List of business type codes
+        additional_context: Additional generation context
+        project_id: Project ID
+    """
+    db = DatabaseManager(get_config()).get_session()
+    results = {
+        "successful": [],
+        "failed": [],
+        "results": {}
+    }
+
+    try:
+        task_progress[task_id] = {
+            "status": "running",
+            "current_step": 1,
+            "total_steps": len(business_types),
+            "progress": 0,
+            "business_types": business_types
+        }
+
+        for i, business_type in enumerate(business_types):
+            # Update progress
+            task_progress[task_id].update({
+                "current_step": i + 1,
+                "progress": int((i / len(business_types)) * 100),
+                "current_business_type": business_type
+            })
+
+            try:
+                # Get test points for this business type
+                test_points = db.query(TestPoint).filter(
+                    TestPoint.business_type == business_type.upper(),
+                    TestPoint.project_id == project_id,
+                    TestPoint.status == "approved"
+                ).all()
+
+                if not test_points:
+                    results["failed"].append(business_type)
+                    results["results"][business_type] = {
+                        "error": "No approved test points found"
+                    }
+                    continue
+
+                # Convert to dictionary format
+                test_points_data = {
+                    "test_points": [
+                        {
+                            "id": tp.id,
+                            "test_point_id": tp.test_point_id,
+                            "title": tp.title,
+                            "description": tp.description,
+                            "business_type": tp.business_type,
+                            "priority": tp.priority
+                        } for tp in test_points
+                    ]
+                }
+
+                # Generate test cases from test points
+                generator = TestCaseGenerator(db)
+                test_cases = await generator.generate_test_cases_from_external_points(
+                    business_type,
+                    test_points_data,
+                    additional_context,
+                    project_id
+                )
+
+                results["successful"].append(business_type)
+                results["results"][business_type] = {
+                    "cases_count": len(test_cases.get("test_cases", [])),
+                    "test_cases": test_cases.get("test_cases", [])
+                }
+
+            except Exception as e:
+                logger.error(f"Error generating test cases for {business_type}: {str(e)}")
+                results["failed"].append(business_type)
+                results["results"][business_type] = {
+                    "error": str(e)
+                }
+
+        # Final update
+        task_progress[task_id].update({
+            "status": "completed",
+            "progress": 100,
+            "results": results
+        })
+
+        # Update job status
+        for business_type in business_types:
+            job_id = f"{task_id}-{business_type}"
+            job = db.query(GenerationJob).filter(GenerationJob.id == job_id).first()
+            if job:
+                job.status = JobStatus.COMPLETED if business_type in results["successful"] else JobStatus.FAILED
+                job.completed_at = datetime.now()
+                db.commit()
+
+    except Exception as e:
+        logger.error(f"Batch test case generation failed: {str(e)}")
+        error_message = f"批量生成失败: {str(e)}"
+
+        if task_id in task_progress:
+            task_progress[task_id].update({
+                "status": "failed",
+                "error": error_message
+            })
+
+        # Update all jobs to failed status
+        for business_type in business_types:
+            job_id = f"{task_id}-{business_type}"
+            job = db.query(GenerationJob).filter(GenerationJob.id == job_id).first()
+            if job:
+                job.status = JobStatus.FAILED
+                job.completed_at = datetime.now()
+                db.commit()
+    finally:
+        db.close()
+
+
 # Knowledge Graph Endpoints
 
 @main_router.get("/knowledge-graph/data", response_model=KnowledgeGraphResponse, tags=["knowledge-graph"])
 async def get_knowledge_graph_data(
     business_type: Optional[str] = Query(None, description="Filter by business type"),
     project_id: Optional[int] = Query(None, description="Filter by project ID"),
-    db: Session = Depends(get_db)
+    db = Depends(get_db)
 ):
     """
     Get knowledge graph data for visualization.
@@ -1438,7 +1817,6 @@ async def get_knowledge_graph_data(
     """
     try:
         # 添加调试日志
-        print(f"API: get_knowledge_graph_data called with business_type: {business_type}")
 
         # Validate project ID with backward compatibility
         project = validate_project_id(project_id, db, use_default=True)
@@ -1452,7 +1830,6 @@ async def get_knowledge_graph_data(
         if business_type:
             try:
                 business_enum = BusinessType(business_type.upper())
-                print(f"API: Parsed business_type '{business_type}' to enum: {business_enum}")
             except ValueError:
                 raise HTTPException(
                     status_code=400,
@@ -1462,7 +1839,6 @@ async def get_knowledge_graph_data(
 
         # Get graph data with project filtering
         graph_data = db_operations.get_knowledge_graph_data(business_enum, effective_project_id)
-        print(f"API: Retrieved graph data with {len(graph_data['nodes'])} nodes and {len(graph_data['edges'])} edges")
 
         # Convert to response format
         nodes = [GraphNode(**node) for node in graph_data["nodes"]]
@@ -1745,7 +2121,7 @@ async def get_entity_details(entity_id: int):
             # Prepare test cases data
             test_cases_data = []
             for tc_entity in test_case_entities:
-                # Get data from TestCaseItem
+                # Get data from UnifiedTestCase
                 item = tc_entity.test_case_item
                 test_cases_data.append({
                     "id": item.id,
@@ -1908,7 +2284,7 @@ async def get_entity_test_cases(entity_id: int):
             # Prepare test cases data
             test_cases_data = []
             for tc_entity in test_case_entities:
-                # Get data from TestCaseItem
+                # Get data from UnifiedTestCase
                 item = tc_entity.test_case_item
                 test_cases_data.append({
                     "id": item.id,
@@ -1941,6 +2317,318 @@ async def get_entity_test_cases(entity_id: int):
         raise HTTPException(status_code=500, detail=f"Failed to get entity test cases: {str(e)}")
 
 
+# ========================================
+# TWO-STAGE TEST GENERATION ENDPOINTS
+# ========================================
+
+@main_router.post("/generate-test-points", response_model=GenerateResponse, tags=["test-cases"])
+async def generate_test_points(
+    request: GenerateTestCaseRequest,
+    background_tasks: BackgroundTasks,
+    project_id: Optional[int] = Query(None, description="Project ID to associate with the generation job"),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate test points for a specific business type (Stage 1 of two-stage generation).
+
+    Args:
+        request: Generation request with business type
+        background_tasks: FastAPI background tasks
+        project_id: Optional project ID to associate with the generation job
+        db: Database session
+
+    Returns:
+        GenerateResponse: Task information
+    """
+    # Validate business type (all business types now use two-stage mode)
+    business_config = db.query(BusinessTypeConfig).filter(
+        BusinessTypeConfig.code == request.business_type.upper(),
+        BusinessTypeConfig.is_active == True
+    ).first()
+
+    if not business_config:
+        raise HTTPException(
+            status_code=400,
+            detail=f"业务类型 '{request.business_type}' 不存在或未激活"
+        )
+
+    # Validate project ID
+    project = validate_project_id(project_id, db, use_default=True)
+
+    # Generate task ID
+    task_id = str(uuid.uuid4())
+
+    # Create generation job record
+    job = GenerationJob(
+        id=task_id,
+        business_type=request.business_type.upper(),
+        status=JobStatus.PENDING,
+        project_id=project.id
+    )
+    db.add(job)
+    db.commit()
+
+    # Start background task
+    background_tasks.add_task(
+        generate_test_points_background,
+        task_id=task_id,
+        business_type=request.business_type.upper(),
+        project_id=project.id
+    )
+
+    return GenerateResponse(
+        task_id=task_id,
+        status=JobStatus.PENDING.value,
+        message=f"测试点生成任务已创建: {task_id}"
+    )
+
+
+@main_router.post("/generate-test-cases-from-points", response_model=GenerateResponse, tags=["test-cases"])
+async def generate_test_cases_from_points(
+    request: GenerateTestCasesFromPointsRequest,
+    background_tasks: BackgroundTasks,
+    project_id: Optional[int] = Query(None, description="Project ID to associate with the generation job"),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate test cases from existing test points (Stage 2 of two-stage generation).
+
+    Args:
+        request: Generation request with business type and test points
+        background_tasks: FastAPI background tasks
+        project_id: Optional project ID to associate with the generation job
+        db: Database session
+
+    Returns:
+        GenerateResponse: Task information
+    """
+    # Validate business type
+    business_config = db.query(BusinessTypeConfig).filter(
+        BusinessTypeConfig.code == request.business_type.upper(),
+        BusinessTypeConfig.is_active == True
+    ).first()
+
+    if not business_config:
+        raise HTTPException(
+            status_code=400,
+            detail=f"业务类型 '{request.business_type}' 不存在或未激活"
+        )
+
+    # Validate test points
+    if not request.test_points or 'test_points' not in request.test_points:
+        raise HTTPException(
+            status_code=400,
+            detail="无效的测试点数据"
+        )
+
+    # Validate project ID
+    project = validate_project_id(project_id, db, use_default=True)
+
+    # Generate task ID
+    task_id = str(uuid.uuid4())
+
+    # Create generation job record
+    job = GenerationJob(
+        id=task_id,
+        business_type=request.business_type.upper(),
+        status=JobStatus.PENDING,
+        project_id=project.id
+    )
+    db.add(job)
+    db.commit()
+
+    # Start background task
+    background_tasks.add_task(
+        generate_test_cases_from_points_background,
+        id=task_id,
+        business_type=request.business_type.upper(),
+        test_points=request.test_points,
+        project_id=project.id
+    )
+
+    return GenerateResponse(
+        id=task_id,
+        status=JobStatus.PENDING,
+        message=f"基于测试点的测试用例生成任务已创建: {task_id}"
+    )
+
+
+@main_router.post("/generate-test-cases-two-stage", response_model=GenerateResponse, tags=["test-cases"])
+async def generate_test_cases_two_stage(
+    request: GenerateTestCaseRequest,
+    background_tasks: BackgroundTasks,
+    project_id: Optional[int] = Query(None, description="Project ID to associate with the generation job"),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate test cases using two-stage approach for a specific business type.
+
+    Args:
+        request: Generation request with business type
+        background_tasks: FastAPI background tasks
+        project_id: Optional project ID to associate with the generation job
+        db: Database session
+
+    Returns:
+        GenerateResponse: Task information
+    """
+    # Validate business type
+    business_config = db.query(BusinessTypeConfig).filter(
+        BusinessTypeConfig.code == request.business_type.upper(),
+        BusinessTypeConfig.is_active == True
+    ).first()
+
+    if not business_config:
+        raise HTTPException(
+            status_code=400,
+            detail=f"业务类型 '{request.business_type}' 不存在或未激活"
+        )
+
+    # Validate project ID
+    project = validate_project_id(project_id, db, use_default=True)
+
+    # Generate task ID
+    task_id = str(uuid.uuid4())
+
+    # Create generation job record
+    job = GenerationJob(
+        id=task_id,
+        business_type=request.business_type.upper(),
+        status=JobStatus.PENDING,
+        project_id=project.id
+    )
+    db.add(job)
+    db.commit()
+
+    # Start background task
+    background_tasks.add_task(
+        generate_test_cases_two_stage_background,
+        task_id=task_id,
+        business_type=request.business_type.upper(),
+        project_id=project.id
+    )
+
+    return GenerateResponse(
+        task_id=task_id,
+        status=JobStatus.PENDING,
+        message=f"两阶段测试生成任务已创建: {task_id}"
+    )
+
+
+
+
+@main_router.post("/business-types/{business_type}/configure", tags=["business-types"])
+async def configure_business_type(
+    business_type: str,
+    config_request: SetBusinessTypeConfigRequest,
+    db = Depends(get_db)
+):
+    """
+    Configure the two-stage generation for a specific business type.
+
+    Args:
+        business_type: Business type code
+        config_request: Request with combination IDs for two-stage generation
+        db: Database session
+
+    Returns:
+        Success message
+    """
+    business_config = db.query(BusinessTypeConfig).filter(
+        BusinessTypeConfig.code == business_type.upper(),
+        BusinessTypeConfig.is_active == True
+    ).first()
+
+    if not business_config:
+        raise HTTPException(
+            status_code=404,
+            detail=f"业务类型 '{business_type}' 不存在或未激活"
+        )
+
+    # Update the combination IDs
+    business_config.test_point_combination_id = config_request.test_point_combination_id
+    business_config.test_case_combination_id = config_request.test_case_combination_id
+
+    business_config.updated_at = datetime.now()
+    db.commit()
+
+    return {
+        "message": f"业务类型 '{business_type}' 的配置已更新",
+        "business_type": business_type,
+        "test_point_combination_id": business_config.test_point_combination_id,
+        "test_case_combination_id": business_config.test_case_combination_id
+    }
+
+
+# ========================================
+# BATCH TEST CASE GENERATION ENDPOINTS
+# ========================================
+
+# BatchTestCaseGenerationRequest is now imported from models.test_point
+
+
+@main_router.post("/test-cases/batch/generate", response_model=Dict[str, Any], tags=["test-cases"])
+async def batch_generate_test_cases(
+    request: BatchTestCaseGenerationRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    project = Depends(get_current_project)
+):
+    """
+    Batch generate test cases for multiple business types.
+
+    Args:
+        request: Batch generation request
+        background_tasks: FastAPI BackgroundTasks
+        db: Database session
+        project: Current project
+
+    Returns:
+        Dict with task ID and status
+    """
+    # Validate business types
+    for business_type in request.business_types:
+        business_config = db.query(BusinessTypeConfig).filter(
+            BusinessTypeConfig.code == business_type.upper(),
+            BusinessTypeConfig.is_active == True
+        ).first()
+
+        if not business_config:
+            raise HTTPException(
+                status_code=400,
+                detail=f"业务类型 '{business_type}' 不存在或未激活"
+            )
+
+    # Create task ID
+    task_id = str(uuid.uuid4())
+
+    # Create generation job record for each business type
+    for business_type in request.business_types:
+        job = GenerationJob(
+            id=f"{task_id}-{business_type}",
+            business_type=business_type.upper(),
+            status=JobStatus.PENDING,
+            project_id=project.id
+        )
+        db.add(job)
+
+    db.commit()
+
+    # Start background task for batch generation
+    background_tasks.add_task(
+        batch_generate_test_cases_background,
+        task_id=task_id,
+        business_types=request.business_types,
+        additional_context=request.additional_context,
+        project_id=project.id
+    )
+
+    return {
+        "generation_id": task_id,
+        "business_types": request.business_types,
+        "status": "started",
+        "message": f"批量测试用例生成任务已创建，涉及 {len(request.business_types)} 个业务类型"
+    }
 
 
 # ========================================
@@ -1952,6 +2640,11 @@ async def get_entity_test_cases(entity_id: int):
 app.include_router(prompt_router)
 app.include_router(config_router)
 app.include_router(business_router)
+app.include_router(test_point_router)
+app.include_router(unified_test_case_router)
+app.include_router(consistency_router)
+app.include_router(generation_router)
+app.include_router(websocket_router)
 
 # Include main router LAST - after all decorators have been executed
 app.include_router(main_router)

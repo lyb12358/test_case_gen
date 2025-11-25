@@ -21,16 +21,16 @@ import {
   ShareAltOutlined,
   ClockCircleOutlined,
   EditOutlined,
-  TagsOutlined,
   SettingOutlined,
   BuildOutlined,
+  ThunderboltOutlined,
+  DeploymentUnitOutlined,
 } from '@ant-design/icons';
 import { useTask } from '@/contexts/TaskContext';
 import { useProject } from '@/contexts/ProjectContext';
 import { ProjectSwitcher } from '@/components/ProjectSelection';
 import BreadcrumbNavigation from '@/components/Navigation/BreadcrumbNavigation';
 import HeaderBreadcrumbNavigation from '@/components/Navigation/HeaderBreadcrumbNavigation';
-import PageTitle from '@/components/Navigation/PageTitle';
 import './MainLayout.less';
 
 const { Header, Sider, Content } = AntLayout;
@@ -72,17 +72,21 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
       label: '业务管理',
     },
     {
-      key: '/test-cases',
+      key: '/test-management',
       icon: <FileTextOutlined />,
-      label: '测试用例管理',
+      label: '测试管理',
       children: [
         {
-          key: '/test-cases/list',
-          label: '测试用例列表',
+          key: '/test-management/points',
+          label: '测试点管理',
         },
         {
-          key: '/test-cases/generate',
-          label: '生成测试用例',
+          key: '/test-management/cases',
+          label: '测试用例管理',
+        },
+        {
+          key: '/test-management/generate',
+          label: '批量生成',
         },
       ],
     },
@@ -113,14 +117,30 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
     if (pathname === '/' || pathname === '/dashboard') {
       return ['/dashboard'];
     }
-    if (pathname.startsWith('/test-cases')) {
-      if (pathname === '/test-cases/generate') {
-        return ['/test-cases/generate'];
+    // Handle new unified test management routes
+    if (pathname.startsWith('/test-management')) {
+      if (pathname === '/test-management') {
+        return ['/test-management'];
       }
-      return ['/test-cases/list'];
+      if (pathname.startsWith('/test-management/points')) {
+        return ['/test-management/points'];
+      }
+      if (pathname.startsWith('/test-management/cases')) {
+        return ['/test-management/cases'];
+      }
+      if (pathname.startsWith('/test-management/generate')) {
+        return ['/test-management/generate'];
+      }
+      return ['/test-management'];
     }
     if (pathname.startsWith('/prompts')) {
       return ['/prompts/list'];
+    }
+    if (pathname.startsWith('/business-management')) {
+      if (pathname === '/business-management/config') {
+        return ['/business-management/config'];
+      }
+      return ['/business-management'];
     }
     if (pathname.startsWith('/tasks')) {
       return ['/tasks'];
@@ -268,7 +288,6 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
             overflow: 'auto',
           }}
         >
-          <PageTitle />
           <Outlet />
         </Content>
       </AntLayout>

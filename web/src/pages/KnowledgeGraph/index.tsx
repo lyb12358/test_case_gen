@@ -4,7 +4,8 @@ import { ReloadOutlined, ClearOutlined, BarChartOutlined } from '@ant-design/ico
 import { useQuery } from '@tanstack/react-query';
 import Graph from './Graph';
 import { knowledgeGraphService } from '../../services/knowledgeGraphService';
-import { testCaseService } from '../../services/testCaseService';
+import { businessService } from '../../services/businessService';
+import unifiedGenerationService from '../../services/unifiedGenerationService';
 import { KnowledgeGraphData, GraphStats } from '../../types/knowledgeGraph';
 import { useProject } from '../../contexts/ProjectContext';
 
@@ -22,16 +23,16 @@ const KnowledgeGraph: React.FC = () => {
   // Get business types and mapping from API
   const { data: businessTypesData, isLoading: typesLoading } = useQuery({
     queryKey: ['businessTypes'],
-    queryFn: testCaseService.getBusinessTypes,
+    queryFn: businessService.getBusinessTypes,
   });
 
   const { data: businessTypesMapping, isLoading: mappingLoading } = useQuery({
     queryKey: ['businessTypesMapping'],
-    queryFn: testCaseService.getBusinessTypesMapping,
+    queryFn: unifiedGenerationService.getBusinessTypesMapping,
   });
 
-  const businessTypes = businessTypesData?.business_types || [];
-  const businessTypesMap = businessTypesMapping?.business_types || {};
+  const businessTypesMap = businessTypesMapping || {};
+  const businessTypes = Object.keys(businessTypesMap);
 
   const loadData = async (businessType?: string, projectId?: number) => {
     setLoading(true);

@@ -196,10 +196,16 @@ const PromptBuilder: React.FC<PromptBuilderProps> = ({
       return;
     }
 
+    // 将提示词ID列表转换为后端期望的组合项目格式
+    const items = selectedPromptIds.map((promptId, index) => ({
+      prompt_id: promptId,
+      order: index * 10,  // 按顺序分配，每个间隔10
+      is_required: true,
+    }));
+
     previewMutation.mutate({
-      prompt_ids: selectedPromptIds,
-      business_type: finalBusinessType,
-      project_id: currentProject?.id,
+      items,
+      variables: {},
     });
   };
 

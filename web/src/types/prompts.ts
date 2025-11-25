@@ -1,25 +1,65 @@
 /**
  * Type definitions for prompt management system.
- *
- * This module uses dynamic configuration from the backend instead of
- * hardcoded enums, establishing database-driven architecture.
  */
 
-// Import configuration service for dynamic types
-import { configService, type BusinessTypeItem, type ConfigurationItem } from '../services/configService';
+import type { BusinessType } from './index';
 
-// Union types for type hints (these are dynamically validated)
-export type PromptType = 'system' | 'template' | 'business_description' | 'shared_content' | 'requirements';
-export type PromptStatus = 'draft' | 'active' | 'archived' | 'deprecated';
-export type BusinessType = string; // Business types are dynamic, validated at runtime
+// Basic interfaces
+export interface Prompt {
+  id: number;
+  name: string;
+  content: string;
+  type: string;
+  business_type?: string;
+  status: string;
+  project_id: number;
+  created_at: string;
+  updated_at: string;
+}
 
-// Legacy constants for backward compatibility (deprecated)
+export interface PromptCategory {
+  id: number;
+  name: string;
+  description?: string;
+  parent_id?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PromptVersion {
+  id: number;
+  prompt_id: number;
+  version: string;
+  content: string;
+  change_summary?: string;
+  created_at: string;
+}
+
+export interface PromptTemplate {
+  id: number;
+  name: string;
+  template: string;
+  variables?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Import config service for dynamic business type names
+import { configService } from '../services/configService';
+
+// Compatibility types
+export interface BaseEntity {
+  id: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// Legacy constants for backward compatibility
 export const PROMPT_TYPES = {
   SYSTEM: 'system',
   TEMPLATE: 'template',
   BUSINESS_DESCRIPTION: 'business_description',
-  SHARED_CONTENT: 'shared_content',
-  REQUIREMENTS: 'requirements'
+  SHARED_CONTENT: 'shared_content'
 } as const;
 
 export const PROMPT_STATUSES = {
@@ -29,21 +69,20 @@ export const PROMPT_STATUSES = {
   DEPRECATED: 'deprecated'
 } as const;
 
-// Base interfaces
-export interface BaseEntity {
-  id: number;
-  created_at: string;
-  updated_at: string;
-}
+export const GENERATION_STAGES = {
+  TEST_POINT: 'test_point',
+  TEST_CASE: 'test_case',
+  GENERAL: 'general'
+} as const;
 
-// Category interfaces
-export interface PromptCategory extends BaseEntity {
-  name: string;
-  description?: string;
-  parent_id?: number;
-  order: number;
-}
+// Union types for type hints
+export type PromptType = typeof PROMPT_TYPES[keyof typeof PROMPT_TYPES];
+export type PromptStatus = typeof PROMPT_STATUSES[keyof typeof PROMPT_STATUSES];
+export type GenerationStage = typeof GENERATION_STAGES[keyof typeof GENERATION_STAGES];
+// BusinessType moved to types/index.ts to avoid duplication
+// Import BusinessType from types/index.ts instead
 
+// Additional compatibility interfaces
 export interface PromptCategoryCreate {
   name: string;
   description?: string;
@@ -51,56 +90,15 @@ export interface PromptCategoryCreate {
   order?: number;
 }
 
-export interface PromptCategoryUpdate {
-  name?: string;
-  description?: string;
-  parent_id?: number;
-  order?: number;
-}
-
-// Prompt interfaces
-export interface Prompt extends BaseEntity {
-  name: string;
-  content: string;
-  type: PromptType;
-  business_type?: BusinessType;
-  status: PromptStatus;
-  author?: string;
-  version: string;
-  tags?: string[];
-  variables?: string[];
-  extra_metadata?: Record<string, any>;
-  category_id?: number;
-  file_path?: string;
-  category?: PromptCategory;
-}
-
-export interface PromptSummary {
-  id: number;
-  name: string;
-  type: PromptType;
-  business_type?: BusinessType;
-  status: PromptStatus;
-  author?: string;
-  version: string;
-  created_at: string;
-  updated_at: string;
-  category?: PromptCategory;
-}
-
 export interface PromptCreate {
   name: string;
   content: string;
   type: PromptType;
   business_type?: BusinessType;
-  status?: PromptStatus;
-  author?: string;
-  version?: string;
-  tags?: string[];
-  variables?: string[];
-  extra_metadata?: Record<string, any>;
   category_id?: number;
-  file_path?: string;
+  status?: PromptStatus;
+  generation_stage?: GenerationStage;
+  description?: string;
 }
 
 export interface PromptUpdate {
@@ -108,203 +106,217 @@ export interface PromptUpdate {
   content?: string;
   type?: PromptType;
   business_type?: BusinessType;
-  status?: PromptStatus;
-  author?: string;
-  version?: string;
-  tags?: string[];
-  variables?: string[];
-  extra_metadata?: Record<string, any>;
   category_id?: number;
+  status?: PromptStatus;
+  generation_stage?: GenerationStage;
+  description?: string;
 }
 
-// Template interfaces
-export interface PromptTemplate extends BaseEntity {
+// Response types
+export interface PromptListResponse {
+  prompts: Prompt[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+export interface PromptCategoryListResponse {
+  categories: PromptCategory[];
+  total: number;
+}
+
+// 兼容性函数（用于向后兼容）
+export function getPromptTypeName(type: PromptType): string {
+  const typeNames = {
+    system: '系统提示词',
+    template: '模板提示词',
+    business_description: '业务描述',
+    shared_content: '共享内容'
+  };
+  return typeNames[type] || type;
+}
+
+export function getPromptStatusName(status: PromptStatus): string {
+  const statusNames = {
+    draft: '草稿',
+    active: '活跃',
+    archived: '已归档',
+    deprecated: '已废弃'
+  };
+  return statusNames[status] || status;
+}
+
+export function getGenerationStageName(stage: GenerationStage): string {
+  const stageNames = {
+    test_point: '测试点',
+    test_case: '测试用例',
+    general: '通用'
+  };
+  return stageNames[stage] || stage;
+}
+
+export async function getBusinessTypeName(businessType: BusinessType): Promise<string> {
+  try {
+    // Use dynamic configuration service
+    return await configService.getBusinessTypeName(businessType);
+  } catch (error) {
+    console.warn('Failed to get business type name from API, falling back to basic mapping:', error);
+    // Fallback to basic mapping for offline/error scenarios
+    const fallbackMap: Record<string, string> = {
+      'RCC': '远程净化',
+      'RFD': '香氛控制',
+      'ZAB': '远程恒温座舱设置'
+    };
+    return fallbackMap[businessType] || businessType;
+  }
+}
+
+// Synchronous version for backward compatibility (uses cached data)
+export function getBusinessTypeNameSync(businessType: BusinessType): string {
+  return configService.getBusinessTypeName(businessType);
+}
+
+export async function getPromptTypeOptions() {
+  try {
+    return await configService.getPromptTypeOptions();
+  } catch (error) {
+    console.warn('Failed to get prompt type options from API, falling back to constants:', error);
+    return Object.entries(PROMPT_TYPES).map(([value, label]) => ({
+      value,
+      label
+    }));
+  }
+}
+
+export async function getPromptStatusOptions() {
+  try {
+    return await configService.getPromptStatusOptions();
+  } catch (error) {
+    console.warn('Failed to get prompt status options from API, falling back to constants:', error);
+    return Object.entries(PROMPT_STATUSES).map(([value, label]) => ({
+      value,
+      label
+    }));
+  }
+}
+
+export async function getGenerationStageOptions() {
+  try {
+    return await configService.getGenerationStageOptions();
+  } catch (error) {
+    console.warn('Failed to get generation stage options from API, falling back to constants:', error);
+    return Object.entries(GENERATION_STAGES).map(([value, label]) => ({
+      value,
+      label
+    }));
+  }
+}
+
+// Synchronous versions for backward compatibility
+export function getPromptTypeOptionsSync() {
+  return Object.entries(PROMPT_TYPES).map(([value, label]) => ({
+    value,
+    label
+  }));
+}
+
+export function getPromptStatusOptionsSync() {
+  return Object.entries(PROMPT_STATUSES).map(([value, label]) => ({
+    value,
+    label
+  }));
+}
+
+export function getGenerationStageOptionsSync() {
+  return Object.entries(GENERATION_STAGES).map(([value, label]) => ({
+    value,
+    label
+  }));
+}
+
+export function getBusinessTypeOptions(): Array<{ value: BusinessType; label: string }> {
+  // 这里应该从API获取动态的业务类型列表
+  // 现在使用生成的枚举中的类型
+  const types: BusinessType[] = [
+    'RCC', 'RFD', 'ZAB', 'ZBA', 'PAB', 'PAE', 'PAI', 'RCE', 'RES', 'RHL', 'RPP', 'RSM', 'RWS',
+    'ZAD', 'ZAE', 'ZAF', 'ZAG', 'ZAH', 'ZAJ', 'ZAM', 'ZAN', 'ZAS', 'ZAV', 'ZAY', 'ZBB',
+    'WEIXIU_RSM', 'VIVO_WATCH', 'RDL_RDU', 'RDO_RDC'
+  ];
+
+  return types.map(type => ({
+    value: type,
+    label: getBusinessTypeNameSync(type)
+  }));
+}
+
+// Additional missing types for promptService.ts
+export interface PromptSummary {
+  id: number;
   name: string;
-  template_content: string;
+  type: PromptType;
+  business_type?: BusinessType;
+  status: PromptStatus;
+  project_id: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PromptCategoryUpdate {
+  name?: string;
   description?: string;
-  variables?: string[];
+  parent_id?: number;
 }
 
 export interface PromptTemplateCreate {
   name: string;
-  template_content: string;
-  description?: string;
-  variables?: string[];
+  template: string;
+  variables?: string;
 }
 
 export interface PromptTemplateUpdate {
   name?: string;
-  template_content?: string;
-  description?: string;
-  variables?: string[];
+  template?: string;
+  variables?: string;
 }
 
-// Search and filtering interfaces
 export interface PromptSearchRequest {
-  query?: string;
+  keyword?: string;
   type?: PromptType;
   business_type?: BusinessType;
   status?: PromptStatus;
-  category_id?: number;
-  tags?: string[];
-  author?: string;
+  project_id?: number;
   page?: number;
   size?: number;
 }
 
 export interface PromptPreviewRequest {
-  content: string;
-  variables?: Record<string, string>;
+  template: string;
+  variables?: Record<string, any>;
+  business_type?: BusinessType;
 }
 
 export interface PromptPreviewResponse {
-  rendered_content: string;
-  detected_variables: string[];
+  success: boolean;
+  rendered_content?: string;
+  error?: string;
+  missing_variables?: string[];
 }
 
 export interface PromptValidationResponse {
-  is_valid: boolean;
-  errors: string[];
-  warnings: string[];
-  suggestions: string[];
+  valid: boolean;
+  errors?: string[];
+  warnings?: string[];
+  suggestions?: string[];
 }
 
-// Pagination interfaces
-export interface PaginatedResponse<T> {
-  items: T[];
-  total: number;
-  page: number;
-  size: number;
-  pages: number;
-}
-
-export interface PromptListResponse extends PaginatedResponse<PromptSummary> {}
-
-// Statistics interfaces
 export interface PromptStatistics {
   total_prompts: number;
-  active_prompts: number;
-  draft_prompts: number;
-  archived_prompts: number;
-  prompts_by_type: Record<string, number>;
-  prompts_by_business_type: Record<string, number>;
-  recent_activity: PromptSummary[];
+  prompts_by_type: Record<PromptType, number>;
+  prompts_by_status: Record<PromptStatus, number>;
+  prompts_by_business_type: Record<BusinessType, number>;
+  recent_activity?: Array<{
+    id: number;
+    action: string;
+    timestamp: string;
+  }>;
 }
-
-// UI State interfaces
-export interface PromptListState {
-  prompts: PromptSummary[];
-  loading: boolean;
-  error: string | null;
-  pagination: {
-    page: number;
-    size: number;
-    total: number;
-    pages: number;
-  };
-  filters: {
-    search?: string;
-    type?: PromptType;
-    business_type?: BusinessType;
-    status?: PromptStatus;
-    category_id?: number;
-  };
-}
-
-export interface PromptEditorState {
-  prompt: Prompt | null;
-  loading: boolean;
-  saving: boolean;
-  error: string | null;
-  content: string;
-  preview: string;
-  variables: string[];
-  isPreviewMode: boolean;
-}
-
-// Dynamic configuration functions
-// These functions provide access to database-driven configuration
-
-/**
- * Get display name for a business type
- * @param businessType - The business type value
- * @returns Display name for the business type
- */
-export function getBusinessTypeName(businessType: BusinessType): string {
-  return configService.getBusinessTypeName(businessType);
-}
-
-/**
- * Get display name for a prompt type
- * @param promptType - The prompt type value
- * @returns Display name for the prompt type
- */
-export function getPromptTypeName(promptType: PromptType): string {
-  return configService.getPromptTypeName(promptType);
-}
-
-/**
- * Get display name for a prompt status
- * @param promptStatus - The prompt status value
- * @returns Display name for the prompt status
- */
-export function getPromptStatusName(promptStatus: PromptStatus): string {
-  return configService.getPromptStatusName(promptStatus);
-}
-
-/**
- * Get description for a business type
- * @param businessType - The business type value
- * @returns Description for the business type
- */
-export function getBusinessTypeDescription(businessType: BusinessType): string {
-  return configService.getBusinessTypeDescription(businessType);
-}
-
-/**
- * Get description for a prompt type
- * @param promptType - The prompt type value
- * @returns Description for the prompt type
- */
-export function getPromptTypeDescription(promptType: PromptType): string {
-  return configService.getPromptTypeDescription(promptType);
-}
-
-/**
- * Get description for a prompt status
- * @param promptStatus - The prompt status value
- * @returns Description for the prompt status
- */
-export function getPromptStatusDescription(promptStatus: PromptStatus): string {
-  return configService.getPromptStatusDescription(promptStatus);
-}
-
-/**
- * Get business type options for UI components
- * @returns Promise resolving to array of business type options
- */
-export async function getBusinessTypeOptions(): Promise<Array<{value: string; label: string; description?: string}>> {
-  return configService.getBusinessTypeOptions();
-}
-
-/**
- * Get prompt type options for UI components
- * @returns Promise resolving to array of prompt type options
- */
-export async function getPromptTypeOptions(): Promise<Array<{value: string; label: string; description?: string}>> {
-  return configService.getPromptTypeOptions();
-}
-
-/**
- * Get prompt status options for UI components
- * @returns Promise resolving to array of prompt status options
- */
-export async function getPromptStatusOptions(): Promise<Array<{value: string; label: string; description?: string}>> {
-  return configService.getPromptStatusOptions();
-}
-
-// Legacy mapping objects for backward compatibility (deprecated)
-// Use the dynamic functions above instead
-export const BUSINESS_TYPE_NAMES: Record<string, string> = {};
-export const PROMPT_TYPE_NAMES: Record<string, string> = {};
-export const PROMPT_STATUS_NAMES: Record<string, string> = {};

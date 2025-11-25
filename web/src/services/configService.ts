@@ -29,6 +29,7 @@ export interface AllConfigurationResponse {
   business_types: Record<string, BusinessTypeItem>;
   prompt_types: Record<string, ConfigurationItem>;
   prompt_statuses: Record<string, ConfigurationItem>;
+  generation_stages: Record<string, ConfigurationItem>;
 }
 
 export interface ValidationResult {
@@ -41,6 +42,7 @@ class ConfigurationService {
     businessTypes?: Record<string, BusinessTypeItem>;
     promptTypes?: Record<string, ConfigurationItem>;
     promptStatuses?: Record<string, ConfigurationItem>;
+    generationStages?: Record<string, ConfigurationItem>;
     allConfig?: AllConfigurationResponse;
     lastFetch?: number;
   } = {};
@@ -172,6 +174,44 @@ class ConfigurationService {
       return response.data;
     } catch (error) {
       console.error(`Failed to fetch prompt status ${promptStatus}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all generation stages with their metadata
+   */
+  async getGenerationStages(refresh = false): Promise<Record<string, ConfigurationItem>> {
+    if (!refresh && this.cache.generationStages && this.isCacheValid()) {
+      return this.cache.generationStages;
+    }
+
+    try {
+      const response = await apiClient.get<Record<string, ConfigurationItem>>(
+        '/api/v1/config/generation-stages',
+        { params: { refresh: refresh || false } }
+      );
+
+      this.cache.generationStages = response.data;
+      this.cache.lastFetch = Date.now();
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch generation stages:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get a specific generation stage by value
+   */
+  async getGenerationStage(generationStage: string): Promise<ConfigurationItem> {
+    try {
+      const response = await apiClient.get<ConfigurationItem>(
+        `/api/v1/config/generation-stages/${generationStage}`
+      );
+      return response.data;
+    } catch (error) {
+      console.error(`Failed to fetch generation stage ${generationStage}:`, error);
       throw error;
     }
   }
@@ -338,6 +378,18 @@ class ConfigurationService {
   async getPromptStatusOptions(refresh = false): Promise<Array<{value: string; label: string; description?: string}>> {
     const promptStatuses = await this.getPromptStatuses(refresh);
     return Object.entries(promptStatuses).map(([value, item]) => ({
+      value,
+      label: item.name,
+      description: item.description
+    }));
+  }
+
+  /**
+   * Get generation stage options for dropdown/select components
+   */
+  async getGenerationStageOptions(refresh = false): Promise<Array<{value: string; label: string; description?: string}>> {
+    const generationStages = await this.getGenerationStages(refresh);
+    return Object.entries(generationStages).map(([value, item]) => ({
       value,
       label: item.name,
       description: item.description

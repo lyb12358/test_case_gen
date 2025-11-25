@@ -348,3 +348,4 @@ openspec/
 *.bak
 *.backup
 *.tmp
+bak/

@@ -4,7 +4,7 @@ Pydantic models for business type management.
 
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from enum import Enum
 
 
@@ -28,7 +28,9 @@ class BusinessTypeUpdate(BaseModel):
     description: Optional[str] = Field(None, description="Business type description")
     project_id: Optional[int] = Field(None, description="Associated project ID")
     is_active: Optional[bool] = Field(None, description="Activation status")
-    prompt_combination_id: Optional[int] = Field(None, description="Associated prompt combination ID")
+    # Note: prompt_combination_id removed since it doesn't exist in database model
+    test_point_combination_id: Optional[int] = Field(None, description="Test point generation combination ID")
+    test_case_combination_id: Optional[int] = Field(None, description="Test case generation combination ID")
 
 
 class BusinessTypeResponse(BaseModel):
@@ -39,7 +41,10 @@ class BusinessTypeResponse(BaseModel):
     description: Optional[str]
     project_id: int
     is_active: bool
-    prompt_combination_id: Optional[int]
+    # Note: prompt_combination_id removed since it doesn't exist in database model
+    prompt_combination_id: Optional[int] = None  # Keep for API compatibility but will always be None
+    test_point_combination_id: Optional[int]
+    test_case_combination_id: Optional[int]
     created_at: datetime
     updated_at: datetime
 
@@ -47,18 +52,17 @@ class BusinessTypeResponse(BaseModel):
     project_name: Optional[str] = None
     prompt_combination_name: Optional[str] = None
     has_valid_prompt_combination: bool = False
+    test_point_combination_name: Optional[str] = None
+    test_case_combination_name: Optional[str] = None
+    has_valid_test_point_combination: bool = False
+    has_valid_test_case_combination: bool = False
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BusinessTypeListResponse(BaseModel):
     """Business type list response model."""
     items: List[BusinessTypeResponse]
-    total: int
-    page: int
-    size: int
-    pages: int
 
 
 class BusinessTypeActivationRequest(BaseModel):
@@ -105,8 +109,7 @@ class PromptCombinationItemResponse(BaseModel):
     prompt_type: Optional[str] = None
     prompt_content: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PromptCombinationCreate(BaseModel):
@@ -115,7 +118,8 @@ class PromptCombinationCreate(BaseModel):
     description: Optional[str] = Field(None, description="Combination description")
     project_id: int = Field(..., description="Project ID")
     business_type: Optional[str] = Field(None, description="Associated business type")
-    items: List[PromptCombinationItemCreate] = Field(default_factory=list, description="Combination items")
+    items: Optional[List[PromptCombinationItemCreate]] = Field(None, description="Combination items")
+    prompt_ids: Optional[List[int]] = Field(None, description="Prompt IDs (alternative format)")
 
 
 class PromptCombinationUpdate(BaseModel):
@@ -145,8 +149,7 @@ class PromptCombinationResponse(BaseModel):
     project_name: Optional[str] = None
     items: List[PromptCombinationItemResponse] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PromptCombinationListResponse(BaseModel):
@@ -170,6 +173,8 @@ class PromptCombinationPreviewResponse(BaseModel):
     is_valid: bool = Field(..., description="Whether the combination is valid")
     validation_errors: List[str] = Field(default_factory=list, description="Validation errors")
     used_prompts: List[dict] = Field(default_factory=list, description="Information about used prompts")
+    variables: List[str] = Field(default_factory=list, description="Template variables found in prompts")
+    message: str = Field(default="", description="Status message")
 
 
 class BusinessTypeStatsResponse(BaseModel):

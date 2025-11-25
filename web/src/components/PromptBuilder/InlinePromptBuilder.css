@@ -1,0 +1,147 @@
+/* InlinePromptBuilder component styles */
+.prompt-item-card:hover {
+  border-color: #1890ff !important;
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.1) !important;
+}
+
+.prompt-item-card:hover .ant-card-body {
+  background-color: #fafafa;
+}
+
+/* Custom scrollbar styling */
+.prompt-item-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.prompt-item-container::-webkit-scrollbar-track {
+  background: #f0f0f0;
+  border-radius: 4px;
+}
+
+.prompt-item-container::-webkit-scrollbar-thumb {
+  background: #bfbfbf;
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+}
+
+.prompt-item-container::-webkit-scrollbar-thumb:hover {
+  background: #8c8c8c;
+}
+
+/* Ensure overflow is visible */
+.prompt-item-container {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  max-height: 100% !important;
+  flex: 1 !important;
+}
+
+/* Left side select container */
+.prompt-select-container {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+/* Additional scrollbar support for Firefox */
+.prompt-item-container,
+.prompt-select-container {
+  scrollbar-width: thin;
+  scrollbar-color: #bfbfbf #f0f0f0;
+}
+
+/* Apply scrollbar styles to both containers */
+.prompt-item-container::-webkit-scrollbar,
+.prompt-select-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.prompt-item-container::-webkit-scrollbar-track,
+.prompt-select-container::-webkit-scrollbar-track {
+  background: #f0f0f0;
+  border-radius: 4px;
+}
+
+.prompt-item-container::-webkit-scrollbar-thumb,
+.prompt-select-container::-webkit-scrollbar-thumb {
+  background: #bfbfbf;
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+}
+
+.prompt-item-container::-webkit-scrollbar-thumb:hover,
+.prompt-select-container::-webkit-scrollbar-thumb:hover {
+  background: #8c8c8c;
+}
+
+/* Force height calculation */
+.ant-card-body {
+  overflow: hidden !important;
+}
+
+.ant-flex-column {
+  max-height: 600px !important;
+}
+
+/* Animation for prompt items */
+.prompt-item-card {
+  animation: slideInUp 0.3s ease-out;
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Improve drag and drop visual feedback */
+.dragging {
+  opacity: 0.5;
+  transform: scale(0.98);
+}
+
+.drop-preview {
+  border: 2px dashed #1890ff;
+  background-color: #f6ffed;
+}
+
+/* Compact layout improvements */
+.ant-card-small > .ant-card-body {
+  padding: 10px !important;
+}
+
+.ant-tag {
+  margin: 0 !important;
+}
+
+/* Text overflow handling */
+.prompt-content {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.prompt-content.expanded {
+  display: block;
+  -webkit-line-clamp: unset;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .prompt-item-card {
+    margin-bottom: 4px !important;
+  }
+
+  .prompt-header {
+    font-size: 12px !important;
+  }
+
+  .prompt-content {
+    font-size: 11px !important;
+  }
+}

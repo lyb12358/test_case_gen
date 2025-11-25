@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
 import { taskService } from '../services/taskService';
-import { testCaseService } from '../services/testCaseService';
+import { unifiedGenerationService } from '../services';
 
 export interface GenerationTask {
   id: string;
@@ -201,7 +201,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
   const createTask = async (businessType: string) => {
     try {
-      const response = await testCaseService.generateTestCases({ business_type: businessType });
+      const response = await unifiedGenerationService.generateTestCases({ business_type: businessType });
 
       // 使用后端返回的状态，让前端UI根据实际状态显示
       const newTask: GenerationTask = {

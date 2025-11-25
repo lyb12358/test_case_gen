@@ -24,6 +24,7 @@ class ConfigurationService:
         self._business_types_cache: Optional[Dict[str, Any]] = None
         self._prompt_types_cache: Optional[Dict[str, Any]] = None
         self._prompt_statuses_cache: Optional[Dict[str, Any]] = None
+        self._generation_stages_cache: Optional[Dict[str, Any]] = None
 
     def _get_db_session(self) -> Session:
         """Get database session."""
@@ -130,6 +131,39 @@ class ConfigurationService:
 
         return self._prompt_statuses_cache
 
+    def get_generation_stages(self, refresh_cache: bool = False) -> Dict[str, Any]:
+        """
+        Get all generation stages with their metadata.
+
+        Args:
+            refresh_cache: Force refresh of cached data
+
+        Returns:
+            Dictionary with generation stage values as keys and metadata as values
+        """
+        if self._generation_stages_cache is None or refresh_cache:
+            with self._get_db_session() as db:
+                # Get generation stages from database enum
+                result = db.execute(text("""
+                    SELECT 'test_point' as value, '测试点' as name, 'Test point generation stage' as description
+                    UNION ALL
+                    SELECT 'test_case' as value, '测试用例' as name, 'Test case generation stage' as description
+                    UNION ALL
+                    SELECT 'general' as value, '通用' as name, 'General purpose generation stage' as description
+                """))
+
+                generation_stages = {}
+                for row in result:
+                    generation_stages[row.value] = {
+                        'value': row.value,
+                        'name': row.name,
+                        'description': row.description
+                    }
+
+                self._generation_stages_cache = generation_stages
+
+        return self._generation_stages_cache
+
     def validate_business_type(self, business_type: str) -> bool:
         """Validate if a business type exists in the database."""
         business_types = self.get_business_types()
@@ -144,6 +178,11 @@ class ConfigurationService:
         """Validate if a prompt status exists."""
         prompt_statuses = self.get_prompt_statuses()
         return prompt_status in prompt_statuses
+
+    def validate_generation_stage(self, generation_stage: str) -> bool:
+        """Validate if a generation stage exists."""
+        generation_stages = self.get_generation_stages()
+        return generation_stage in generation_stages
 
     def get_business_type_name(self, business_type: str) -> str:
         """Get the display name for a business type."""
@@ -175,6 +214,16 @@ class ConfigurationService:
         prompt_statuses = self.get_prompt_statuses()
         return prompt_statuses.get(prompt_status, {}).get('description', '')
 
+    def get_generation_stage_name(self, generation_stage: str) -> str:
+        """Get the display name for a generation stage."""
+        generation_stages = self.get_generation_stages()
+        return generation_stages.get(generation_stage, {}).get('name', generation_stage)
+
+    def get_generation_stage_description(self, generation_stage: str) -> str:
+        """Get the description for a generation stage."""
+        generation_stages = self.get_generation_stages()
+        return generation_stages.get(generation_stage, {}).get('description', '')
+
     def get_all_configuration(self, refresh_cache: bool = False) -> Dict[str, Any]:
         """
         Get all configuration data at once.
@@ -188,7 +237,8 @@ class ConfigurationService:
         return {
             'business_types': self.get_business_types(refresh_cache),
             'prompt_types': self.get_prompt_types(refresh_cache),
-            'prompt_statuses': self.get_prompt_statuses(refresh_cache)
+            'prompt_statuses': self.get_prompt_statuses(refresh_cache),
+            'generation_stages': self.get_generation_stages(refresh_cache)
         }
 
     def clear_cache(self):
@@ -196,6 +246,7 @@ class ConfigurationService:
         self._business_types_cache = None
         self._prompt_types_cache = None
         self._prompt_statuses_cache = None
+        self._generation_stages_cache = None
 
 
 # Global configuration service instance

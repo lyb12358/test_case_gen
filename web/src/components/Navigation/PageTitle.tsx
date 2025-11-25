@@ -19,43 +19,71 @@ const PageTitle: React.FC<PageTitleProps> = ({ style }) => {
     '/dashboard': '仪表板',
     '/projects': '项目管理',
     '/business-management': '业务管理',
+    '/business-management/list': '业务类型列表',
+    '/business-management/config': '业务配置',
     '/business-management/prompt-combinations/create': '创建提示词组合',
     '/knowledge-graph': 'TSP本体图谱',
-    '/test-cases': '测试用例管理',
-    '/test-cases/list': '测试用例列表',
+    '/test-cases': '测试用例列表',
     '/test-cases/generate': '生成测试用例',
+    '/test-cases/generate-unified': '统一两阶段生成',
+    '/test-generation': '测试生成管理',
+    '/test-generation/test-points': '测试点生成',
+    '/test-generation/test-cases': '测试用例生成',
+    '/test-generation/batch': '批量生成',
     '/prompts': '提示词管理',
-    '/prompts/list': '提示词列表',
     '/prompts/create': '创建提示词',
     '/tasks': '任务管理',
+    '/test-points': '测试点管理',
+    '/test-points/create': '创建测试点',
     // 动态详情页面路由
   };
 
   // 动态路由处理
   const getDynamicRouteTitle = (pathname: string): string | null => {
-    if (pathname.startsWith('/test-cases/') && pathname !== '/test-cases/list' && pathname !== '/test-cases/generate') {
+    // 测试用例详情和编辑
+    if (pathname.startsWith('/test-cases/') && pathname !== '/test-cases/generate' && pathname !== '/test-cases/generate-unified') {
+      if (pathname.includes('/edit')) {
+        return '编辑测试用例';
+      }
       return '测试用例详情';
     }
+    // 任务详情
     if (pathname.startsWith('/tasks/') && pathname !== '/tasks') {
       return '任务详情';
     }
+    // 提示词详情和编辑
     if (pathname.startsWith('/prompts/') && !pathname.includes('/list') && !pathname.includes('/create')) {
       if (pathname.includes('/edit')) {
         return '编辑提示词';
       }
       return '提示词详情';
     }
+    // 业务管理提示词组合
     if (pathname.startsWith('/business-management/prompt-combinations/') && pathname !== '/business-management/prompt-combinations/create') {
       return '编辑提示词组合';
+    }
+    // 测试点详情和编辑
+    if (pathname.startsWith('/test-points/') && !pathname.includes('/list') && !pathname.includes('/create')) {
+      if (pathname.includes('/edit')) {
+        return '编辑测试点';
+      }
+      return '测试点详情';
+    }
+    // 测试生成管理动态路由（如果有详情页）
+    if (pathname.startsWith('/test-generation/')) {
+      // 可以根据需要添加特定的测试生成详情页面处理
+      return null; // 暂时返回null，使用静态映射
     }
     return null;
   };
 
-  // 支持无连字符的路径格式
+  // 支持无连字符的路径格式 (向后兼容)
   const altPathMap: Record<string, string> = {
     '/testcases': '/test-cases',
-    '/testcases/list': '/test-cases/list',
     '/testcases/generate': '/test-cases/generate',
+    '/testcases/generate-unified': '/test-cases/generate-unified',
+    '/testpoints': '/test-points',
+    '/testpoints/create': '/test-points/create',
   };
 
   const currentPath = location.pathname;

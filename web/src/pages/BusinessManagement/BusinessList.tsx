@@ -34,6 +34,10 @@ import {
   EyeOutlined,
   SettingOutlined
 } from '@ant-design/icons';
+import {
+  getTwoStageStatusTag,
+  type TwoStageConfig
+} from '../../utils/twoStageStatus';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { businessService, BusinessType, BusinessTypeCreate, BusinessTypeStats } from '../../services/businessService';
@@ -49,12 +53,26 @@ const BusinessList: React.FC = () => {
   const queryClient = useQueryClient();
   const { currentProject, projects } = useProject();
   const [searchText, setSearchText] = useState('');
-  const [selectedProject, setSelectedProject] = useState<number | undefined>(undefined);
+  const [selectedProject, setSelectedProject] = useState<number | undefined>(currentProject?.id);
   const [selectedStatus, setSelectedStatus] = useState<boolean | undefined>(undefined);
   const [editorModalVisible, setEditorModalVisible] = useState(false);
   const [editingBusiness, setEditingBusiness] = useState<BusinessType | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
+
+  // 当当前项目变更时，自动更新选中的项目
+  useEffect(() => {
+    console.log('BusinessList: currentProject changed to:', currentProject?.id);
+    setSelectedProject(currentProject?.id);
+
+    // 当项目切换时，强制失效统计查询缓存
+    if (currentProject?.id !== undefined) {
+      console.log('BusinessList: Invalidating stats cache for project:', currentProject.id);
+      queryClient.invalidateQueries({
+        queryKey: ['businessTypeStats']
+      });
+    }
+  }, [currentProject, queryClient]);
 
   // 获取业务类型列表
   const { data: businessTypesData, isLoading, error, refetch } = useQuery({
@@ -83,12 +101,21 @@ const BusinessList: React.FC = () => {
 
   // 获取业务类型统计
   const { data: statsData, error: statsError } = useQuery({
-    queryKey: ['businessTypeStats'],
+    queryKey: ['businessTypeStats', selectedProject],
     queryFn: () => {
-      console.log('BusinessList: Fetching business type stats');
-      return businessService.getBusinessTypeStats();
+      console.log('BusinessList: Fetching business type stats with project_id:', selectedProject);
+      return businessService.getBusinessTypeStats(selectedProject);
     },
     staleTime: 5 * 60 * 1000,
+    enabled: selectedProject !== undefined, // 确保项目选择后才查询
+    onSuccess: (data) => {
+      console.log('BusinessList: Stats received for project', selectedProject, ':', {
+        total: data.total_business_types,
+        active: data.active_business_types,
+        configured: data.business_types_with_prompt_combinations,
+        not_configured: data.business_types_without_prompt_combinations
+      });
+    },
     onError: (error) => {
       console.error('BusinessList: Failed to fetch business type stats:', error);
     }
@@ -97,8 +124,16 @@ const BusinessList: React.FC = () => {
   // 添加调试日志 (移动到所有hook声明之后)
   console.log('BusinessList: Component rendering', {
     currentProject: currentProject?.id,
+    selectedProject: selectedProject,
     projects: projects.length,
-    isLoading
+    isLoading,
+    statsData: statsData ? 'loaded' : 'not loaded',
+    stats: statsData ? {
+      total: statsData.total_business_types,
+      active: statsData.active_business_types,
+      configured: statsData.business_types_with_prompt_combinations,
+      not_configured: statsData.business_types_without_prompt_combinations
+    } : null
   });
 
   // 删除业务类型
@@ -157,11 +192,8 @@ const BusinessList: React.FC = () => {
   };
 
   const handleViewPromptCombination = (business: BusinessType) => {
-    if (business.prompt_combination_id) {
-      navigate(`/business-management/prompt-combinations/${business.prompt_combination_id}`);
-    } else {
-      navigate(`/business-management/prompt-combinations/create?business_type=${business.code}`);
-    }
+    // Navigate to the new business prompt configuration page
+    navigate(`/business-management/business-types/${business.id}/configure`);
   };
 
   const getStatusTag = (business: BusinessType) => {
@@ -206,6 +238,16 @@ const BusinessList: React.FC = () => {
     }
   };
 
+  // 渲染两阶段生成状态标签 - 使用简化的工具函数
+  const getTwoStageStatusTagForRecord = (record: BusinessType) => {
+    const config: TwoStageConfig = {
+      has_test_point_combination: record.has_valid_test_point_combination,
+      has_test_case_combination: record.has_valid_test_case_combination
+    };
+
+    return getTwoStageStatusTag(config);
+  };
+
   const columns = [
     {
       title: '业务编码',
@@ -235,13 +277,19 @@ const BusinessList: React.FC = () => {
       dataIndex: 'project_name',
       key: 'project_name',
       width: 150,
-      render: (projectName: string) => projectName || <Text type="secondary">全局</Text>,
+      render: (projectName: string) => projectName || <Text type="secondary">未分配</Text>,
     },
     {
       title: '提示词组合',
       key: 'prompt_combination',
       width: 120,
       render: (_: any, record: BusinessType) => getPromptCombinationTag(record),
+    },
+    {
+      title: '两阶段状态',
+      key: 'two_stage_status',
+      width: 120,
+      render: (_: any, record: BusinessType) => getTwoStageStatusTagForRecord(record),
     },
     {
       title: '状态',
@@ -271,7 +319,7 @@ const BusinessList: React.FC = () => {
             />
           </Tooltip>
 
-          <Tooltip title={record.prompt_combination_id ? "查看提示词组合" : "配置提示词组合"}>
+          <Tooltip title={record.has_valid_prompt_combination ? "查看提示词配置" : "配置两阶段提示词"}>
             <Button
               type="text"
               size="small"

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
-import { message } from 'antd';
+import { useMessage } from '@/hooks/useMessage';
 import { Project, projectService } from '../services/projectService';
 
 interface ProjectContextType {
@@ -8,7 +8,7 @@ interface ProjectContextType {
   loading: boolean;
   error: string | null;
   selectProject: (project: Project) => void;
-  loadProjects: () => Promise<void>;
+  loadProjects: (activeOnly?: boolean) => Promise<void>;
   createProject: (projectData: any) => Promise<Project>;
   switchProject: (projectId: number) => Promise<void>;
   refreshCurrentProject: () => Promise<void>;
@@ -26,6 +26,7 @@ export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) =>
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const message = useMessage();
 
   // Refs to prevent race conditions
   const loadingRef = useRef(false);
@@ -64,7 +65,7 @@ export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) =>
     }
   }, []);
 
-  const loadProjects = useCallback(async (): Promise<void> => {
+  const loadProjects = useCallback(async (activeOnly: boolean = true): Promise<void> => {
     if (loadingRef.current) {
       console.log('Projects loading already in progress, skipping...');
       return;
@@ -74,7 +75,7 @@ export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) =>
       setLoadingState(true);
       setErrorState(null);
 
-      const response = await projectService.getProjects(true);
+      const response = await projectService.getProjects(activeOnly);
 
       if (mountedRef.current) {
         setProjects(response.projects);
@@ -83,7 +84,9 @@ export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) =>
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '加载项目列表失败';
       setErrorState(errorMessage);
-      message.error('加载项目列表失败');
+      if (message && typeof message.error === 'function') {
+        message.error('加载项目列表失败');
+      }
       console.error('Failed to load projects:', error);
     } finally {
       setLoadingState(false);
@@ -132,7 +135,9 @@ export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) =>
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '无法加载默认项目';
       setErrorState(errorMessage);
-      message.error('无法加载默认项目');
+      if (message && typeof message.error === 'function') {
+        message.error('无法加载默认项目');
+      }
       console.error('Failed to get default project:', error);
     }
   }, [setErrorState]);
@@ -153,7 +158,13 @@ export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) =>
       projectIdRef.current = project.id;
       localStorage.setItem('currentProjectId', project.id.toString());
       setErrorState(null);
-      message.success(`已切换到项目: ${project.name}`);
+
+      // Safety check for message API
+      if (message && typeof message.success === 'function') {
+        message.success(`已切换到项目: ${project.name}`);
+      } else {
+        console.warn('Message API not available, project switched successfully');
+      }
     } catch (error) {
       console.error('Failed to select project:', error);
       setErrorState('选择项目失败');
@@ -169,14 +180,18 @@ export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) =>
       await loadProjects();
 
       if (mountedRef.current) {
-        message.success('项目创建成功');
+        if (message && typeof message.success === 'function') {
+          message.success('项目创建成功');
+        }
       }
 
       return newProject;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '创建项目失败';
       setErrorState(errorMessage);
-      message.error('创建项目失败');
+      if (message && typeof message.error === 'function') {
+        message.error('创建项目失败');
+      }
       console.error('Failed to create project:', error);
       throw error;
     }
@@ -196,7 +211,9 @@ export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) =>
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '切换项目失败';
       setErrorState(errorMessage);
-      message.error('切换项目失败');
+      if (message && typeof message.error === 'function') {
+        message.error('切换项目失败');
+      }
       console.error('Failed to switch project:', error);
       throw error;
     }

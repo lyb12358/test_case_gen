@@ -85,7 +85,8 @@ export interface EntityTestCases {
 
 export interface TestCaseItemInfo {
   id: number;
-  group_id: number;
+  project_id: number;
+  business_type: string;
   test_case_id: string;
   name: string;
   description?: string;

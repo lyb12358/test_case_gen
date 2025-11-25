@@ -35,6 +35,13 @@ export interface BusinessType {
   project_name?: string;
   prompt_combination_name?: string;
   has_valid_prompt_combination: boolean;
+  // Two-stage generation fields
+  test_point_combination_id?: number;
+  test_case_combination_id?: number;
+  test_point_combination_name?: string;
+  test_case_combination_name?: string;
+  has_valid_test_point_combination?: boolean;
+  has_valid_test_case_combination?: boolean;
 }
 
 export interface BusinessTypeCreate {
@@ -138,9 +145,12 @@ export interface PromptCombinationListResponse {
 }
 
 export interface PromptCombinationPreviewRequest {
-  prompt_ids: number[];
-  business_type?: string;
-  project_id?: number;
+  items: Array<{
+    prompt_id: number;
+    order: number;
+    variable_name?: string;
+    is_required?: boolean;
+  }>;
   variables?: Record<string, any>;
 }
 
@@ -158,6 +168,29 @@ export interface PromptCombinationPreviewResponse {
   }>;
   variables: string[];
   message: string;
+}
+
+// Two-stage generation types
+// Note: BusinessType configuration for two-stage generation is now handled through
+// the standard BusinessType interface with test_point_combination_id and test_case_combination_id fields
+
+// Generation mode types for BusinessTypeConfig compatibility
+export interface GenerationModeRequest {
+  generation_mode: 'single_stage' | 'two_stage';
+  test_point_combination_id?: number;
+  test_case_combination_id?: number;
+}
+
+export interface GenerationModeResponse {
+  generation_mode: 'single_stage' | 'two_stage';
+  test_point_combination_id?: number;
+  test_case_combination_id?: number;
+}
+
+// Enhanced PromptCombinationItem for two-stage generation
+export interface PromptCombinationItemExtended extends PromptCombinationItem {
+  item_type?: 'system_prompt' | 'user_prompt';
+  section_title?: string;
 }
 
 class BusinessService {
@@ -229,8 +262,14 @@ class BusinessService {
     return response.data;
   }
 
-  async getBusinessTypeStats(): Promise<BusinessTypeStats> {
-    const response = await apiClient.get('/api/v1/business/business-types/stats/overview');
+  async getBusinessTypeStats(project_id?: number): Promise<BusinessTypeStats> {
+    const queryParams = new URLSearchParams();
+    if (project_id !== undefined) {
+      queryParams.append('project_id', project_id.toString());
+    }
+
+    const url = `/api/v1/business/business-types/stats/overview${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    const response = await apiClient.get(url);
     return response.data;
   }
 
@@ -293,6 +332,34 @@ class BusinessService {
       total: response.data.length
     };
   }
+
+  // Generation Mode methods for BusinessTypeConfig compatibility
+  // These provide backward compatibility with the existing UI while using the new unified system
+
+  async getGenerationMode(businessTypeCode: string): Promise<GenerationModeResponse> {
+    // Since we're now using unified two-stage generation, always return 'two_stage'
+    // In a real implementation, you might want to fetch the actual business type configuration
+    return {
+      generation_mode: 'two_stage',
+      test_point_combination_id: undefined,
+      test_case_combination_id: undefined
+    };
+  }
+
+  async setGenerationMode(businessTypeCode: string, data: GenerationModeRequest): Promise<GenerationModeResponse> {
+    // In the new unified system, we don't actually set generation modes anymore
+    // This method is kept for compatibility with the existing UI
+    // In practice, the system always uses two-stage generation
+    return {
+      generation_mode: 'two_stage',
+      test_point_combination_id: data.test_point_combination_id,
+      test_case_combination_id: data.test_case_combination_id
+    };
+  }
+
+  // Note: Two-stage generation configuration is now managed through
+  // standard BusinessType management with test_point_combination_id and test_case_combination_id
+  // The previous generation mode APIs have been removed as the system now uses unified two-stage generation
 }
 
 export const businessService = new BusinessService();

@@ -2,8 +2,10 @@
  * Type definitions for TSP Test Case Generator API
  */
 
+// Basic interfaces
 export interface GenerateTestCaseRequest {
-  business_type: string; // Business type code (e.g., RCC, RFD, ZAB, ZBA, etc.)
+  business_type: string;
+  additional_context?: any;
 }
 
 export interface GenerateResponse {
@@ -12,9 +14,86 @@ export interface GenerateResponse {
   message: string;
 }
 
+export interface TestCase {
+  id: number;
+  case_id: string;
+  title: string;
+  description: string;
+  business_type: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TestCaseItem {
+  id: number;
+  case_id: string;
+  title: string;
+  description: string;
+  business_type: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+
 export interface TaskStatusResponse {
   task_id: string;
-  id?: string;
+  status: string;
+  progress?: number;
+  current_step?: string;
+  total_steps?: number;
+  message?: string;
+  created_at: string;
+  updated_at: string;
+  started_at?: string;
+  completed_at?: string;
+  result?: any;
+  error?: any;
+}
+
+// WebSocket消息类型定义
+export interface WebSocketMessage {
+  type: string;
+  data?: any;
+  timestamp?: string;
+  task_id?: string;
+}
+
+export interface TaskUpdateData {
+  status?: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  progress?: number;
+  current_step?: string;
+  total_steps?: number;
+  current_step_index?: number;
+  message?: string;
+  stage?: string;
+  generated_count?: number;
+  result?: any;
+  error?: any;
+  created_at?: string;
+  updated_at?: string;
+  llm_info?: {
+    model?: string;
+    estimated_tokens?: number;
+    tokens_used?: number;
+    response_time?: number;
+    response_length?: number;
+    status?: string;
+    attempt?: number;
+    max_attempts?: number;
+    error?: string;
+  };
+  validation_errors?: any[];
+}
+
+// BusinessType moved to types/index.ts to avoid duplication
+// Import BusinessType from types/index.ts instead
+
+// Additional compatibility types that may not be in the API yet
+export interface Task {
+  id: string;
+  task_id: string;
   status: string;
   progress?: number;
   business_type?: string;
@@ -28,61 +107,25 @@ export interface TaskStatusResponse {
   updated_at?: string;
 }
 
-export interface TestCaseItem {
-  id: number;
-  group_id: number;
-  test_case_id: string;
-  name: string;
-  description?: string;
-  module?: string;
-  functional_module?: string;
-  functional_domain?: string;
-  preconditions: string[];
-  steps: string[];
-  expected_result: string[];
-  remarks?: string;
-  entity_order?: number;
-  created_at: string;
-}
-
-export interface TestCase {
-  id: number;
-  business_type: string;
-  created_at: string;
-}
-
-export interface TestCaseGroup {
-  id: number;
-  business_type: string;
-  generation_metadata?: Record<string, any>;
-  created_at: string;
-  updated_at?: string;
-  test_case_items: TestCaseItem[];
-}
-
 export interface TestCasesListResponse {
-  business_type?: string;
-  count: number;
-  test_case_groups: TestCaseGroup[];
-}
-
-export interface Task extends TaskStatusResponse {
-  task_id: string;
-  business_type?: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  created_at?: string;
-  completed_at?: string;
+  test_points: any[];
+  total: number;
+  page: number;
+  size: number;
 }
 
 export interface BusinessTypeResponse {
   business_types: string[];
+  total: number;
 }
 
 export interface BusinessTypeMappingResponse {
-  business_types: Record<string, {
-    name: string;
-    description: string;
-  }>;
+  business_types: {
+    [key: string]: {
+      name: string;
+      description: string;
+    };
+  };
 }
 
 export interface TaskListResponse {
@@ -96,12 +139,5 @@ export interface TaskListResponse {
   }>;
 }
 
-
-export const JOB_STATUS = {
-  PENDING: 'pending',
-  RUNNING: 'running',
-  COMPLETED: 'completed',
-  FAILED: 'failed'
-} as const;
-
-export type JobStatusType = typeof JOB_STATUS[keyof typeof JOB_STATUS];
+// Job status constants moved to types/index.ts to avoid duplication
+// Import JobStatus and JobStatusType from types/index.ts instead

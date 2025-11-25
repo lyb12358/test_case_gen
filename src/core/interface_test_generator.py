@@ -3,8 +3,11 @@ Interface test script generation functionality.
 """
 
 import os
+import logging
 from typing import Optional, Dict, Any, List
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 from ..utils.config import Config
 from ..utils.file_handler import load_json_file, ensure_directory_exists, generate_timestamped_filename
@@ -47,7 +50,6 @@ class InterfaceTestGenerator:
                 test_case = TestCase(**case_data)
                 test_cases.append(test_case)
             except Exception as e:
-                print(f"Error parsing test case {case_data.get('id', 'unknown')}: {e}")
                 continue
 
         return TestCaseCollection(test_cases=test_cases)
@@ -288,7 +290,6 @@ if __name__ == "__main__":
             return filepath
 
         except Exception as e:
-            print(f"Error generating pytest script: {e}")
             return None
 
     def run(self) -> bool:
@@ -300,17 +301,14 @@ if __name__ == "__main__":
         """
         # Validate configuration
         if not self.config.validate_interface_config():
-            print("Error: JSON_FILE_PATH not found in environment variables")
+            logger.error("Error: JSON_FILE_PATH not found in environment variables")
             return False
 
         json_file_path = self.config.json_file_path
 
         # Check if file exists
         if not os.path.exists(json_file_path):
-            print(f"Error: JSON file not found at {json_file_path}")
-            return False
-
-        print("=== Generating Interface Test Scripts ===")
+            return False        logger.info(=== Generating Interface Test Scripts ===)
 
         # Load test cases
         test_cases_collection = self.load_test_cases(json_file_path)
@@ -326,6 +324,5 @@ if __name__ == "__main__":
         if script_path:
             print(f"Interface test script created successfully: {script_path}")
             return True
-        else:
-            print("Failed to create interface test script.")
+        else:        logger.info(Failed to create interface test script.)
             return False

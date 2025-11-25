@@ -1,13 +1,21 @@
+# -*- coding: utf-8 -*-
 """
 SQLAlchemy database models for test case generation service.
 """
 
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import Column, Integer, String, DateTime, Text, Enum, ForeignKey, Float, UniqueConstraint, Boolean
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import Column, Integer, String, DateTime, Text, Enum, ForeignKey, Float, UniqueConstraint, Boolean, Index, JSON
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import relationship
 import enum
+
+# Define UnifiedTestCaseStatus locally for database models
+class UnifiedTestCaseStatus(enum.Enum):
+    """Unified test case status for workflow management."""
+    DRAFT = "draft"                    # Initial draft, needs review
+    APPROVED = "approved"              # Approved and ready for test case generation
+    COMPLETED = "completed"            # Test case fully completed with steps
 
 Base = declarative_base()
 
@@ -24,7 +32,7 @@ class Project(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
 
     # Relationships
-    test_case_groups = relationship("TestCaseGroup", back_populates="project")
+    test_cases = relationship("UnifiedTestCase", back_populates="project")
     generation_jobs = relationship("GenerationJob", back_populates="project")
     knowledge_entities = relationship("KnowledgeEntity", back_populates="project")
     knowledge_relations = relationship("KnowledgeRelation", back_populates="project")
@@ -49,7 +57,16 @@ class BusinessTypeConfig(Base):
     # Required project association
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     is_active = Column(Boolean, default=False, nullable=False)  # Default to False, need explicit activation
-    prompt_combination_id = Column(Integer, ForeignKey("prompt_combinations.id"), nullable=True, index=True)
+
+    # Two-stage generation (unified)
+    test_point_combination_id = Column(Integer, ForeignKey("prompt_combinations.id"), nullable=True, index=True)
+    test_case_combination_id = Column(Integer, ForeignKey("prompt_combinations.id"), nullable=True, index=True)
+
+    # Template variable configuration
+    template_config = Column(JSON, default={}, nullable=True)
+
+    # Additional configuration for business type specific settings
+    additional_config = Column(JSON, default={}, nullable=True)
 
     # Metadata fields
     created_at = Column(DateTime, default=datetime.now, nullable=False)
@@ -57,7 +74,9 @@ class BusinessTypeConfig(Base):
 
     # Relationships
     project = relationship("Project", back_populates="business_types")
-    prompt_combination = relationship("PromptCombination", back_populates="business_types")
+
+    # Two-stage generation combinations - accessed via business_service methods
+    # These avoid complex relationship mapping while maintaining functionality
 
     def __repr__(self):
         return f"<BusinessTypeConfig(code='{self.code}', name='{self.name}', active={self.is_active})>"
@@ -109,53 +128,71 @@ class JobStatus(enum.Enum):
     FAILED = "failed"
 
 
-class TestCaseGroup(Base):
-    """Test case group model (renamed from TestCase)."""
-    __tablename__ = "test_case_groups"
 
+
+# UnifiedTestCaseStatus moved to models.unified_test_case to avoid conflicts
+
+
+class UnifiedTestCase(Base):
+    """Unified test case model that combines test points and test cases with one-to-one relationship."""
+    __tablename__ = "test_case_items"
+    __table_args__ = (
+        Index('idx_test_case_id', 'test_case_id'),
+        Index('idx_test_case_test_point', 'test_point_id'),
+        # New composite indexes for project + business_type queries
+        Index('idx_test_case_project_business', 'project_id', 'business_type'),
+        Index('idx_test_case_business_status', 'business_type', 'status'),
+    )
+
+    # === Core identification fields (simplified) ===
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     business_type = Column(Enum(BusinessType), nullable=False, index=True)
-    generation_metadata = Column(Text, nullable=True)  # JSON string for generation metadata
-    created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
-
-    # Relationships
-    project = relationship("Project", back_populates="test_case_groups")
-    test_case_items = relationship("TestCaseItem", back_populates="group", cascade="all, delete-orphan")
-
-    def __repr__(self):
-        return f"<TestCaseGroup(id={self.id}, business_type={self.business_type}, created_at={self.created_at})>"
-
-
-class TestCaseItem(Base):
-    """Individual test case item model."""
-    __tablename__ = "test_case_items"
-
-    id = Column(Integer, primary_key=True, index=True)
-    group_id = Column(Integer, ForeignKey("test_case_groups.id"), nullable=False, index=True)
-    test_case_id = Column(String(50), nullable=False, index=True)  # TC001, TC002...
+    test_point_id = Column(Integer, ForeignKey("test_points.id"), nullable=True, index=True)
+    test_case_id = Column(String(50), nullable=False, index=True)  # Use existing field name
     name = Column(String(200), nullable=False, index=True)
     description = Column(Text, nullable=True)
-    module = Column(String(100), nullable=True)
-    functional_module = Column(String(100), nullable=True)
-    functional_domain = Column(String(100), nullable=True)
-    preconditions = Column(Text, nullable=True)  # JSON string
-    steps = Column(Text, nullable=True)  # JSON string
-    expected_result = Column(Text, nullable=True)  # JSON string
-    remarks = Column(Text, nullable=True)
+
+    # === Status and priority (added for unified system) ===
+    status = Column(Enum(UnifiedTestCaseStatus), default=UnifiedTestCaseStatus.DRAFT, nullable=False, index=True)
+    priority = Column(String(20), default='medium', nullable=False)
+
+    # === Test case specific fields (null for test point stage) ===
+    module = Column(String(100), nullable=True)  # Test case module classification
+    functional_module = Column(String(100), nullable=True)  # Functional module
+    functional_domain = Column(String(100), nullable=True)  # Functional domain
+
+    # === Test execution details (JSON format, null for test point stage) ===
+    preconditions = Column(Text, nullable=True)  # JSON string: ["condition1", "condition2"]
+    steps = Column(Text, nullable=True)  # JSON string: [{"step": 1, "action": "...", "expected": "..."}]
+    expected_result = Column(Text, nullable=True)  # JSON string: ["result1", "result2"]
+    remarks = Column(Text, nullable=True)  # Additional remarks
+
+    # === Ordering and timestamps ===
     entity_order = Column(Float, nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+    generation_job_id = Column(String(36), ForeignKey("generation_jobs.id"), nullable=True, index=True)
 
-    # Relationships
-    group = relationship("TestCaseGroup", back_populates="test_case_items")
-    knowledge_entities = relationship("TestCaseEntity", back_populates="test_case_item", cascade="all, delete-orphan")
+    # === Relationships ===
+    project = relationship("Project", back_populates="test_cases")
+    test_point = relationship("TestPoint", back_populates="test_cases")
+    knowledge_entities = relationship("TestCaseEntity", back_populates="test_case_item", foreign_keys="TestCaseEntity.test_case_item_id", cascade="all, delete-orphan")
 
     def __repr__(self):
-        return f"<TestCaseItem(id={self.id}, test_case_id={self.test_case_id}, name={self.name})>"
+        return f"<UnifiedTestCase(id={self.id}, test_case_id={self.test_case_id}, name='{self.name}')>"
+
+    def is_test_point_stage(self) -> bool:
+        """Check if this record is in test point stage (no execution details)."""
+        return self.steps is None and self.preconditions is None and self.expected_result is None
+
+    def is_test_case_stage(self) -> bool:
+        """Check if this record is in test case stage (has execution details)."""
+        return not self.is_test_point_stage()
 
 
-# Keep TestCase for backward compatibility during migration
+# TestCaseItem model removed - replaced by UnifiedTestCase
+# Keep this comment for backward compatibility reference during migration
 
 
 class GenerationJob(Base):
@@ -169,6 +206,21 @@ class GenerationJob(Base):
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
     completed_at = Column(DateTime, nullable=True)
+
+    # Progress tracking fields for background tasks
+    current_step = Column(Integer, nullable=True, index=True)  # Current step in multi-step processes
+    total_steps = Column(Integer, nullable=True, index=True)    # Total number of steps
+    step_description = Column(Text, nullable=True)              # Description of current step
+    progress = Column(Integer, default=0, nullable=True)         # Progress percentage (0-100)
+
+    # Result storage fields
+    result_data = Column(Text, nullable=True)  # JSON string containing detailed results
+    generation_metadata = Column(Text, nullable=True)     # Additional metadata (JSON string)
+
+    # Performance tracking
+    duration_seconds = Column(Integer, nullable=True)  # Total duration in seconds
+    test_points_generated = Column(Integer, default=0, nullable=True)  # Number of test points generated
+    test_cases_generated = Column(Integer, default=0, nullable=True)   # Number of test cases generated
 
     # Relationships
     project = relationship("Project", back_populates="generation_jobs")
@@ -214,6 +266,9 @@ class KnowledgeRelation(Base):
     __tablename__ = "knowledge_relations"
     __table_args__ = (
         UniqueConstraint('subject_id', 'predicate', 'object_id', 'business_type', name='uq_relation'),
+        # Add composite indexes for common queries
+        Index('idx_relation_business_type', 'business_type', 'created_at'),
+        Index('idx_relation_predicate_object', 'predicate', 'object_id'),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -234,11 +289,16 @@ class KnowledgeRelation(Base):
 
 
 class TestCaseEntity(Base):
-    """Test case entity model for knowledge graph."""
+    """Test case entity model for knowledge graph - supports both legacy and unified test cases."""
     __tablename__ = "test_case_entities"
 
     id = Column(Integer, primary_key=True, index=True)
-    test_case_item_id = Column(Integer, ForeignKey("test_case_items.id"), nullable=False, index=True)
+    # Legacy support for old test_case_items
+    test_case_item_id = Column(Integer, ForeignKey("test_case_items.id"), nullable=True, index=True)
+    # New support for unified test_cases (also references test_case_items table)
+    # TODO: Add migration to create test_case_id field in database
+    # test_case_id = Column(Integer, ForeignKey("test_case_items.id"), nullable=True, index=True)
+
     entity_id = Column(Integer, ForeignKey("knowledge_entities.id"), nullable=False, index=True)
     name = Column(String(200), nullable=False, index=True)
     description = Column(Text, nullable=True)
@@ -247,11 +307,14 @@ class TestCaseEntity(Base):
     created_at = Column(DateTime, default=datetime.now, nullable=False)
 
     # Relationships
-    test_case_item = relationship("TestCaseItem", back_populates="knowledge_entities")
+    test_case_item = relationship("UnifiedTestCase", back_populates="knowledge_entities", foreign_keys=[test_case_item_id])
+    # TODO: Re-enable test_case relationship when test_case_id field is added to database
+    # test_case = relationship("UnifiedTestCase", back_populates="knowledge_entities", foreign_keys=[test_case_id], overlaps="test_case_item")
     entity = relationship("KnowledgeEntity", back_populates="test_cases")
 
     def __repr__(self):
-        return f"<TestCaseEntity(id={self.id}, name={self.name}, test_case_item_id={self.test_case_item_id})>"
+        # TODO: Update when test_case_id field is available
+        return f"<TestCaseEntity(id={self.id}, test_case_item_id={self.test_case_item_id}, entity_id={self.entity_id})>"
 
 
 class PromptType(enum.Enum):
@@ -260,7 +323,6 @@ class PromptType(enum.Enum):
     TEMPLATE = "template"                # Template prompts with variables
     BUSINESS_DESCRIPTION = "business_description"  # Business-specific descriptions
     SHARED_CONTENT = "shared_content"    # Shared/reusable content
-    REQUIREMENTS = "requirements"        # Requirements generation prompts
 
 
 class PromptStatus(enum.Enum):
@@ -269,6 +331,13 @@ class PromptStatus(enum.Enum):
     ACTIVE = "active"                    # Currently in use
     ARCHIVED = "archived"                # No longer used but kept
     DEPRECATED = "deprecated"            # Outdated, should not be used
+
+
+class GenerationStage(enum.Enum):
+    """Generation stage type for prompts."""
+    SINGLE_STAGE = "single_stage"                      # Single-stage generation prompts
+    TWO_STAGE_TEST_POINT = "two_stage_test_point"     # Two-stage test point generation prompts
+    TWO_STAGE_TEST_CASE = "two_stage_test_case"       # Two-stage test case generation prompts
 
 
 class PromptCategory(Base):
@@ -293,6 +362,14 @@ class PromptCategory(Base):
 class Prompt(Base):
     """Main prompt model for database storage."""
     __tablename__ = "prompts"
+    __table_args__ = (
+        # Composite indexes for prompt management queries
+        Index('idx_prompt_type_status', 'type', 'status'),
+        Index('idx_prompt_business_type', 'business_type', 'status'),
+        Index('idx_prompt_project_type', 'project_id', 'type'),
+        Index('idx_prompt_generation_stage', 'generation_stage', 'status'),
+        Index('idx_prompt_business_stage', 'business_type', 'generation_stage'),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
@@ -301,6 +378,7 @@ class Prompt(Base):
     type = Column(Enum(PromptType), nullable=False, index=True)
     business_type = Column(Enum(BusinessType), nullable=True, index=True)  # Associated business type if applicable
     status = Column(Enum(PromptStatus), default=PromptStatus.DRAFT, nullable=False, index=True)
+    generation_stage = Column(String(50), nullable=True, index=True, default='general')  # Generation stage type: test_point, test_case, general
 
     # Metadata
     author = Column(String(100), nullable=True)
@@ -388,7 +466,8 @@ class PromptCombination(Base):
 
     # Relationships
     project = relationship("Project")
-    business_types = relationship("BusinessTypeConfig", back_populates="prompt_combination")
+    # Note: BusinessTypeConfig relationships accessed via business_service methods
+    # to avoid complex relationship mapping issues
     items = relationship("PromptCombinationItem", back_populates="combination", cascade="all, delete-orphan")
 
     def __repr__(self):
@@ -406,6 +485,10 @@ class PromptCombinationItem(Base):
     variable_name = Column(String(100), nullable=True)  # Variable name for template substitution
     is_required = Column(Boolean, default=True, nullable=False)
 
+    # Two-stage generation support
+    item_type = Column(String(20), default='user_prompt', nullable=False)  # 'system_prompt' | 'user_prompt'
+    section_title = Column(String(200), nullable=True)  # For organizing prompts in sections
+
     # Metadata
     created_at = Column(DateTime, default=datetime.now, nullable=True)
 
@@ -415,3 +498,85 @@ class PromptCombinationItem(Base):
 
     def __repr__(self):
         return f"<PromptCombinationItem(id={self.id}, combination_id={self.combination_id}, order={self.order})>"
+
+
+class TestPointStatus(enum.Enum):
+    """Test point status for workflow management."""
+    DRAFT = "draft"                    # Initial draft, needs review
+    APPROVED = "approved"              # Approved and ready for test case generation
+    MODIFIED = "modified"              # Modified after approval, needs re-approval
+    COMPLETED = "completed"            # Test cases generated for this test point
+
+
+class TestPoint(Base):
+    """Test point model for two-stage test generation."""
+    __tablename__ = "test_points"
+    __table_args__ = (
+        # Composite indexes for test point management queries
+        Index('idx_test_point_business_status', 'business_type', 'status'),
+        Index('idx_test_point_project_business', 'project_id', 'business_type'),
+        Index('idx_test_point_created_business', 'created_at', 'business_type'),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    business_type = Column(Enum(BusinessType), nullable=False, index=True)
+
+    # Test point information
+    test_point_id = Column(String(50), nullable=False, index=True)  # TP001, TP002...
+    title = Column(String(200), nullable=False, index=True)
+    description = Column(Text, nullable=True)
+
+    # Simplified test point content - only name and description needed
+    # Complex structured fields removed for better user experience
+    priority = Column(String(20), default='medium', nullable=False)  # high, medium, low
+
+    # Status and workflow
+    status = Column(Enum(TestPointStatus), default=TestPointStatus.DRAFT, nullable=False, index=True)
+
+    # Generation metadata
+    generation_job_id = Column(String(36), ForeignKey("generation_jobs.id"), nullable=True, index=True)
+    llm_metadata = Column(Text, nullable=True)  # JSON string for LLM generation metadata
+
+    # Relationships
+    project = relationship("Project")
+    generation_job = relationship("GenerationJob")
+    test_cases = relationship("UnifiedTestCase", back_populates="test_point", overlaps="test_case_items")  # Reverse relationship for test cases generated from this test point
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+    def __repr__(self):
+        return f"<TestPoint(id={self.id}, test_point_id={self.test_point_id}, title='{self.title}', status={self.status})>"
+
+
+class TemplateVariableType(enum.Enum):
+    """Template variable types."""
+    PROJECT = "project"          # Project dimension variables
+    BUSINESS = "business"        # Business dimension variables
+    HISTORY_TEST_POINTS = "history_test_points"    # Historical test points
+    HISTORY_TEST_CASES = "history_test_cases"      # Historical test cases
+    CONTEXT = "context"          # Runtime context variables
+    CUSTOM = "custom"            # User-defined variables
+
+
+class TemplateVariable(Base):
+    """Template variable configuration table."""
+    __tablename__ = "template_variables"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False, index=True)
+    variable_type = Column(Enum(TemplateVariableType), nullable=False, index=True)
+    business_type = Column(String(20), nullable=True, index=True)  # Optional business type filter
+    source_query = Column(Text, nullable=True)  # SQL query or configuration to get value
+    default_value = Column(Text, nullable=True)  # Default value if source fails
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+
+    # Metadata
+    created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+    def __repr__(self):
+        return f"<TemplateVariable(id={self.id}, name='{self.name}', type='{self.variable_type}', active={self.is_active})>"

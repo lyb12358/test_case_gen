@@ -6,7 +6,10 @@ import json
 import os
 import re
 import time
+import logging
 from typing import Optional, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 
 class JSONExtractor:
@@ -80,7 +83,6 @@ class JSONExtractor:
 
         # All extraction attempts failed
         extraction_time = time.time() - start_time
-        print(f"[ERROR] JSON extraction failed | Time: {extraction_time:.3f}s")
         return None
 
     @staticmethod
@@ -95,7 +97,7 @@ class JSONExtractor:
         Returns:
             Optional[str]: Repaired JSON string or None if repair failed
         """
-        print("[REPAIR] Attempting JSON repair...")
+        logger.info("[REPAIR] Attempting JSON repair...")
 
         try:
             # Common repair patterns
@@ -122,7 +124,7 @@ class JSONExtractor:
 
             # Validate the repair
             json.loads(repaired)
-            print("[REPAIR] JSON repair successful")
+            logger.info("[REPAIR] JSON repair successful")
             return repaired
 
         except (json.JSONDecodeError, Exception) as e:
@@ -147,7 +149,7 @@ class JSONExtractor:
 
         # Check for expected structure
         if 'test_cases' not in result:
-            print("[WARN] Missing 'test_cases' key")
+            logger.info("[WARN] Missing 'test_cases' key")
             return result  # Still return for further processing
 
         test_cases = result.get('test_cases', [])

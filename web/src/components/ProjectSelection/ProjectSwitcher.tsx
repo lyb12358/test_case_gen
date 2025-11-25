@@ -4,8 +4,7 @@ import {
   Dropdown,
   Space,
   Typography,
-  Modal,
-  message
+  Modal
 } from 'antd';
 import {
   ProjectOutlined,
@@ -14,12 +13,14 @@ import {
 import { useProject } from '../../contexts/ProjectContext';
 import ProjectSelection from './ProjectSelection';
 import { ProjectCreate } from '../../services/projectService';
+import { useMessage } from '@/hooks/useMessage';
 
 const { Text } = Typography;
 
 const ProjectSwitcher: React.FC = () => {
   const { currentProject, projects, selectProject, createProject } = useProject();
   const [selectionVisible, setSelectionVisible] = useState(false);
+  const message = useMessage();
 
   const handleProjectSelect = (project: any) => {
     if (project.key === 'create') {
@@ -27,7 +28,9 @@ const ProjectSwitcher: React.FC = () => {
       setSelectionVisible(true);
     } else if (project.key === 'manage') {
       // Navigate to project management (to be implemented)
-      message.info('项目管理功能开发中...');
+      if (message && typeof message.info === 'function') {
+        message.info('项目管理功能开发中...');
+      }
     } else {
       const projectId = parseInt(project.key);
       const selectedProject = projects.find(p => p.id === projectId);
@@ -42,9 +45,13 @@ const ProjectSwitcher: React.FC = () => {
       const newProject = await createProject(projectData);
       selectProject(newProject);
       setSelectionVisible(false);
-      message.success(`项目 "${newProject.name}" 创建成功`);
+      if (message && typeof message.success === 'function') {
+        message.success(`项目 "${newProject.name}" 创建成功`);
+      }
     } catch (error: any) {
-      message.error(error.message || '创建项目失败');
+      if (message && typeof message.error === 'function') {
+        message.error(error.message || '创建项目失败');
+      }
     }
   };
 

@@ -20,7 +20,8 @@ import {
   Col,
   Statistic,
   Empty,
-  Spin
+  Spin,
+  Checkbox
 } from 'antd';
 import {
   PlusOutlined,
@@ -42,18 +43,24 @@ import {
   PromptSummary,
   PromptType,
   PromptStatus,
+  GenerationStage,
   BusinessType,
   getPromptTypeName,
   getPromptStatusName,
-  getBusinessTypeName,
+  getGenerationStageName,
+  getBusinessTypeNameSync,
   getPromptTypeOptions,
   getPromptStatusOptions,
+  getGenerationStageOptions,
   getBusinessTypeOptions
 } from '../../types/prompts';
 import { configService } from '../../services/configService';
 import promptService, { promptUtils } from '../../services/promptService';
 import { statsService } from '../../services/promptService';
 import { useProject } from '../../contexts/ProjectContext';
+import { projectService } from '../../services/projectService';
+import PromptDeletePreview from './PromptDeletePreview';
+import useDataConsistencyCheck from '../../hooks/useDataConsistencyCheck';
 
 const { Search } = Input;
 const { Option } = Select;
@@ -72,34 +79,63 @@ const PromptList: React.FC = () => {
   const [searchText, setSearchText] = useState('');
   const [typeFilter, setTypeFilter] = useState<PromptType | undefined>();
   const [statusFilter, setStatusFilter] = useState<PromptStatus | undefined>();
+  const [generationStageFilters, setGenerationStageFilters] = useState<GenerationStage[]>([]);
   const [businessTypeFilter, setBusinessTypeFilter] = useState<BusinessType | undefined>();
   const [selectedRowKeys, setSelectedRowKeys] = useState<number[]>([]);
+
+  // Delete preview state
+  const [deletePreviewVisible, setDeletePreviewVisible] = useState(false);
+  const [deletePreviewData, setDeletePreviewData] = useState<any>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
+  const [isBatchDelete, setIsBatchDelete] = useState(false);
+  const [isDataSyncing, setIsDataSyncing] = useState(false);
 
   // Dynamic configuration state
   const [configOptions, setConfigOptions] = useState<{
     promptTypes: Array<{value: string; label: string}>;
     promptStatuses: Array<{value: string; label: string}>;
     businessTypes: Array<{value: string; label: string}>;
+    generationStages: Array<{value: string; label: string}>;
   }>({
     promptTypes: [],
     promptStatuses: [],
-    businessTypes: []
+    businessTypes: [],
+    generationStages: []
   });
 
   // Load configuration options
   useEffect(() => {
     const loadConfiguration = async () => {
+      if (!currentProject) return;
+
       try {
-        const [promptTypes, promptStatuses, businessTypes] = await Promise.all([
+        const [promptTypes, promptStatuses, generationStages] = await Promise.all([
           getPromptTypeOptions(),
           getPromptStatusOptions(),
-          getBusinessTypeOptions()
+          getGenerationStageOptions()
         ]);
+
+        // Get business types from current project
+        let businessTypes: Array<{value: string; label: string}> = [];
+        try {
+          const projectBusinessTypes = await projectService.getProjectBusinessTypes(currentProject.id);
+          businessTypes = projectBusinessTypes
+            .filter(bt => bt.is_active) // Only include active business types
+            .map(bt => ({
+              value: bt.code,
+              label: bt.name
+            }));
+        } catch (btError) {
+          console.warn('Failed to load project business types, falling back to default:', btError);
+          // Fallback to default options
+          businessTypes = getBusinessTypeOptions();
+        }
 
         setConfigOptions({
           promptTypes,
           promptStatuses,
-          businessTypes
+          businessTypes,
+          generationStages
         });
       } catch (error) {
         console.error('Failed to load configuration options:', error);
@@ -108,7 +144,7 @@ const PromptList: React.FC = () => {
     };
 
     loadConfiguration();
-  }, []);
+  }, [currentProject]);
 
   // Fetch prompts
   const {
@@ -117,13 +153,14 @@ const PromptList: React.FC = () => {
     error,
     refetch
   } = useQuery({
-    queryKey: ['prompts', currentPage, pageSize, searchText, typeFilter, statusFilter, businessTypeFilter, currentProject?.id],
+    queryKey: ['prompts', currentPage, pageSize, searchText, typeFilter, statusFilter, generationStageFilters, businessTypeFilter, currentProject?.id],
     queryFn: () => promptService.prompt.getPrompts({
       page: currentPage,
       size: pageSize,
       search: searchText || undefined,
       type: typeFilter,
       status: statusFilter,
+      generation_stage: generationStageFilters.length > 0 ? generationStageFilters : undefined,
       business_type: businessTypeFilter,
       project_id: currentProject?.id
     }),
@@ -137,20 +174,82 @@ const PromptList: React.FC = () => {
   } = useQuery({
     queryKey: ['prompt-stats', currentProject?.id],
     queryFn: () => statsService.getOverviewStats(currentProject?.id),
-    staleTime: 5 * 60 * 1000, // 5 minutes cache
+    staleTime: 30 * 1000, // 30 seconds cache (reduced from 5 minutes for better consistency)
+    enabled: !!currentProject, // Only enable when project is selected
+    // Depend on prompts data to ensure stats are updated after list changes
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: true
   });
+
+  // Ensure stats data is refreshed when prompts data changes
+  useEffect(() => {
+    if (promptsData && statsData) {
+      // Check if there's a consistency issue
+      if (promptsData.total < (statsData.active_prompts || 0)) {
+        // Force refresh stats data if inconsistent
+        queryClient.invalidateQueries({ queryKey: ['prompt-stats'] });
+      }
+    }
+  }, [promptsData, statsData, queryClient]);
+
+  // Data consistency check
+  const {
+    isConsistent,
+    hasErrors,
+    hasWarnings
+  } = useDataConsistencyCheck(promptsData, statsData);
 
   // Delete prompt mutation
   const deletePromptMutation = useMutation({
     mutationFn: promptService.prompt.deletePrompt,
-    onSuccess: () => {
-      message.success('提示词删除成功');
+    onMutate: () => {
+      setIsDataSyncing(true);
+    },
+    onSuccess: async () => {
+      message.success('提示词删除成功，正在同步数据...');
       setSelectedRowKeys([]);
-      queryClient.invalidateQueries({ queryKey: ['prompts'] });
-      queryClient.invalidateQueries({ queryKey: ['prompt-stats'] });
+
+      // First invalidate prompts data
+      await queryClient.invalidateQueries({ queryKey: ['prompts'] });
+
+      // Wait a bit to ensure the list data is updated, then invalidate stats
+      // This ensures the stats API gets the most recent data
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['prompt-stats'] });
+        // Hide syncing state after a short delay
+        setTimeout(() => {
+          setIsDataSyncing(false);
+          message.success('数据同步完成');
+        }, 500);
+      }, 100);
     },
     onError: (error: any) => {
+      setIsDataSyncing(false);
       message.error(`删除失败: ${error.response?.data?.detail || error.message}`);
+    }
+  });
+
+  // Delete preview mutations
+  const getDeletePreviewMutation = useMutation({
+    mutationFn: promptService.prompt.getDeletePreview,
+    onSuccess: (data) => {
+      setDeletePreviewData(data);
+      setDeletePreviewVisible(true);
+    },
+    onError: (error: any) => {
+      message.error(`获取删除预览失败: ${error.response?.data?.detail || error.message}`);
+    }
+  });
+
+  const getBatchDeletePreviewMutation = useMutation({
+    mutationFn: promptService.prompt.getBatchDeletePreview,
+    onSuccess: (data) => {
+      setDeletePreviewData(data);
+      setDeletePreviewVisible(true);
+    },
+    onError: (error: any) => {
+      message.error(`获取批量删除预览失败: ${error.response?.data?.detail || error.message}`);
     }
   });
 
@@ -159,13 +258,28 @@ const PromptList: React.FC = () => {
     mutationFn: async (ids: number[]) => {
       await Promise.all(ids.map(id => promptService.prompt.deletePrompt(id)));
     },
-    onSuccess: () => {
-      message.success(`批量删除 ${selectedRowKeys.length} 个提示词成功`);
+    onMutate: () => {
+      setIsDataSyncing(true);
+    },
+    onSuccess: async () => {
+      message.success(`批量删除 ${selectedRowKeys.length} 个提示词成功，正在同步数据...`);
       setSelectedRowKeys([]);
-      queryClient.invalidateQueries({ queryKey: ['prompts'] });
-      queryClient.invalidateQueries({ queryKey: ['prompt-stats'] });
+
+      // First invalidate prompts data
+      await queryClient.invalidateQueries({ queryKey: ['prompts'] });
+
+      // Wait a bit to ensure the list data is updated, then invalidate stats
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['prompt-stats'] });
+        // Hide syncing state after a short delay
+        setTimeout(() => {
+          setIsDataSyncing(false);
+          message.success('数据同步完成');
+        }, 500);
+      }, 100);
     },
     onError: (error: any) => {
+      setIsDataSyncing(false);
       message.error(`批量删除失败: ${error.response?.data?.detail || error.message}`);
     }
   });
@@ -175,6 +289,7 @@ const PromptList: React.FC = () => {
     mutationFn: promptService.prompt.clonePrompt,
     onSuccess: (data: any) => {
       message.success('提示词克隆成功');
+      queryClient.invalidateQueries({ queryKey: ['prompts'] });
       queryClient.invalidateQueries({ queryKey: ['prompt-stats'] });
       navigate(`/prompts/${data.id}/edit`);
     },
@@ -210,6 +325,7 @@ const PromptList: React.FC = () => {
     setSearchText('');
     setTypeFilter(undefined);
     setStatusFilter(undefined);
+    setGenerationStageFilters([]);
     setBusinessTypeFilter(undefined);
     setCurrentPage(1);
   };
@@ -224,7 +340,9 @@ const PromptList: React.FC = () => {
   };
 
   const handleDelete = (id: number) => {
-    deletePromptMutation.mutate(id);
+    setPendingDeleteId(id);
+    setIsBatchDelete(false);
+    getDeletePreviewMutation.mutate(id);
   };
 
   const handleClone = (id: number) => {
@@ -236,16 +354,26 @@ const PromptList: React.FC = () => {
       message.warning('请选择要删除的提示词');
       return;
     }
-    Modal.confirm({
-      title: '批量删除确认',
-      content: `确定要删除选中的 ${selectedRowKeys.length} 个提示词吗？此操作不可恢复。`,
-      okText: '确定',
-      cancelText: '取消',
-      okType: 'danger',
-      onOk: () => {
-        batchDeleteMutation.mutate(selectedRowKeys);
-      }
-    });
+    setPendingDeleteId(null);
+    setIsBatchDelete(true);
+    getBatchDeletePreviewMutation.mutate(selectedRowKeys);
+  };
+
+  // Delete preview handlers
+  const handleDeletePreviewCancel = () => {
+    setDeletePreviewVisible(false);
+    setDeletePreviewData(null);
+    setPendingDeleteId(null);
+    setIsBatchDelete(false);
+  };
+
+  const handleDeletePreviewConfirm = () => {
+    if (isBatchDelete && selectedRowKeys.length > 0) {
+      batchDeleteMutation.mutate(selectedRowKeys);
+    } else if (pendingDeleteId) {
+      deletePromptMutation.mutate(pendingDeleteId);
+    }
+    handleDeletePreviewCancel();
   };
 
   // Table columns
@@ -292,12 +420,31 @@ const PromptList: React.FC = () => {
       width: 120,
       render: (businessType: BusinessType) => (
         businessType ? (
-          <Tag>{getBusinessTypeName(businessType)}</Tag>
+          <Tag>{getBusinessTypeNameSync(businessType)}</Tag>
         ) : (
           <span style={{ color: '#999' }}>-</span>
         )
       ),
       filters: configOptions.businessTypes.map(({value, label}) => ({
+        text: label,
+        value: value,
+      })),
+    },
+    {
+      title: '生成阶段',
+      dataIndex: 'generation_stage',
+      key: 'generation_stage',
+      width: 140,
+      render: (generationStage: GenerationStage) => (
+        generationStage ? (
+          <Tag color={promptUtils.getGenerationStageColor(generationStage)}>
+            {getGenerationStageName(generationStage)}
+          </Tag>
+        ) : (
+          <span style={{ color: '#999' }}>-</span>
+        )
+      ),
+      filters: configOptions.generationStages.map(({value, label}) => ({
         text: label,
         value: value,
       })),
@@ -373,20 +520,13 @@ const PromptList: React.FC = () => {
             />
           </Tooltip>
           <Tooltip title="删除">
-            <Popconfirm
-              title="确定要删除这个提示词吗？"
-              onConfirm={() => handleDelete(record.id)}
-              okText="确定"
-              cancelText="取消"
-              okType="danger"
-            >
-              <Button
-                type="text"
-                danger
-                icon={<DeleteOutlined />}
-                loading={deletePromptMutation.isPending}
-              />
-            </Popconfirm>
+            <Button
+              type="text"
+              danger
+              icon={<DeleteOutlined />}
+              loading={getDeletePreviewMutation.isPending || deletePromptMutation.isPending}
+              onClick={() => handleDelete(record.id)}
+            />
           </Tooltip>
         </Space>
       ),
@@ -437,12 +577,38 @@ const PromptList: React.FC = () => {
 
   return (
     <div style={{ padding: '24px' }}>
+      {/* Data Consistency Warning */}
+      {!isConsistent && (
+        <Row style={{ marginBottom: '16px' }}>
+          <Col span={24}>
+            <Alert
+              message="数据不一致警告"
+              description="检测到统计数据可能不一致，正在自动刷新..."
+              type="warning"
+              showIcon
+              action={
+                <Button size="small" onClick={() => {
+                  queryClient.invalidateQueries({ queryKey: ['prompt-stats'] });
+                }}>
+                  立即刷新
+                </Button>
+              }
+            />
+          </Col>
+        </Row>
+      )}
+
       {/* Statistics Cards */}
       <Row gutter={16} style={{ marginBottom: '16px' }}>
         <Col span={6}>
           <Card>
             <Statistic
-              title="总提示词数"
+              title={
+                <span>
+                  总提示词数
+                  {isDataSyncing && <Spin size="small" style={{ marginLeft: '8px' }} />}
+                </span>
+              }
               value={promptsData?.total || 0}
               valueStyle={{ color: '#3f8600' }}
             />
@@ -451,10 +617,22 @@ const PromptList: React.FC = () => {
         <Col span={6}>
           <Card>
             <Statistic
-              title="活跃提示词"
+              title={
+                <span>
+                  活跃提示词
+                  {isDataSyncing && <Spin size="small" style={{ marginLeft: '8px' }} />}
+                </span>
+              }
               value={statsData?.active_prompts || 0}
-              valueStyle={{ color: '#1890ff' }}
+              valueStyle={{
+                color: promptsData && statsData && promptsData.total < statsData.active_prompts ? '#ff4d4f' : '#1890ff'
+              }}
             />
+            {promptsData && statsData && promptsData.total < statsData.active_prompts && (
+              <div style={{ fontSize: '12px', color: '#ff4d4f', marginTop: '4px' }}>
+                数据不一致
+              </div>
+            )}
           </Card>
         </Col>
         <Col span={6}>
@@ -507,6 +685,15 @@ const PromptList: React.FC = () => {
                 value={statusFilter}
                 onChange={(value) => handleFilterChange('status', value)}
                 options={configOptions.promptStatuses}
+              />
+
+              <Checkbox.Group
+                options={[
+                  { label: '测试点生成', value: 'two_stage_test_point' },
+                  { label: '测试用例生成', value: 'two_stage_test_case' }
+                ]}
+                value={generationStageFilters}
+                onChange={setGenerationStageFilters}
               />
 
               <Select
@@ -610,6 +797,16 @@ const PromptList: React.FC = () => {
           )}
         </Spin>
       </Card>
+
+      {/* Delete Preview Modal */}
+      <PromptDeletePreview
+        visible={deletePreviewVisible}
+        onCancel={handleDeletePreviewCancel}
+        onConfirm={handleDeletePreviewConfirm}
+        loading={getDeletePreviewMutation.isPending || getBatchDeletePreviewMutation.isPending}
+        data={deletePreviewData}
+        isBatch={isBatchDelete}
+      />
     </div>
   );
 };

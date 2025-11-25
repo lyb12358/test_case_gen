@@ -25,7 +25,7 @@ import {
   ReloadOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
-import { testCaseService } from '@/services/testCaseService';
+import { unifiedGenerationService } from '@/services';
 import { taskService } from '@/services/taskService';
 import { projectService } from '@/services/projectService';
 import { useProject } from '@/contexts/ProjectContext';
@@ -39,7 +39,7 @@ const Dashboard: React.FC = () => {
   // 获取测试用例数据
   const { data: testCasesData, isLoading: testCasesLoading } = useQuery({
     queryKey: ['testCases'],
-    queryFn: testCaseService.getAllTestCases,
+    queryFn: () => unifiedGenerationService.getByProject(currentProject?.id),
     refetchInterval: 30000, // 30秒自动刷新
   });
 
@@ -60,22 +60,21 @@ const Dashboard: React.FC = () => {
   
   // 计算统计数据
   const stats = React.useMemo(() => {
-    const testCaseGroups = testCasesData?.test_case_groups || [];
+    const testCases = testCasesData?.test_case_items || [];
     const tasks = tasksData?.tasks || [];
 
     // 按业务类型分组测试用例，计算实际测试用例数量
     const businessTypeStats = new Map<string, { count: number; latestUpdate?: string }>();
-    testCaseGroups.forEach((group) => {
-      const type = group.business_type;
-      const actualCount = group.test_case_items?.length || 0; // 获取实际的测试用例数量
+    testCases.forEach((testCase) => {
+      const type = testCase.business_type;
 
       if (!businessTypeStats.has(type)) {
-        businessTypeStats.set(type, { count: actualCount, latestUpdate: group.updated_at });
+        businessTypeStats.set(type, { count: 1, latestUpdate: testCase.updated_at });
       } else {
         const existing = businessTypeStats.get(type)!;
-        existing.count += actualCount; // 累加实际数量
-        if (existing.latestUpdate && group.updated_at && group.updated_at > existing.latestUpdate) {
-          existing.latestUpdate = group.updated_at;
+        existing.count += 1; // 累加实际数量
+        if (existing.latestUpdate && testCase.updated_at && testCase.updated_at > existing.latestUpdate) {
+          existing.latestUpdate = testCase.updated_at;
         }
       }
     });
@@ -85,7 +84,7 @@ const Dashboard: React.FC = () => {
     const runningTasks = tasks.filter((task) => task.status === 'running').length;
 
     // 计算总测试用例数量
-    const totalTestCases = testCaseGroups.reduce((sum, group) => sum + (group.test_case_items?.length || 0), 0);
+    const totalTestCases = testCases.length;
 
     // 项目统计
     const projectStats = projectsData?.projects || [];

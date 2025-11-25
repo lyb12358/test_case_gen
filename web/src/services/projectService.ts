@@ -1,10 +1,20 @@
 import apiClient from './api';
 
+export interface BusinessTypeConfig {
+  id: number;
+  code: string;
+  name: string;
+  description?: string;
+  project_id: number;
+  is_active: boolean;
+}
+
 export interface Project {
   id: number;
   name: string;
   description?: string;
   is_active: boolean;
+  business_types?: BusinessTypeConfig[];
   created_at: string;
   updated_at: string;
 }
@@ -24,7 +34,7 @@ export interface ProjectUpdate {
 export interface ProjectStats {
   project_id: number;
   project_name: string;
-  test_case_groups_count: number;
+  test_points_count: number;
   test_cases_count: number;
   generation_jobs_count: number;
   knowledge_entities_count: number;
@@ -81,6 +91,18 @@ class ProjectService {
   async getProjectStats(projectId: number): Promise<ProjectStatsResponse> {
     const response = await apiClient.get<ProjectStatsResponse>(`${this.baseUrl}/${projectId}/stats`);
     return response.data;
+  }
+
+  // Get business type configs for a project
+  async getProjectBusinessTypes(projectId: number): Promise<BusinessTypeConfig[]> {
+    const response = await apiClient.get<{items: BusinessTypeConfig[]}>('/api/v1/business/business-types', {
+      params: {
+        project_id: projectId,
+        is_active: true,
+        size: 100 // Get all business types for the project
+      }
+    });
+    return response.data.items;
   }
 
   // Get or create default project (远控场景)

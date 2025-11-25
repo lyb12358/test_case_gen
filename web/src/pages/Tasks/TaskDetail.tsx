@@ -25,6 +25,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { taskService } from '../../services/taskService';
+import { businessService } from '../../services/businessService';
 
 const { Title, Text } = Typography;
 
@@ -45,6 +46,9 @@ const TaskDetail: React.FC = () => {
     enabled: !!id,
     refetchInterval: autoRefresh ? 2000 : false,
   });
+
+  // Note: System now uses unified two-stage generation only
+  // No need to fetch generation mode information
 
   useEffect(() => {
     if (task && (task.status === 'completed' || task.status === 'failed')) {
@@ -131,27 +135,28 @@ const TaskDetail: React.FC = () => {
         message: '开始执行任务...'
       });
 
-      // Progress logs based on progress percentage
+      // Progress logs based on progress percentage (unified two-stage generation)
       if (task.progress && task.progress > 0) {
+        // System now uses unified two-stage generation only
         if (task.progress >= 25) {
           logs.push({
             timestamp: estimatedStartTime.add(1, 'minute').toISOString(),
             level: 'info',
-            message: '正在分析业务类型和提示词配置...'
+            message: '阶段 1: 正在生成测试点...'
           });
         }
         if (task.progress >= 50) {
           logs.push({
             timestamp: estimatedStartTime.add(2, 'minute').toISOString(),
             level: 'info',
-            message: '正在生成测试用例...'
+            message: '阶段 2: 正在基于测试点生成测试用例...'
           });
         }
         if (task.progress >= 75) {
           logs.push({
             timestamp: estimatedStartTime.add(3, 'minute').toISOString(),
             level: 'info',
-            message: '正在验证和格式化测试用例...'
+            message: isTwoStage ? '正在整合测试结果并保存...' : '正在验证和格式化测试用例...'
           });
         }
       }
@@ -280,6 +285,9 @@ const TaskDetail: React.FC = () => {
           </Descriptions.Item>
           <Descriptions.Item label="业务类型">
             {task.business_type ? getBusinessTypeFullName(task.business_type) : '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label="生成模式">
+            <Tag color="green">两阶段生成</Tag>
           </Descriptions.Item>
           <Descriptions.Item label="状态">
             {getStatusTag(task.status)}

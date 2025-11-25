@@ -45,9 +45,10 @@ import rehypeRaw from 'rehype-raw';
 import {
   getPromptTypeName,
   getPromptStatusName,
-  getBusinessTypeName
+  getBusinessTypeNameSync
 } from '../../types/prompts';
 import promptService, { promptUtils } from '../../services/promptService';
+import PromptDeletePreview from './PromptDeletePreview';
 import 'highlight.js/styles/github.css';
 
 const { Title, Text } = Typography;
@@ -59,6 +60,10 @@ const PromptDetail: React.FC = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [copiedContent, setCopiedContent] = useState(false);
+
+  // Delete preview state
+  const [deletePreviewVisible, setDeletePreviewVisible] = useState(false);
+  const [deletePreviewData, setDeletePreviewData] = useState<any>(null);
 
   // Fetch prompt data
   const {
@@ -93,6 +98,18 @@ const PromptDetail: React.FC = () => {
     }
   });
 
+  // Delete preview mutation
+  const getDeletePreviewMutation = useMutation({
+    mutationFn: promptService.prompt.getDeletePreview,
+    onSuccess: (data) => {
+      setDeletePreviewData(data);
+      setDeletePreviewVisible(true);
+    },
+    onError: (error: any) => {
+      message.error(`获取删除预览失败: ${error.response?.data?.detail || error.message}`);
+    }
+  });
+
   // Clone prompt mutation
   const clonePromptMutation = useMutation({
     mutationFn: promptService.prompt.clonePrompt,
@@ -114,17 +131,21 @@ const PromptDetail: React.FC = () => {
 
   const handleDelete = () => {
     if (id && id !== 'undefined') {
-      Modal.confirm({
-        title: '删除确认',
-        content: '确定要删除这个提示词吗？此操作不可恢复。',
-        okText: '确定',
-        cancelText: '取消',
-        okType: 'danger',
-        onOk: () => {
-          deletePromptMutation.mutate(Number(id));
-        }
-      });
+      getDeletePreviewMutation.mutate(Number(id));
     }
+  };
+
+  // Delete preview handlers
+  const handleDeletePreviewCancel = () => {
+    setDeletePreviewVisible(false);
+    setDeletePreviewData(null);
+  };
+
+  const handleDeletePreviewConfirm = () => {
+    if (id && id !== 'undefined') {
+      deletePromptMutation.mutate(Number(id));
+    }
+    handleDeletePreviewCancel();
   };
 
   const handleClone = () => {
@@ -376,7 +397,7 @@ const PromptDetail: React.FC = () => {
                   {getPromptTypeName(prompt.type)}
                 </Tag>
                 {prompt.business_type && (
-                  <Tag>{getBusinessTypeName(prompt.business_type)}</Tag>
+                  <Tag>{getBusinessTypeNameSync(prompt.business_type)}</Tag>
                 )}
               </Space>
             </Space>
@@ -425,7 +446,7 @@ const PromptDetail: React.FC = () => {
                 danger
                 icon={<DeleteOutlined />}
                 onClick={handleDelete}
-                loading={deletePromptMutation.isPending}
+                loading={getDeletePreviewMutation.isPending || deletePromptMutation.isPending}
               >
                 删除
               </Button>
@@ -522,7 +543,7 @@ const PromptDetail: React.FC = () => {
               </Descriptions.Item>
               <Descriptions.Item label="业务类型">
                 {prompt.business_type ? (
-                  <Tag>{getBusinessTypeName(prompt.business_type)}</Tag>
+                  <Tag>{getBusinessTypeNameSync(prompt.business_type)}</Tag>
                 ) : (
                   '-'
                 )}
@@ -644,6 +665,16 @@ const PromptDetail: React.FC = () => {
         <Divider />
         <p>提示：复制链接分享给其他用户查看此提示词。</p>
       </Modal>
+
+      {/* Delete Preview Modal */}
+      <PromptDeletePreview
+        visible={deletePreviewVisible}
+        onCancel={handleDeletePreviewCancel}
+        onConfirm={handleDeletePreviewConfirm}
+        loading={getDeletePreviewMutation.isPending}
+        data={deletePreviewData}
+        isBatch={false}
+      />
     </div>
   );
 };

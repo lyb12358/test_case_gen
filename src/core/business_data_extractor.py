@@ -4,7 +4,10 @@ Business data extractor for building knowledge graph from business descriptions.
 
 import os
 import re
+import logging
 from typing import Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 from ..database.models import BusinessType, EntityType
 from ..database.operations import DatabaseOperations
 from ..utils.file_handler import load_text_file
@@ -39,7 +42,7 @@ class BusinessDataExtractor:
         try:
             # Clear existing knowledge graph data
             self.db_operations.clear_knowledge_graph()
-            print("Cleared existing knowledge graph data")
+            logger.info("Cleared existing knowledge graph data")
 
             # Create TSP root scenario entity
             self._create_tsp_scenario_entity()
@@ -53,12 +56,10 @@ class BusinessDataExtractor:
                 if not success:
                     print(f"Failed to extract data for {business_type.value}")
                     return False
-
-            print("Successfully extracted all business data")
+            logger.info("Successfully extracted all business data")
             return True
 
         except Exception as e:
-            print(f"Error extracting business data: {e}")
             return False
 
     def get_business_file_path(self, business_type: str) -> str:
@@ -147,7 +148,6 @@ class BusinessDataExtractor:
             return True
 
         except Exception as e:
-            print(f"Error extracting data for {business_type.value}: {e}")
             return False
 
     def _get_interface_for_business(self, business_type: str) -> str:
@@ -199,10 +199,9 @@ class BusinessDataExtractor:
                 parent_id=None,
                 entity_order=0.0
             )
-            print("Created TSP远控场景 root entity")
+            logger.info("Created TSP remote control scenario root entity")
             return True
         except Exception as e:
-            print(f"Error creating TSP scenario entity: {e}")
             return False
 
     def _create_interface_entities(self) -> bool:
@@ -219,14 +218,32 @@ class BusinessDataExtractor:
 
             import json
 
-            # Interface definitions
+            # Get all active business types from database
+            all_business_types = []
+            try:
+                from ..database.database import DatabaseManager
+                from ..database.models import BusinessTypeConfig
+                from ..utils.config import Config
+
+                config = Config()
+                with DatabaseManager(config).get_session() as db:
+                    business_configs = db.query(BusinessTypeConfig).filter(
+                        BusinessTypeConfig.is_active == True
+                    ).all()
+                    all_business_types = [bc.code for bc in business_configs]
+            except Exception as e:
+                logger.warning(f"Failed to get business types from database: {e}")
+                # Fallback to empty list if database query fails
+                all_business_types = []
+
+            # Interface definitions with dynamic business types
             interfaces = [
                 {
                     "name": "TSP远程控制接口",
                     "endpoint": "/v1.0/remoteControl/control",
                     "method": "POST",
                     "description": "TSP远程控制统一接口，用于大多数业务类型",
-                    "related_business_types": ["RCC", "RFD", "ZAB", "ZBA", "PAB", "PAE", "PAI", "RCE", "RDL_RDU", "RDO_RDC", "RES", "RHL", "RPP", "RSM", "RWS", "ZAD", "ZAE", "ZAF", "ZAG", "ZAH", "ZAJ", "ZAM", "ZAN", "ZAS", "ZBB"],
+                    "related_business_types": [bt for bt in all_business_types if bt not in ["ZAV", "ZAY", "WEIXIU_RSM", "VIVO_WATCH"]],
                     "entity_order": 10.0
                 },
                 {
@@ -234,7 +251,7 @@ class BusinessDataExtractor:
                     "endpoint": "/inner/v1.0/remoteControl/aiClimate",
                     "method": "POST",
                     "description": "智能空调远控接口，用于AI智能通风功能",
-                    "related_business_types": ["ZAV"],
+                    "related_business_types": [bt for bt in all_business_types if bt == "ZAV"],
                     "entity_order": 11.0
                 },
                 {
@@ -242,7 +259,7 @@ class BusinessDataExtractor:
                     "endpoint": "/inner/v1.0/remoteControl/control",
                     "method": "POST",
                     "description": "内部远控接口，用于智驾唤醒、维修模式、vivo手表控制等功能",
-                    "related_business_types": ["ZAY", "WEIXIU_RSM", "VIVO_WATCH"],
+                    "related_business_types": [bt for bt in all_business_types if bt in ["ZAY", "WEIXIU_RSM", "VIVO_WATCH"]],
                     "entity_order": 12.0
                 }
             ]
@@ -278,7 +295,6 @@ class BusinessDataExtractor:
 
             return True
         except Exception as e:
-            print(f"Error creating interface entities: {e}")
             return False
 
     def get_extraction_summary(self) -> Dict[str, int]:

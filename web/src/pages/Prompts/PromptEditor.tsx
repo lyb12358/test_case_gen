@@ -27,7 +27,9 @@ import {
   EditOutlined,
   LeftOutlined,
   FullscreenOutlined,
-  FullscreenExitOutlined
+  FullscreenExitOutlined,
+  BookOutlined,
+  CodeOutlined
 } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -42,9 +44,13 @@ import {
   PromptUpdate,
   getPromptTypeOptions,
   getPromptStatusOptions,
+  getGenerationStageOptions,
   getBusinessTypeOptions
 } from '../../types/prompts';
 import promptService, { promptUtils } from '../../services/promptService';
+import { useProject } from '../../contexts/ProjectContext';
+import { projectService } from '../../services/projectService';
+import PromptVariableGuide from '../../components/PromptBuilder/PromptVariableGuide';
 import 'highlight.js/styles/github.css';
 
 // Configure Monaco Editor to use local instance
@@ -74,6 +80,7 @@ const PromptEditor: React.FC = () => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
+  const { currentProject } = useProject();
   const [form] = Form.useForm();
 
   // State
@@ -83,19 +90,27 @@ const PromptEditor: React.FC = () => {
   const [detectedVariables, setDetectedVariables] = useState<string[]>([]);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [hasStartedEditing, setHasStartedEditing] = useState(false);
   const [isAutoSave, setIsAutoSave] = useState(true);
   const [isMonacoLoading, setIsMonacoLoading] = useState(true);
   const [monacoError, setMonacoError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isManualSave, setIsManualSave] = useState(false);
+  const [editorRef, setEditorRef] = useState<any>(null);  // Monaco editor reference
+  const [activeTab, setActiveTab] = useState('editor');    // Active tab state
+  const [isStatusChanging, setIsStatusChanging] = useState(false); // Status change indicator
 
   // Dynamic configuration state
   const [configOptions, setConfigOptions] = useState<{
     promptTypes: Array<{value: string; label: string}>;
     promptStatuses: Array<{value: string; label: string}>;
     businessTypes: Array<{value: string; label: string}>;
+    generationStages: Array<{value: string; label: string}>;
   }>({
     promptTypes: [],
     promptStatuses: [],
-    businessTypes: []
+    businessTypes: [],
+    generationStages: []
   });
 
   // 判断是否为新建提示词 - 如果没有ID或ID为'create'，则为新建
@@ -110,25 +125,43 @@ const PromptEditor: React.FC = () => {
   } = useQuery({
     queryKey: ['prompt', id],
     queryFn: () => promptService.prompt.getPrompt(Number(id)),
-    enabled: !isNew && !!id && id !== 'undefined' && id !== 'NaN'
-  });
-
-  // Fetch categories
-  const { data: categories } = useQuery({
-    queryKey: ['categories'],
-    queryFn: promptService.category.getCategories
+    enabled: !isNew && !!id && id !== 'undefined'
   });
 
   // Create prompt mutation
   const createPromptMutation = useMutation({
     mutationFn: promptService.prompt.createPrompt,
+    onMutate: () => {
+      setIsStatusChanging(true);
+    },
     onSuccess: (data) => {
-      message.success('提示词创建成功');
       setHasUnsavedChanges(false);
+
+      if (isManualSave) {
+        message.success('提示词创建成功，正在更新统计数据...');
+        setSaveSuccess(true);
+        // 2秒后重置成功状态
+        setTimeout(() => setSaveSuccess(false), 2000);
+      }
+
+      // Invalidate relevant queries after creation
+      queryClient.invalidateQueries({ queryKey: ['prompts'] });
+      queryClient.invalidateQueries({ queryKey: ['prompt-stats'] });
+
+      setTimeout(() => {
+        setIsStatusChanging(false);
+        message.success('数据同步完成');
+      }, 1000);
+
       navigate(`/prompts/${data.id}`);
     },
     onError: (error: any) => {
+      setIsStatusChanging(false);
       message.error(`创建失败: ${error.response?.data?.detail || error.message}`);
+    },
+    onSettled: () => {
+      // mutation完成后的清理工作
+      console.log('Create prompt mutation settled');
     }
   });
 
@@ -136,14 +169,38 @@ const PromptEditor: React.FC = () => {
   const updatePromptMutation = useMutation({
     mutationFn: (data: { id: number; prompt: PromptUpdate }) =>
       promptService.prompt.updatePrompt(data.id, data.prompt),
+    onMutate: () => {
+      setIsStatusChanging(true);
+    },
     onSuccess: () => {
-      message.success('提示词保存成功');
       setHasUnsavedChanges(false);
+
+      // 只有手动保存才显示通知和按钮状态变化
+      if (isManualSave) {
+        message.success('提示词保存成功，正在更新统计数据...');
+        setSaveSuccess(true);
+        // 2秒后重置成功状态
+        setTimeout(() => setSaveSuccess(false), 2000);
+      }
+
+      console.log('PromptEditor: Update successful');
+
       queryClient.invalidateQueries({ queryKey: ['prompt', id] });
       queryClient.invalidateQueries({ queryKey: ['prompts'] });
+      queryClient.invalidateQueries({ queryKey: ['prompt-stats'] });
+
+      setTimeout(() => {
+        setIsStatusChanging(false);
+        message.success('数据同步完成');
+      }, 1000);
     },
     onError: (error: any) => {
+      setIsStatusChanging(false);
       message.error(`保存失败: ${error.response?.data?.detail || error.message}`);
+    },
+    onSettled: () => {
+      // mutation完成后的清理工作
+      console.log('Update prompt mutation settled');
     }
   });
 
@@ -152,15 +209,78 @@ const PromptEditor: React.FC = () => {
     const newContent = value || '';
     setContent(newContent);
     setHasUnsavedChanges(true);
-  }, []);
+
+    // 标记用户已开始编辑
+    if (!hasStartedEditing && newContent.length > 0) {
+      setHasStartedEditing(true);
+    }
+  }, [hasStartedEditing]);
+
+  // Handle variable insertion
+  const handleInsertVariable = useCallback((variableName: string) => {
+    if (editorRef) {
+      const editor = editorRef;
+      const position = editor.getPosition();
+      const model = editor.getModel();
+
+      if (model) {
+        // Insert variable at current cursor position
+        model.pushEditOperations(
+          [],
+          [{
+            range: {
+              startLineNumber: position.lineNumber,
+              startColumn: position.column,
+              endLineNumber: position.lineNumber,
+              endColumn: position.column
+            },
+            text: variableName
+          }],
+          () => null
+        );
+
+        // Move cursor to the end of inserted variable
+        editor.setPosition({
+          lineNumber: position.lineNumber,
+          column: position.column + variableName.length
+        });
+
+        // Focus the editor
+        editor.focus();
+
+        // Mark as having unsaved changes
+        setHasUnsavedChanges(true);
+      }
+    } else {
+      // Fallback: copy to clipboard if editor is not available
+      navigator.clipboard.writeText(variableName).then(() => {
+        message.success('变量已复制到剪贴板');
+      });
+    }
+  }, [editorRef]);
 
   // Handle save
   const handleSave = useCallback((showMessage = true) => {
-    console.log('PromptEditor: handleSave called', { showMessage, contentLength: content.length, isNew });
+    console.log('PromptEditor: handleSave called', {
+      showMessage,
+      contentLength: content.length,
+      isNew,
+      isAutoSave: !showMessage
+    });
 
-    if (!content.trim()) {
+    // 标记是否为手动保存
+    setIsManualSave(showMessage);
+
+    // 执行完整的内容验证
+    const validation = promptUtils.validateContent(content);
+    if (validation.errors.length > 0) {
+      // 设置验证错误，让用户看到具体问题
+      setValidationErrors(validation.errors);
+      setHasStartedEditing(true); // 确保显示验证错误
+
       if (showMessage) {
-        message.error('内容不能为空');
+        const errorMsg = validation.errors.join('；');
+        message.error(`请完善提示词内容：${errorMsg}`);
       }
       return;
     }
@@ -171,6 +291,9 @@ const PromptEditor: React.FC = () => {
       console.log('PromptEditor: Current form values', formValues);
     } catch (error) {
       console.error('PromptEditor: Error getting form values', error);
+      if (showMessage) {
+        message.error('表单验证失败，请重试');
+      }
       return;
     }
 
@@ -182,7 +305,6 @@ const PromptEditor: React.FC = () => {
         business_type: values.business_type,
         status: values.status,
         author: values.author,
-        category_id: values.category_id,
         tags: values.tags,
         variables: detectedVariables,
         extra_metadata: {
@@ -209,10 +331,6 @@ const PromptEditor: React.FC = () => {
           id: numericId,
           prompt: promptData
         });
-      }
-
-      if (showMessage) {
-        message.success('保存中...');
       }
     }).catch((error) => {
       console.error('PromptEditor: Form validation failed', error);
@@ -276,17 +394,36 @@ const PromptEditor: React.FC = () => {
   // Load configuration options
   useEffect(() => {
     const loadConfiguration = async () => {
+      if (!currentProject) return;
+
       try {
-        const [promptTypes, promptStatuses, businessTypes] = await Promise.all([
+        const [promptTypes, promptStatuses, generationStages] = await Promise.all([
           getPromptTypeOptions(),
           getPromptStatusOptions(),
-          getBusinessTypeOptions()
+          getGenerationStageOptions()
         ]);
+
+        // Get business types from current project
+        let businessTypes: Array<{value: string; label: string}> = [];
+        try {
+          const projectBusinessTypes = await projectService.getProjectBusinessTypes(currentProject.id);
+          businessTypes = projectBusinessTypes
+            .filter(bt => bt.is_active) // Only include active business types
+            .map(bt => ({
+              value: bt.code,
+              label: bt.name
+            }));
+        } catch (btError) {
+          console.warn('Failed to load project business types, falling back to default:', btError);
+          // Fallback to default options
+          businessTypes = getBusinessTypeOptions();
+        }
 
         setConfigOptions({
           promptTypes,
           promptStatuses,
-          businessTypes
+          businessTypes,
+          generationStages
         });
       } catch (error) {
         console.error('Failed to load configuration options:', error);
@@ -295,7 +432,7 @@ const PromptEditor: React.FC = () => {
     };
 
     loadConfiguration();
-  }, []);
+  }, [currentProject]);
 
   // Update form when prompt data is loaded
   useEffect(() => {
@@ -312,7 +449,6 @@ const PromptEditor: React.FC = () => {
             business_type: prompt.business_type,
             status: prompt.status,
             author: prompt.author,
-            category_id: prompt.category_id,
             tags: prompt.tags || []
           });
           console.log('PromptEditor: Form updated successfully');
@@ -348,9 +484,15 @@ const PromptEditor: React.FC = () => {
 
   // Validate content
   useEffect(() => {
-    const validation = promptUtils.validateContent(content);
-    setValidationErrors(validation.errors);
-  }, [content]);
+    // 只有在用户开始编辑后才进行验证
+    if (hasStartedEditing) {
+      const validation = promptUtils.validateContent(content);
+      setValidationErrors(validation.errors);
+    } else {
+      // 初始状态不显示验证错误
+      setValidationErrors([]);
+    }
+  }, [content, hasStartedEditing]);
 
   // Render preview content
   const renderPreview = () => {
@@ -421,29 +563,32 @@ const PromptEditor: React.FC = () => {
 
   // Render variables panel
   const renderVariablesPanel = () => {
-    if (detectedVariables.length === 0) {
-      return (
-        <Alert
-          message="未检测到模板变量"
-          description="在内容中使用 {{变量名}} 格式来定义模板变量"
-          type="info"
-          showIcon
-        />
-      );
-    }
+    const currentBusinessType = form.getFieldValue('business_type');
 
     return (
       <div>
-        <div style={{ marginBottom: '12px' }}>
-          <strong>检测到的模板变量：</strong>
-        </div>
-        <Space wrap>
-          {detectedVariables.map(variable => (
-            <Tag key={variable} color="blue">
-              {'{{' + variable + '}}'}
-            </Tag>
-          ))}
-        </Space>
+        {/* Detected Variables Section */}
+        {detectedVariables.length > 0 && (
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{ marginBottom: '12px' }}>
+              <strong>检测到的模板变量：</strong>
+            </div>
+            <Space wrap>
+              {detectedVariables.map(variable => (
+                <Tag key={variable} color="blue">
+                  {'{{' + variable + '}}'}
+                </Tag>
+              ))}
+            </Space>
+          </div>
+        )}
+
+        {/* Template Variable Guide */}
+        <PromptVariableGuide
+          businessType={currentBusinessType}
+          onInsertVariable={handleInsertVariable}
+          showExamples={true}
+        />
       </div>
     );
   };
@@ -525,13 +670,28 @@ const PromptEditor: React.FC = () => {
                   {isFullscreen ? '退出全屏' : '全屏'}
                 </Button>
 
+                <Tooltip title="模板变量指导">
+                  <Button
+                    icon={<CodeOutlined />}
+                    onClick={() => setActiveTab('variables')}
+                    type={activeTab === 'variables' ? 'primary' : 'default'}
+                  >
+                    变量
+                  </Button>
+                </Tooltip>
+
                 <Button
                   icon={<SaveOutlined />}
-                  type="primary"
+                  type={saveSuccess ? "default" : "primary"}
+                  style={saveSuccess ? {
+                    backgroundColor: '#52c41a',
+                    borderColor: '#52c41a',
+                    color: 'white'
+                  } : {}}
                   onClick={() => handleSave(true)}
-                  loading={createPromptMutation.isPending || updatePromptMutation.isPending}
+                  loading={createPromptMutation.isPending || updatePromptMutation.isPending || isStatusChanging}
                 >
-                  保存
+                  {saveSuccess ? '✓ 已保存' : '保存'}
                 </Button>
 
                 <Button onClick={handleSaveAndContinue}>
@@ -563,13 +723,14 @@ const PromptEditor: React.FC = () => {
               </Form.Item>
             </Col>
 
-            <Col span={4}>
+            <Col span={6}>
               <Form.Item
                 name="type"
-                label="类型"
-                rules={[{ required: true, message: '请选择类型' }]}
+                label="提示词类型"
+                rules={[{ required: true, message: '请选择提示词类型' }]}
+                tooltip="选择提示词的功能类型，如系统提示词、模板等"
               >
-                <Select placeholder="选择类型">
+                <Select placeholder="选择提示词类型">
                   {configOptions.promptTypes.map(({value, label}) => (
                     <Option key={value} value={value}>
                       {label}
@@ -579,22 +740,7 @@ const PromptEditor: React.FC = () => {
               </Form.Item>
             </Col>
 
-            <Col span={4}>
-              <Form.Item
-                name="business_type"
-                label="业务类型"
-              >
-                <Select placeholder="选择业务类型" allowClear showSearch>
-                  {configOptions.businessTypes.map(({value, label}) => (
-                    <Option key={value} value={value}>
-                      {label}
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-
-            <Col span={4}>
+            <Col span={5}>
               <Form.Item
                 name="status"
                 label="状态"
@@ -609,12 +755,16 @@ const PromptEditor: React.FC = () => {
               </Form.Item>
             </Col>
 
-            <Col span={4}>
-              <Form.Item name="category_id" label="分类">
-                <Select placeholder="选择分类" allowClear>
-                  {categories?.map(category => (
-                    <Option key={category.id} value={category.id}>
-                      {category.name}
+            <Col span={5}>
+              <Form.Item
+                name="generation_stage"
+                label="生成阶段"
+                tooltip="选择此提示词适用于哪个生成阶段"
+              >
+                <Select placeholder="选择生成阶段">
+                  {configOptions.generationStages.map(({value, label}) => (
+                    <Option key={value} value={value}>
+                      {label}
                     </Option>
                   ))}
                 </Select>
@@ -624,12 +774,28 @@ const PromptEditor: React.FC = () => {
 
           <Row gutter={16}>
             <Col span={8}>
+              <Form.Item
+                name="business_type"
+                label="适用业务类型"
+                tooltip="选择此提示词适用的业务类型，如不选择则适用于所有业务类型"
+              >
+                <Select placeholder="选择业务类型" allowClear showSearch>
+                  {configOptions.businessTypes.map(({value, label}) => (
+                    <Option key={value} value={value}>
+                      {label}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+
+            <Col span={8}>
               <Form.Item name="author" label="作者">
                 <Input placeholder="请输入作者名称" />
               </Form.Item>
             </Col>
 
-            <Col span={16}>
+            <Col span={8}>
               <Form.Item name="tags" label="标签">
                 <Select
                   mode="tags"
@@ -672,7 +838,7 @@ const PromptEditor: React.FC = () => {
           }
           size="small"
         >
-          <Tabs defaultActiveKey="editor" size="small">
+          <Tabs activeKey={activeTab} onChange={setActiveTab} size="small">
             <Tabs.TabPane tab="编辑器" key="editor">
               <div style={{ height: isFullscreen ? '70vh' : '400px' }}>
                 {monacoError ? (
@@ -730,9 +896,10 @@ const PromptEditor: React.FC = () => {
                         setIsMonacoLoading(false);
                         setMonacoError(null);
                       }}
-                      onMount={() => {
+                      onMount={(editor: any) => {
                         setIsMonacoLoading(false);
                         setMonacoError(null);
+                        setEditorRef(editor);
                         console.log('Monaco Editor mounted successfully');
                       }}
                       options={{

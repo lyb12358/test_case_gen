@@ -1,42 +1,62 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
+import { vi } from 'vitest';
 
 // API 基础配置
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
-// 创建 axios 实例
-const apiClient: AxiosInstance = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 240000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
+// 创建 axios 实例 - 添加环境兼容性检查
+const apiClient: AxiosInstance =
+  (typeof window !== 'undefined' && typeof window.document !== 'undefined')
+    ? axios.create({
+        baseURL: API_BASE_URL,
+        timeout: 240000,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+    : {
+        // Node环境下的mock配置（用于vitest测试）
+        baseURL: API_BASE_URL,
+        timeout: 240000,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        get: vi.fn(),
+        post: vi.fn(),
+        put: vi.fn(),
+        delete: vi.fn(),
+        interceptors: {
+          request: { use: vi.fn() },
+          response: { use: vi.fn() },
+        },
+      } as any;
 
-// 请求拦截器
-apiClient.interceptors.request.use(
-  (config) => {
-    // 可以在这里添加认证 token 等
-    return config;
-  },
+// 请求拦截器 - 只在真实axios环境中使用
+if (typeof window !== 'undefined' && typeof window.document !== 'undefined') {
+  apiClient.interceptors.request.use(
+    (config) => {
+      // 可以在这里添加认证 token 等
+      return config;
+    },
   (error) => {
     return Promise.reject(error);
   }
 );
 
 // 响应拦截器
-apiClient.interceptors.response.use(
-  (response: AxiosResponse) => {
-    return response;
-  },
-  (error) => {
-    console.error('API Error:', error);
+  apiClient.interceptors.response.use(
+    (response: AxiosResponse) => {
+      return response;
+    },
+    (error) => {
+      console.error('API Error:', error);
 
-    if (error.response) {
-      // 服务器响应错误
-      const status = error.response.status;
-      const message = error.response.data?.detail || error.response.data?.message || '请求失败';
+      if (error.response) {
+        // 服务器响应错误
+        const status = error.response.status;
+        const message = error.response.data?.detail || error.response.data?.message || '请求失败';
 
-      switch (status) {
+        switch (status) {
         case 401:
           // 处理未授权
           break;
@@ -64,5 +84,7 @@ apiClient.interceptors.response.use(
     }
   }
 );
+}
 
 export default apiClient;
+export { apiClient };

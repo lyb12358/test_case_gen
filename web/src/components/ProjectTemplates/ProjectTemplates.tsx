@@ -19,7 +19,8 @@ import {
   FileOutlined,
   PlusOutlined,
   CopyOutlined,
-  CheckOutlined
+  CheckOutlined,
+  CheckCircleOutlined
 } from '@ant-design/icons';
 import { projectService, ProjectCreate } from '../../services/projectService';
 import { useProject } from '../../contexts/ProjectContext';
@@ -323,10 +324,10 @@ const ProjectTemplates: React.FC<ProjectTemplatesProps> = ({
                           </Paragraph>
                           <Space wrap>
                             {template.businessTypes.slice(0, 3).map(type => (
-                              <Tag key={type} size="small">{type}</Tag>
+                              <Tag key={type}>{type}</Tag>
                             ))}
                             {template.businessTypes.length > 3 && (
-                              <Tag size="small">+{template.businessTypes.length - 3}</Tag>
+                              <Tag>+{template.businessTypes.length - 3}</Tag>
                             )}
                           </Space>
                         </div>

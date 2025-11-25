@@ -16,14 +16,19 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
       },
     },
   },
   optimizeDeps: {
     include: [
       '@monaco-editor/react',
-      'monaco-editor'
+      'monaco-editor',
+      'react-syntax-highlighter',
+      'react-dnd',
+      'react-dnd-html5-backend',
+      'react-markdown',
+      'antd',
+      '@tanstack/react-query'
     ],
   },
   build: {
@@ -31,7 +36,12 @@ export default defineConfig({
       output: {
         manualChunks: {
           monaco: ['monaco-editor'],
-          monacoReact: ['@monaco-editor/react']
+          monacoReact: ['@monaco-editor/react'],
+          syntaxHighlighter: ['react-syntax-highlighter'],
+          dnd: ['react-dnd', 'react-dnd-html5-backend'],
+          markdown: ['react-markdown'],
+          antd: ['antd'],
+          query: ['@tanstack/react-query']
         }
       }
     }
