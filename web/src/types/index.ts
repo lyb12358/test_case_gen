@@ -1,9 +1,42 @@
 // Type re-exports for backward compatibility
 // Import from our type definition files
 
-export type { TestCase, TestCaseItem, TaskStatusResponse, GenerateTestCaseRequest, GenerateResponse } from './testCases';
+// Legacy types - use unified types instead
+export type { TestCaseItem, TaskStatusResponse, GenerateTestCaseRequest, GenerateResponse } from './testCases';
 export type { Prompt, PromptCategory, PromptVersion, PromptTemplate } from './prompts';
 export type { TestPoint, BatchTestPointOperation, BatchTestPointOperationResponse } from './testPoints';
+
+// Unified test case types - primary types to use
+export type {
+  UnifiedTestCaseCreate,
+  UnifiedTestCaseUpdate,
+  UnifiedTestCaseResponse,
+  UnifiedTestCaseFilter,
+  UnifiedTestCaseListResponse,
+  UnifiedTestCaseStatistics,
+  UnifiedTestCaseBatchOperation,
+  UnifiedTestCaseBatchResponse,
+  UnifiedTestCaseGenerationRequest,
+  UnifiedTestCaseGenerationResponse,
+  UnifiedTestCaseFormData,
+  UnifiedTestCaseStatus,
+  UnifiedTestCaseStage,
+  ViewMode,
+  UnifiedTestCaseListItem,
+  SearchFilter,
+  PaginationConfig,
+  TableColumnConfig,
+  BatchAction,
+  ExportConfig,
+  ChartData,
+  DateRange,
+  GenerationProgress,
+  UnifiedTestCaseWebSocketMessage,
+  FormRule
+} from './unifiedTestCase';
+
+// Export unified types as primary TestCase interface for compatibility
+export type UnifiedTestCase = UnifiedTestCaseResponse;
 
 // Common types - centralized here to avoid duplication
 export type BusinessType = string; // Dynamic business types

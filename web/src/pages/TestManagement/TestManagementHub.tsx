@@ -66,7 +66,7 @@ const TestManagementHub: React.FC<TestManagementHubProps> = () => {
   const stats = {
     testPointsCount: testPointsStats?.total_test_points || 0,
     testCasesCount: testCasesStats?.total_count || 0,
-    generationJobsRunning: 0, // TODO: 从任务管理API获取
+    generationJobsRunning: 0, // TODO: 从taskService.getAllTasks()获取运行中的任务数量
     completionRate: testCasesStats?.test_case_count && testCasesStats?.total_count
       ? Math.round((testCasesStats.test_case_count / testCasesStats.total_count) * 100)
       : 0

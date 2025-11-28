@@ -19,7 +19,7 @@ from ..database.database import DatabaseManager
 from ..database.operations import DatabaseOperations
 from ..database.models import (
     TestPoint, UnifiedTestCase, Project, BusinessType,
-    TestPointStatus, KnowledgeEntity, KnowledgeRelation, EntityType
+    KnowledgeEntity, KnowledgeRelation, EntityType
 )
 
 logger = logging.getLogger(__name__)

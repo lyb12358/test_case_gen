@@ -7,7 +7,7 @@ Provides unified database session management following FastAPI and SQLAlchemy be
 import logging
 from typing import Generator, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from fastapi import Depends
 
@@ -103,7 +103,7 @@ def get_db_readonly() -> Generator[Session, None, None]:
     with db_manager.get_session() as db:
         try:
             # Set read-only isolation level if supported
-            db.execute("SET TRANSACTION READ ONLY")
+            db.execute(text("SET TRANSACTION READ ONLY"))
             yield db
         except SQLAlchemyError as e:
             logger.error(f"Read-only database session error: {str(e)}")

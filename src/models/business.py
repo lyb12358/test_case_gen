@@ -14,6 +14,13 @@ class BusinessTypeStatus(str, Enum):
     ACTIVE = "active"
 
 
+class ConfigurationStatus(str, Enum):
+    """Configuration status for business type."""
+    NONE = "none"        # 两个阶段都未配置
+    PARTIAL = "partial"  # 只配置了一个阶段
+    COMPLETE = "complete"  # 两个阶段都配置完成
+
+
 class BusinessTypeCreate(BaseModel):
     """Business type creation model."""
     code: str = Field(..., description="Business type code", min_length=1, max_length=20)
@@ -41,8 +48,6 @@ class BusinessTypeResponse(BaseModel):
     description: Optional[str]
     project_id: int
     is_active: bool
-    # Note: prompt_combination_id removed since it doesn't exist in database model
-    prompt_combination_id: Optional[int] = None  # Keep for API compatibility but will always be None
     test_point_combination_id: Optional[int]
     test_case_combination_id: Optional[int]
     created_at: datetime
@@ -50,10 +55,11 @@ class BusinessTypeResponse(BaseModel):
 
     # Related data
     project_name: Optional[str] = None
-    prompt_combination_name: Optional[str] = None
-    has_valid_prompt_combination: bool = False
     test_point_combination_name: Optional[str] = None
     test_case_combination_name: Optional[str] = None
+
+    # Unified configuration status
+    configuration_status: ConfigurationStatus
     has_valid_test_point_combination: bool = False
     has_valid_test_case_combination: bool = False
 

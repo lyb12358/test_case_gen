@@ -29,17 +29,16 @@ export interface BusinessType {
   description?: string;
   project_id: number;
   is_active: boolean;
-  prompt_combination_id?: number;
   created_at: string;
   updated_at: string;
   project_name?: string;
-  prompt_combination_name?: string;
-  has_valid_prompt_combination: boolean;
   // Two-stage generation fields
   test_point_combination_id?: number;
   test_case_combination_id?: number;
   test_point_combination_name?: string;
   test_case_combination_name?: string;
+  // Unified configuration status
+  configuration_status: 'none' | 'partial' | 'complete';
   has_valid_test_point_combination?: boolean;
   has_valid_test_case_combination?: boolean;
 }

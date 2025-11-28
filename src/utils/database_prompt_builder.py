@@ -39,28 +39,51 @@ class DatabasePromptBuilder:
         """Clear all cached data."""
         self._combination_cache = None
 
-    def _apply_template_variables(self, content: str, additional_context: Optional[Dict[str, Any]] = None, business_type: Optional[str] = None) -> str:
+    def _apply_template_variables(self, content: str, additional_context: Optional[Dict[str, Any]] = None,
+                                business_type: Optional[str] = None, project_id: Optional[int] = None,
+                                endpoint_params: Optional[Dict[str, Any]] = None) -> str:
         """
-        Apply enhanced template variables to content using the TemplateVariableResolver.
+        Apply template variables to content using the new 3-variable TemplateVariableResolver.
 
         Args:
             content (str): Content with template variables
             additional_context (Optional[Dict[str, Any]]): Additional runtime context
             business_type (Optional[str]): Business type for variable resolution
+            project_id (Optional[int]): Project ID for database queries
+            endpoint_params (Optional[Dict[str, Any]]): Parameters from AI generation endpoints
 
         Returns:
             str: Content with template variables resolved
         """
         try:
+            # Enhanced variable detection: check if content contains any template variables
             if not content or '{{' not in content:
+                logger.debug(f"Content contains no template variables, returning original content")
                 return content
 
-            # Get resolved variables from the resolver
-            variables = self.variable_resolver.resolve_variables(business_type, additional_context)
+            # Extract actual variable names used in the content
+            used_variables = self._extract_used_variables(content)
+            if not used_variables:
+                logger.debug(f"No valid template variables found in content")
+                return content
 
-            # Apply template variable replacement
+            logger.debug(f"Found {len(used_variables)} variables in content: {used_variables}")
+
+            # Resolve variables using the new 3-variable system with generation stage
+            generation_stage = endpoint_params.get('generation_stage') if endpoint_params else None
+            variables = self.variable_resolver.resolve_variables(
+                business_type=business_type or '',
+                project_id=project_id,
+                endpoint_params=endpoint_params or {},
+                generation_stage=generation_stage
+            )
+
+            # Only replace variables that are actually present in the content
             resolved_content = content
-            for variable_name, variable_value in variables.items():
+            replacement_count = 0
+
+            for variable_name in used_variables:
+                variable_value = variables.get(variable_name)
                 if variable_value is not None:
                     # Support both {{variable_name}} and {{ variable_name }} formats
                     patterns = [
@@ -70,25 +93,84 @@ class DatabasePromptBuilder:
                     for pattern in patterns:
                         if pattern in resolved_content:
                             resolved_content = resolved_content.replace(pattern, str(variable_value))
+                            replacement_count += 1
+                            logger.debug(f"Replaced variable '{variable_name}' with value: {str(variable_value)[:100]}...")
 
-            # Apply any remaining additional context variables that might not be in the resolver
-            if additional_context:
-                for key, value in additional_context.items():
-                    if value is not None:
-                        patterns = [
-                            f'{{{{{key}}}}}',
-                            f'{{{{ {key} }}}}'
-                        ]
-                        for pattern in patterns:
-                            if pattern in resolved_content:
-                                resolved_content = resolved_content.replace(pattern, str(value))
-
+            
+            logger.debug(f"Variable replacement completed: {replacement_count} replacements made")
             return resolved_content
 
         except Exception as e:
             logger.error(f"Error applying template variables: {e}")
             # Return original content if variable resolution fails
             return content
+
+    def _apply_template_variables_with_variables(self, content: str, variables: Dict[str, Any]) -> str:
+        """
+        Apply pre-resolved variables to content (helper method for backward compatibility).
+
+        Args:
+            content (str): Content with template variables
+            variables (Dict[str, Any]): Pre-resolved variables
+
+        Returns:
+            str: Content with template variables resolved
+        """
+        try:
+            # Check if content contains any template variables
+            if not content or '{{' not in content:
+                return content
+
+            # Extract actual variable names used in the content
+            used_variables = self._extract_used_variables(content)
+            if not used_variables:
+                return content
+
+            # Replace variables
+            resolved_content = content
+            for variable_name in used_variables:
+                variable_value = variables.get(variable_name)
+                if variable_value is not None:
+                    patterns = [
+                        f'{{{{{variable_name}}}}}',
+                        f'{{{{ {variable_name} }}}}'
+                    ]
+                    for pattern in patterns:
+                        if pattern in resolved_content:
+                            resolved_content = resolved_content.replace(pattern, str(variable_value))
+
+            return resolved_content
+
+        except Exception as e:
+            logger.error(f"Error applying template variables with pre-resolved variables: {e}")
+            return content
+
+    def _extract_used_variables(self, content: str) -> List[str]:
+        """
+        Extract variable names that are actually used in the content.
+
+        Args:
+            content (str): Content to analyze
+
+        Returns:
+            List[str]: List of variable names found in the content
+        """
+        try:
+            import re
+            # Find all {{variable_name}} patterns (with optional whitespace)
+            pattern = r'\{\{\s*(\w+)\s*\}\}'
+            matches = re.findall(pattern, content)
+            # Remove duplicates and preserve order
+            seen = set()
+            unique_variables = []
+            for var in matches:
+                if var not in seen:
+                    seen.add(var)
+                    unique_variables.append(var)
+            return unique_variables
+        except Exception as e:
+            logger.error(f"Error extracting variables from content: {e}")
+            return []
 
     def get_active_prompt_by_name(self, name: str, prompt_type: Optional[PromptType] = None) -> Optional[Prompt]:
         """
@@ -336,107 +418,6 @@ class DatabasePromptBuilder:
         except Exception as e:
             return None, None
 
-    def get_system_prompt_by_stage(self, stage: str) -> Optional[str]:
-        """
-        Get system prompt for a specific generation stage.
-
-        Args:
-            stage (str): Generation stage ('test_point' or 'test_case')
-
-        Returns:
-            Optional[str]: System prompt content or None if failed
-        """
-        if stage == 'test_point':
-            return self.get_system_prompt('系统提示词：汽车智能座舱远控服务接口测试点生成')
-        elif stage == 'test_case':
-            return self.get_system_prompt('系统提示词：汽车智能座舱远控服务接口测试用例生成')
-        else:
-            print(f"Invalid stage: {stage}. Must be 'test_point' or 'test_case'")
-            return None
-
-    def build_two_stage_user_prompt(self, business_type: str, stage: str,
-                                  additional_context: Optional[Dict[str, Any]] = None) -> Optional[str]:
-        """
-        Build user prompt for two-stage generation, excluding system prompts.
-
-        Args:
-            business_type (str): Business type (e.g., RCC, RFD, ZAB, ZBA)
-            stage (str): Generation stage ('test_point' or 'test_case')
-            additional_context (Optional[Dict[str, Any]]): Additional context variables
-
-        Returns:
-            Optional[str]: User prompt content or None if failed
-        """
-        try:
-            with self.db_manager.get_session() as db:
-                # Get business type configuration
-                business_config = db.query(BusinessTypeConfig).filter(
-                    BusinessTypeConfig.code == business_type,
-                    BusinessTypeConfig.is_active == True
-                ).first()
-
-                if not business_config:
-                    return None
-
-                # Determine which combination ID to use based on stage
-                if stage == 'test_point':
-                    combination_id = business_config.test_point_combination_id
-                elif stage == 'test_case':
-                    combination_id = business_config.test_case_combination_id
-                else:
-                    return None
-
-                if not combination_id:
-                    return None
-
-                # Get the prompt combination
-                combination = db.query(PromptCombination).filter(
-                    PromptCombination.id == combination_id,
-                    PromptCombination.is_active == True
-                ).first()
-
-                if not combination:
-                    return None
-
-                # Get user prompt items only (exclude system prompts)
-                prompt_items = db.query(PromptCombinationItem).filter(
-                    PromptCombinationItem.combination_id == combination.id,
-                    PromptCombinationItem.item_type == 'user_prompt'
-                ).order_by(PromptCombinationItem.order).all()
-
-                if not prompt_items:
-                    return None
-
-                # Get all the prompts referenced in the combination
-                prompt_ids = [item.prompt_id for item in prompt_items]
-                prompts = db.query(Prompt).filter(
-                    Prompt.id.in_(prompt_ids),
-                    Prompt.status == PromptStatus.ACTIVE
-                ).all()
-
-                # Create a mapping of prompt_id to prompt
-                prompt_map = {prompt.id: prompt for prompt in prompts}
-
-                # Build the user prompt
-                prompt_parts = []
-                for item in prompt_items:
-                    prompt = prompt_map.get(item.prompt_id)
-                    if prompt:
-                        content = prompt.content
-
-                        # Apply enhanced template variables
-                        content = self._apply_template_variables(content, additional_context, business_type)
-
-                        if item.section_title:
-                            prompt_parts.append(f"=== {item.section_title} ===")
-                        prompt_parts.append(content)
-
-                return "\n\n".join(prompt_parts) if prompt_parts else None
-
-        except Exception as e:
-            return None
-
-  
     def get_prompt_by_file_path(self, file_path: str) -> Optional[Prompt]:
         """
         Get a prompt by its original file path.

@@ -66,6 +66,17 @@ if (typeof window !== 'undefined' && typeof window.document !== 'undefined') {
         case 404:
           // 处理资源未找到
           break;
+        case 422:
+          // 处理验证错误 - 提供更详细的错误信息
+          const errorData = error.response.data;
+          if (errorData?.detail && typeof errorData.detail === 'object') {
+            // 如果detail是对象，提取字段验证错误
+            const fieldErrors = Object.entries(errorData.detail)
+              .map(([field, errors]) => `${field}: ${Array.isArray(errors) ? errors.join(', ') : errors}`)
+              .join('; ');
+            return Promise.reject(new Error(`数据验证失败: ${fieldErrors}`));
+          }
+          break;
         case 500:
           // 处理服务器错误
           break;

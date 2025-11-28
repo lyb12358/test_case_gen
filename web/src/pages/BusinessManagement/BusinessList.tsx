@@ -35,8 +35,8 @@ import {
   SettingOutlined
 } from '@ant-design/icons';
 import {
-  getTwoStageStatusTag,
-  type TwoStageConfig
+  getConfigurationStatusTag,
+  type ConfigurationConfig
 } from '../../utils/twoStageStatus';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -182,9 +182,9 @@ const BusinessList: React.FC = () => {
       // 停用
       activateMutation.mutate({ id: business.id, is_active: false });
     } else {
-      // 激活前检查提示词组合
-      if (!business.has_valid_prompt_combination) {
-        message.warning('业务类型需要配置有效的提示词组合才能激活');
+      // 激活前检查配置状态
+      if (business.configuration_status !== 'complete') {
+        message.warning('业务类型需要完整的提示词配置才能激活');
         return;
       }
       activateMutation.mutate({ id: business.id, is_active: true });
@@ -203,7 +203,7 @@ const BusinessList: React.FC = () => {
           激活
         </Tag>
       );
-    } else if (business.has_valid_prompt_combination) {
+    } else if (business.configuration_status === 'complete') {
       return (
         <Tag color="blue" icon={<BuildOutlined />}>
           可激活
@@ -218,34 +218,15 @@ const BusinessList: React.FC = () => {
     }
   };
 
-  const getPromptCombinationTag = (business: BusinessType) => {
-    if (business.has_valid_prompt_combination) {
-      return (
-        <Tooltip title={business.prompt_combination_name || '已配置'}>
-          <Tag color="green" icon={<CheckCircleOutlined />}>
-            已配置
-          </Tag>
-        </Tooltip>
-      );
-    } else {
-      return (
-        <Tooltip title="需要配置提示词组合">
-          <Tag color="red" icon={<CloseCircleOutlined />}>
-            未配置
-          </Tag>
-        </Tooltip>
-      );
-    }
-  };
-
-  // 渲染两阶段生成状态标签 - 使用简化的工具函数
-  const getTwoStageStatusTagForRecord = (record: BusinessType) => {
-    const config: TwoStageConfig = {
-      has_test_point_combination: record.has_valid_test_point_combination,
-      has_test_case_combination: record.has_valid_test_case_combination
+  
+  // 渲染配置状态标签 - 使用新的统一状态显示
+  const getConfigurationStatusTagForRecord = (record: BusinessType) => {
+    const config: ConfigurationConfig = {
+      configuration_status: record.configuration_status,
+      has_valid_test_point_combination: record.has_valid_test_point_combination,
+      has_valid_test_case_combination: record.has_valid_test_case_combination
     };
-
-    return getTwoStageStatusTag(config);
+    return getConfigurationStatusTag(config);
   };
 
   const columns = [
@@ -280,16 +261,10 @@ const BusinessList: React.FC = () => {
       render: (projectName: string) => projectName || <Text type="secondary">未分配</Text>,
     },
     {
-      title: '提示词组合',
-      key: 'prompt_combination',
+      title: '配置状态',
+      key: 'configuration_status',
       width: 120,
-      render: (_: any, record: BusinessType) => getPromptCombinationTag(record),
-    },
-    {
-      title: '两阶段状态',
-      key: 'two_stage_status',
-      width: 120,
-      render: (_: any, record: BusinessType) => getTwoStageStatusTagForRecord(record),
+      render: (_: any, record: BusinessType) => getConfigurationStatusTagForRecord(record),
     },
     {
       title: '状态',
@@ -319,14 +294,14 @@ const BusinessList: React.FC = () => {
             />
           </Tooltip>
 
-          <Tooltip title={record.has_valid_prompt_combination ? "查看提示词配置" : "配置两阶段提示词"}>
+          <Tooltip title={record.configuration_status === 'complete' ? "查看提示词配置" : "配置两阶段提示词"}>
             <Button
               type="text"
               size="small"
               icon={<SettingOutlined />}
               onClick={() => handleViewPromptCombination(record)}
               style={{
-                color: record.has_valid_prompt_combination ? '#52c41a' : '#fa8c16'
+                color: record.configuration_status === 'complete' ? '#52c41a' : '#fa8c16'
               }}
             />
           </Tooltip>
@@ -336,7 +311,7 @@ const BusinessList: React.FC = () => {
               size="small"
               checked={record.is_active}
               onChange={() => handleToggleActivation(record)}
-              disabled={!record.has_valid_prompt_combination && !record.is_active}
+              disabled={record.configuration_status !== 'complete' && !record.is_active}
             />
           </Tooltip>
 

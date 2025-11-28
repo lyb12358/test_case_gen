@@ -26,6 +26,7 @@ import {
   PlusOutlined,
   EyeOutlined,
   EditOutlined,
+  ArrowLeftOutlined,
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -264,13 +265,80 @@ const BusinessPromptConfiguration: React.FC<BusinessPromptConfigurationProps> = 
   };
 
   
-  const handleSaveConfirm = () => {
+  // 验证新组合数据是否包含系统提示词
+  const validateNewCombinationHasSystemPrompt = async (combinationData: any): Promise<boolean> => {
+    if (!combinationData?.items || combinationData.items.length === 0) {
+      return false;
+    }
+
+    try {
+      // 获取可用提示词列表来检查类型
+      const response = await businessService.getAvailablePrompts();
+      const prompts = response.prompts;
+
+      // 检查是否包含系统类型的提示词
+      const hasSystemPrompt = combinationData.items.some((item: any) => {
+        const prompt = prompts.find((p: any) => p.id === item.prompt_id);
+        return prompt?.type === 'system';
+      });
+
+      return hasSystemPrompt;
+    } catch (error) {
+      console.error('验证提示词类型失败:', error);
+      return false;
+    }
+  };
+
+  const handleSaveConfirm = async () => {
+    const validationErrors: string[] = [];
+
+    // 验证新创建的测试点组合
+    if (testPointCombinationData) {
+      const hasSystemPrompt = await validateNewCombinationHasSystemPrompt(testPointCombinationData);
+      if (!hasSystemPrompt) {
+        validationErrors.push('测试点提示词组合必须包含至少一个系统提示词');
+      }
+    }
+
+    // 验证新创建的测试用例组合
+    if (testCaseCombinationData) {
+      const hasSystemPrompt = await validateNewCombinationHasSystemPrompt(testCaseCombinationData);
+      if (!hasSystemPrompt) {
+        validationErrors.push('测试用例提示词组合必须包含至少一个系统提示词');
+      }
+    }
+
+    // 如果有验证错误，显示并阻止保存
+    if (validationErrors.length > 0) {
+      validationErrors.forEach(error => message.error(error));
+      return;
+    }
+
     setIsSaveModalVisible(true);
   };
 
   const handleSaveConfirmed = () => {
     setIsSaveModalVisible(false);
     handleSave();
+  };
+
+  // 重置功能 - 重置表单数据而不是刷新页面
+  const handleReset = () => {
+    // 重置所有表单状态
+    setTestPointCombinationId(undefined);
+    setTestCaseCombinationId(undefined);
+    setTestPointCombinationData(undefined);
+    setTestCaseCombinationData(undefined);
+
+    // 重新加载业务数据到原始状态
+    queryClient.invalidateQueries({ queryKey: ['businessType', urlId] });
+
+    message.info('已重置配置状态，请重新进行配置');
+  };
+
+  // 返回业务类型列表
+  const handleBackToList = () => {
+    navigate('/business-management');
   };
 
   const isLoading = businessLoading;
@@ -299,6 +367,15 @@ const BusinessPromptConfiguration: React.FC<BusinessPromptConfigurationProps> = 
     <div>
       <Card>
         <Row gutter={[16, 16]} align="middle">
+          <Col>
+            <Button
+              icon={<ArrowLeftOutlined />}
+              onClick={handleBackToList}
+              type="text"
+            >
+              返回列表
+            </Button>
+          </Col>
           <Col flex="auto">
             <Space>
               <Title level={4} style={{ margin: 0 }}>
@@ -310,9 +387,11 @@ const BusinessPromptConfiguration: React.FC<BusinessPromptConfigurationProps> = 
           </Col>
           <Col>
             <Space>
-              <Button icon={<ReloadOutlined />} onClick={() => window.location.reload()}>
-                重置
-              </Button>
+              <Tooltip title="重置当前配置状态">
+                <Button icon={<ReloadOutlined />} onClick={handleReset}>
+                  重置
+                </Button>
+              </Tooltip>
               {onCancel && (
                 <Button onClick={onCancel}>
                   取消

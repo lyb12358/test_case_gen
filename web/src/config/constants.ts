@@ -55,7 +55,7 @@ export const API_ENDPOINTS = {
 
   // 业务类型相关
   BUSINESS_TYPES: {
-    LIST: '/api/v1/business-types',
+    LIST: '/api/v1/business/business-types',
     CONFIG: '/api/v1/business-types/config'
   },
 

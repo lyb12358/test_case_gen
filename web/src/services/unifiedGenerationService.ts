@@ -5,6 +5,7 @@
 
 import apiClient from './api';
 import { errorHandlerService } from './errorHandlerService';
+import { API_ENDPOINTS } from '@/config/constants';
 import {
   GenerateTestCaseRequest,
   GenerateResponse,
@@ -19,10 +20,8 @@ import {
   TestPointListResponse,
   TestPointValidationResponse,
   TestPointStatistics,
-  TestPointStatus,
   Priority,
   BusinessType,
-  TestPointStatusUpdate,
   BatchTestPointOperation,
   BatchTestPointOperationResponse,
   TestPointGenerationRequest,
@@ -91,7 +90,7 @@ class UnifiedGenerationService {
     if (projectId) {
       params.project_id = projectId;
     }
-    const response = await apiClient.get('/api/v1/test-cases/export', {
+    const response = await apiClient.get(API_ENDPOINTS.TEST_CASES.EXPORT, {
       params,
       responseType: 'blob'
     });
@@ -103,7 +102,7 @@ class UnifiedGenerationService {
    */
   async getBusinessTypes(projectId?: number): Promise<any> {
     const params = projectId ? { project_id: projectId } : {};
-    const response = await apiClient.get('/api/v1/business/business-types', { params });
+    const response = await apiClient.get(API_ENDPOINTS.BUSINESS_TYPES.LIST, { params });
     return response.data;
   }
 
@@ -111,7 +110,7 @@ class UnifiedGenerationService {
    * 获取业务类型映射
    */
   async getBusinessTypesMapping(): Promise<any> {
-    const response = await apiClient.get('/api/v1/config/business-types');
+    const response = await apiClient.get(API_ENDPOINTS.CONFIG.BUSINESS_TYPES);
     return response.data;
   }
 
@@ -125,13 +124,16 @@ class UnifiedGenerationService {
     size?: number;
     business_type?: BusinessType;
     project_id?: number;
-    status?: TestPointStatus;
+    // status field removed - test points no longer have status
     priority?: Priority;
     keyword?: string;
     test_point_ids?: number[];
   }): Promise<TestPointListResponse> {
     try {
-      const response = await apiClient.get('/api/v1/test-points', { params });
+      // 参数验证和标准化
+      const validatedParams = this.validateAndNormalizeTestPointParams(params || {});
+
+      const response = await apiClient.get('/api/v1/test-points', { params: validatedParams });
       return this.transformTestPointResponse(response.data);
     } catch (error) {
       throw errorHandlerService.handleApiError(error, {
@@ -152,10 +154,7 @@ class UnifiedGenerationService {
       business_type: typeof item.business_type === 'string'
         ? item.business_type
         : item.business_type?.value || item.business_type,
-      // 确保status为字符串
-      status: typeof item.status === 'string'
-        ? item.status
-        : item.status?.value || item.status,
+      // status field removed - test points no longer have status
       // 处理可选字段
       description: item.description || '',
       test_case_count: item.test_case_count || 0
@@ -249,24 +248,26 @@ class UnifiedGenerationService {
    * 获取统一测试用例列表
    */
   async getUnifiedTestCases(filter: UnifiedTestCaseFilter): Promise<UnifiedTestCaseListResponse> {
+    // 参数验证和默认值设置
+    const validatedFilter = this.validateAndNormalizeFilter(filter);
+
     const params = new URLSearchParams();
 
     // 过滤参数
-    if (filter.project_id) params.append('project_id', filter.project_id.toString());
-    if (filter.business_type) params.append('business_type', filter.business_type);
-    if (filter.status) params.append('status', filter.status);
-    if (filter.stage) params.append('stage', filter.stage);
-    if (filter.priority) params.append('priority', filter.priority);
-    if (filter.keyword) params.append('keyword', filter.keyword);
-    if (filter.test_point_ids && filter.test_point_ids.length > 0) {
-      filter.test_point_ids.forEach((id, index) => {
+    if (validatedFilter.project_id) params.append('project_id', validatedFilter.project_id.toString());
+    if (validatedFilter.business_type) params.append('business_type', validatedFilter.business_type);
+    if (validatedFilter.stage) params.append('stage', validatedFilter.stage);
+    if (validatedFilter.priority) params.append('priority', validatedFilter.priority);
+    if (validatedFilter.keyword) params.append('keyword', validatedFilter.keyword);
+    if (validatedFilter.test_point_ids && validatedFilter.test_point_ids.length > 0) {
+      validatedFilter.test_point_ids.forEach((id, index) => {
         params.append(`test_point_ids[${index}]`, id.toString());
       });
     }
 
     // 分页参数
-    params.append('page', filter.page.toString());
-    params.append('size', filter.size.toString());
+    params.append('page', validatedFilter.page.toString());
+    params.append('size', validatedFilter.size.toString());
 
     const response = await apiClient.get(`${this.basePath}/unified-test-cases?${params}`);
     return response.data;
@@ -360,9 +361,7 @@ class UnifiedGenerationService {
     businessType: string,
     testPoints: any[],
     options?: {
-      complexityLevel?: string;
-      includeNegativeCases?: boolean;
-      additionalContext?: string;
+      additionalContext?: Record<string, any>;
       saveToDatabase?: boolean;
       projectId?: number;
     }
@@ -370,11 +369,9 @@ class UnifiedGenerationService {
     const request = {
       business_type: businessType,
       test_points: testPoints,
-      additional_context: options?.additionalContext || '',
+      additional_context: options?.additionalContext || {},
       save_to_database: options?.saveToDatabase ?? true,
-      project_id: options?.projectId,
-      complexity_level: options?.complexityLevel || 'standard',
-      include_negative_cases: options?.includeNegativeCases ?? true
+      project_id: options?.projectId
     };
 
     const response = await apiClient.post('/api/v1/generation/test-cases', request);
@@ -469,7 +466,7 @@ class UnifiedGenerationService {
   async generateTestPoints(
     businessType: string,
     options?: {
-      additionalContext?: string;
+      additionalContext?: Record<string, any>;
       saveToDatabase?: boolean;
       projectId?: number;
       asyncMode?: boolean;
@@ -477,7 +474,7 @@ class UnifiedGenerationService {
   ): Promise<any> {
     const request = {
       business_type: businessType,
-      additional_context: options?.additionalContext,
+      additional_context: options?.additionalContext || {},
       save_to_database: options?.saveToDatabase ?? false,
       project_id: options?.projectId,
       async_mode: options?.asyncMode ?? false
@@ -488,24 +485,8 @@ class UnifiedGenerationService {
     return response.data;
   }
 
-  /**
-   * @deprecated 使用 generateTestPoints 替代
-   */
-  async generateTestPointsLegacy(request: any): Promise<any> {
-    console.warn('generateTestPointsLegacy is deprecated, use generateTestPoints instead');
-    return this.generateTestPoints(request);
-  }
-
-  /**
-   * @deprecated 使用 generateTestCasesFromPoints 替代
-   */
-  async generateTestCasesLegacy(request: GenerateTestCaseRequest, projectId?: number): Promise<GenerateResponse> {
-    console.warn('generateTestCasesLegacy is deprecated, use generateTestCasesFromPoints instead');
-    const payload = projectId ? { ...request, project_id: projectId } : request;
-    const response = await apiClient.post('/api/v1/generate-test-cases', payload);
-    return response.data;
-  }
-
+  
+  
   // ========== 补充的缺失方法 ==========
 
   /**
@@ -513,17 +494,13 @@ class UnifiedGenerationService {
    */
   async batchGenerateTestPoints(businessTypes: string[], options: {
     projectId?: number;
-    count?: number;
-    complexityLevel?: string;
   }): Promise<any> {
     const request = {
       business_types: businessTypes,
-      project_id: options?.projectId,
-      count: options?.count || 50,
-      complexity_level: options?.complexityLevel || 'standard'
+      project_id: options?.projectId
     };
 
-    const response = await apiClient.post('/api/v1/generation/batch-test-points', request);
+    const response = await apiClient.post('/api/v1/generation/batch', request);
     return response.data;
   }
 
@@ -532,17 +509,13 @@ class UnifiedGenerationService {
    */
   async batchGenerateTestCases(businessTypes: string[], options: {
     projectId?: number;
-    complexityLevel?: string;
-    includeNegativeCases?: boolean;
   }): Promise<any> {
     const request = {
       business_types: businessTypes,
-      project_id: options?.projectId,
-      complexity_level: options?.complexityLevel || 'standard',
-      include_negative_cases: options?.includeNegativeCases ?? true
+      project_id: options?.projectId
     };
 
-    const response = await apiClient.post('/api/v1/generation/batch-test-cases', request);
+    const response = await apiClient.post('/api/v1/generation/batch', request);
     return response.data;
   }
 
@@ -552,12 +525,53 @@ class UnifiedGenerationService {
   async generateFullTwoStage(request: {
     business_type: string;
     project_id: number;
-    test_point_count?: number;
-    complexity_level?: string;
-    include_negative_cases?: boolean;
-    additional_context?: string;
+    additional_context?: Record<string, any>;
   }): Promise<any> {
     const response = await apiClient.post('/api/v1/unified-test-cases/generate/full-two-stage', request);
+    return response.data;
+  }
+
+  // ========== 变量预览功能 ==========
+
+  /**
+   * 预览业务类型的变量解析
+   */
+  async previewVariables(
+    businessType: string,
+    templateContent?: string,
+    additionalContext?: Record<string, any>,
+    generationStage?: string,
+    projectId?: number
+  ): Promise<any> {
+    const params: any = {};
+    if (templateContent) {
+      params.template_content = templateContent;
+    }
+    if (additionalContext) {
+      params.additional_context = JSON.stringify(additionalContext);
+    }
+    if (generationStage) {
+      params.generation_stage = generationStage;
+    }
+    if (projectId) {
+      params.project_id = projectId;
+    }
+
+    const response = await apiClient.get(`/api/v1/generation/variables/preview/${businessType}`, { params });
+    return response.data;
+  }
+
+  /**
+   * 测试变量解析
+   */
+  async testResolveVariables(requestData: {
+    business_type: string;
+    template_content?: string;
+    additional_context?: Record<string, any>;
+    generation_stage?: string;
+    project_id?: number;
+  }): Promise<any> {
+    const response = await apiClient.post('/api/v1/generation/variables/resolve', requestData);
     return response.data;
   }
 
@@ -581,6 +595,141 @@ class UnifiedGenerationService {
   }): Promise<any> {
     const response = await apiClient.get('/api/v1/unified-test-cases', { params });
     return response.data;
+  }
+
+  // ========== 参数验证工具方法 ==========
+
+  /**
+   * 验证和标准化测试点参数
+   * 确保参数符合后端API限制，防止422错误
+   */
+  private validateAndNormalizeTestPointParams(params: {
+    page?: number;
+    size?: number;
+    business_type?: BusinessType;
+    project_id?: number;
+    // status field removed - test points no longer have status
+    priority?: Priority;
+    keyword?: string;
+    test_point_ids?: number[];
+  }): any {
+    // 创建副本避免修改原对象
+    const validatedParams = { ...params };
+
+    // 验证和修复分页参数
+    if (!validatedParams.page || validatedParams.page < 1) {
+      validatedParams.page = 1;
+    }
+    if (!validatedParams.size || validatedParams.size < 1) {
+      validatedParams.size = 20;
+    }
+    // 根据后端Pydantic模型限制，最大页面大小为100
+    if (validatedParams.size > 100) {
+      console.warn(`测试点页面大小 ${validatedParams.size} 超过后端限制(100)，自动调整为100`);
+      validatedParams.size = 100;
+    }
+
+    // 验证数值型参数
+    if (validatedParams.project_id && (validatedParams.project_id < 1 || !Number.isInteger(validatedParams.project_id))) {
+      console.warn('无效的项目ID，将被忽略');
+      delete validatedParams.project_id;
+    }
+
+    // 验证test_point_ids数组
+    if (validatedParams.test_point_ids) {
+      if (!Array.isArray(validatedParams.test_point_ids)) {
+        console.warn('test_point_ids必须是数组格式，将被忽略');
+        delete validatedParams.test_point_ids;
+      } else {
+        // 过滤掉无效ID
+        validatedParams.test_point_ids = validatedParams.test_point_ids
+          .filter(id => id && Number.isInteger(id) && id > 0)
+          .slice(0, 100); // 限制数组长度防止请求过大
+
+        if (validatedParams.test_point_ids.length === 0) {
+          delete validatedParams.test_point_ids;
+        }
+      }
+    }
+
+    // 验证字符串参数长度
+    const stringFields = ['business_type', 'priority', 'keyword'];
+    stringFields.forEach(field => {
+      const value = validatedParams[field as keyof typeof validatedParams];
+      if (value && typeof value === 'string') {
+        // 限制字符串长度防止过长的请求
+        if (value.length > 100) {
+          console.warn(`测试点${field} 参数过长，将被截断`);
+          (validatedParams as any)[field] = value.substring(0, 100);
+        }
+        // 清理空白字符
+        (validatedParams as any)[field] = value.trim();
+      }
+    });
+
+    return validatedParams;
+  }
+
+  /**
+   * 验证和标准化过滤器参数
+   * 确保参数符合后端API限制，防止422错误
+   */
+  private validateAndNormalizeFilter(filter: UnifiedTestCaseFilter): UnifiedTestCaseFilter {
+    // 创建副本避免修改原对象
+    const validatedFilter = { ...filter };
+
+    // 验证和修复分页参数
+    if (!validatedFilter.page || validatedFilter.page < 1) {
+      validatedFilter.page = 1;
+    }
+    if (!validatedFilter.size || validatedFilter.size < 1) {
+      validatedFilter.size = 20;
+    }
+    // 根据后端Pydantic模型限制，最大页面大小为100
+    if (validatedFilter.size > 100) {
+      console.warn(`页面大小 ${validatedFilter.size} 超过后端限制(100)，自动调整为100`);
+      validatedFilter.size = 100;
+    }
+
+    // 验证数值型参数
+    if (validatedFilter.project_id && (validatedFilter.project_id < 1 || !Number.isInteger(validatedFilter.project_id))) {
+      console.warn('无效的项目ID，将被忽略');
+      delete validatedFilter.project_id;
+    }
+
+    // 验证test_point_ids数组
+    if (validatedFilter.test_point_ids) {
+      if (!Array.isArray(validatedFilter.test_point_ids)) {
+        console.warn('test_point_ids必须是数组格式，将被忽略');
+        delete validatedFilter.test_point_ids;
+      } else {
+        // 过滤掉无效ID
+        validatedFilter.test_point_ids = validatedFilter.test_point_ids
+          .filter(id => id && Number.isInteger(id) && id > 0)
+          .slice(0, 100); // 限制数组长度防止请求过大
+
+        if (validatedFilter.test_point_ids.length === 0) {
+          delete validatedFilter.test_point_ids;
+        }
+      }
+    }
+
+    // 验证字符串参数长度
+    const stringFields = ['business_type', 'status', 'stage', 'priority', 'keyword'];
+    stringFields.forEach(field => {
+      const value = validatedFilter[field as keyof UnifiedTestCaseFilter];
+      if (value && typeof value === 'string') {
+        // 限制字符串长度防止过长的请求
+        if (value.length > 100) {
+          console.warn(`${field} 参数过长，将被截断`);
+          (validatedFilter as any)[field] = value.substring(0, 100);
+        }
+        // 清理空白字符
+        (validatedFilter as any)[field] = value.trim();
+      }
+    });
+
+    return validatedFilter;
   }
 
   // ========== 状态和优先级工具方法 ==========

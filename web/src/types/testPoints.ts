@@ -12,7 +12,6 @@ export interface TestPoint {
   description?: string;
   business_type: string;
   priority: 'high' | 'medium' | 'low';
-  status: 'draft' | 'approved' | 'modified' | 'completed';
   project_id: number;
   created_at: string;
   updated_at: string;
@@ -34,14 +33,7 @@ export interface BatchTestPointOperationResponse {
   errors: string[];
 }
 
-// Compatibility constants and types
-export const TEST_POINT_STATUSES = {
-  DRAFT: 'draft',
-  APPROVED: 'approved',
-  MODIFIED: 'modified',
-  COMPLETED: 'completed',
-  ARCHIVED: 'archived'
-} as const;
+// Status fields removed - test points no longer have status
 
 export const PRIORITIES = {
   HIGH: 'high',
@@ -50,7 +42,6 @@ export const PRIORITIES = {
 } as const;
 
 // Union types for type hints
-export type TestPointStatus = typeof TEST_POINT_STATUSES[keyof typeof TEST_POINT_STATUSES];
 export type Priority = typeof PRIORITIES[keyof typeof PRIORITIES];
 // BusinessType moved to types/index.ts to avoid duplication
 // Import BusinessType from types/index.ts instead
@@ -69,7 +60,6 @@ export interface TestPointCreate {
   business_type: BusinessType;
   project_id: number;
   priority: Priority;
-  status?: TestPointStatus;
   test_point_id?: string;
   llm_metadata?: any;
   generation_job_id?: string;
@@ -79,7 +69,6 @@ export interface TestPointUpdate {
   title?: string;
   description?: string;
   priority?: Priority;
-  status?: TestPointStatus;
   expected_results?: string[];
 }
 
@@ -93,17 +82,6 @@ export interface TestPointListResponse {
 }
 
 
-export function getTestPointStatusName(status: TestPointStatus): string {
-  const statusNames = {
-    draft: '草稿',
-    approved: '已批准',
-    modified: '已修改',
-    completed: '已完成',
-    archived: '已归档'
-  };
-  return statusNames[status] || status;
-}
-
 export function getPriorityName(priority: Priority): string {
   const priorityNames = {
     high: '高',
@@ -111,13 +89,6 @@ export function getPriorityName(priority: Priority): string {
     low: '低'
   };
   return priorityNames[priority] || priority;
-}
-
-export function getTestPointStatusOptions() {
-  return Object.entries(TEST_POINT_STATUSES).map(([value, label]) => ({
-    value,
-    label: getTestPointStatusName(value as TestPointStatus)
-  }));
 }
 
 export function getPriorityOptions() {
@@ -207,7 +178,6 @@ export interface TestPointSummary {
   description?: string;
   business_type: string;
   priority: Priority;
-  status: TestPointStatus;
   project_id: number;
   created_at: string;
   updated_at: string;
@@ -219,7 +189,6 @@ export interface TestPointSummary {
 export interface TestPointSearchRequest {
   query?: string;
   business_type?: BusinessType;
-  status?: TestPointStatus;
   priority?: Priority;
   project_id?: number;
   date_from?: string;
@@ -245,22 +214,18 @@ export interface TestPointValidationResponse {
 
 export interface TestPointStatistics {
   total_test_points: number;
-  draft_test_points: number;
-  approved_test_points: number;
-  modified_test_points: number;
-  completed_test_points: number;
+  draft_test_points: number; // Always 0 - status removed
+  approved_test_points: number; // Always 0 - status removed
+  modified_test_points: number; // Always 0 - status removed
+  completed_test_points: number; // Always 0 - status removed
   test_points_by_business_type: Record<string, number>;
   test_points_by_priority: Record<string, number>;
-  test_points_by_status: Record<string, number>;
+  test_points_by_status: Record<string, number>; // Empty object - status removed
   recent_activity: TestPointSummary[];
   most_recent: TestPointSummary[];
 }
 
-export interface TestPointStatusUpdate {
-  status: TestPointStatus;
-  reason?: string;
-  notify_users?: boolean;
-}
+// TestPointStatusUpdate removed - status fields no longer supported
 
 export interface TestPointGenerationRequest {
   business_type: BusinessType;

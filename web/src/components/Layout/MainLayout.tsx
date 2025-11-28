@@ -244,7 +244,7 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
                   type="text"
                   size="small"
                   icon={<ClockCircleOutlined />}
-                  onClick={() => navigate('/test-cases/generate')}
+                  onClick={() => navigate('/test-management/generate')}
                   className="task-status-button"
                   style={{
                     color: taskState.currentTask.status === 'running' ? '#1890ff' : '#8c8c8c',

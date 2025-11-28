@@ -34,6 +34,7 @@ export interface UnifiedTestCaseCreate extends UnifiedTestCaseBase {
   expected_result?: string[];
   remarks?: string;
   entity_order?: number;
+  test_point_id?: number;
 }
 
 export interface UnifiedTestCaseUpdate {
@@ -44,6 +45,7 @@ export interface UnifiedTestCaseUpdate {
   module?: string;
   functional_module?: string;
   functional_domain?: string;
+  test_point_id?: number;
   preconditions?: string[];
   steps?: Array<{
     step_number: number;
@@ -60,20 +62,27 @@ export interface UnifiedTestCaseResponse extends UnifiedTestCaseBase {
   project_id: number;
   business_type: string;
   case_id: string;
+  test_case_id: string;
   stage: UnifiedTestCaseStage;
   module?: string;
   functional_module?: string;
   functional_domain?: string;
-  preconditions?: string[];
-  steps?: Array<{
+  preconditions: string[] | null;
+  steps: Array<{
     step_number: number;
     action: string;
     expected?: string;
-  }>;
-  expected_result?: string[];
+  }> | null;
+  expected_result: string[] | null;
   remarks?: string;
   generation_job_id?: string;
   entity_order?: number;
+  test_point_id?: number;
+  testPoint?: {
+    id: number;
+    test_point_id: string;
+    title: string;
+  };
   created_at: string;
   updated_at: string;
 }
@@ -86,6 +95,7 @@ export interface UnifiedTestCaseFilter {
   priority?: string;
   keyword?: string;
   test_point_ids?: number[];
+  test_point_id?: number;
   page: number;
   size: number;
   sort_by: string;
@@ -159,6 +169,7 @@ export interface UnifiedTestCaseFormData extends Omit<UnifiedTestCaseCreate, 'pr
   module?: string;
   functional_module?: string;
   functional_domain?: string;
+  test_point_id?: number;
 
   // 执行步骤
   preconditions?: string[];
@@ -269,4 +280,36 @@ export interface FormRule {
   max?: number;
   pattern?: RegExp;
   validator?: (rule: any, value: any) => Promise<void>;
+}
+
+// 统一错误响应格式
+export interface UnifiedErrorResponse {
+  error: string;
+  code: string;
+  details?: any;
+  field?: string;
+  timestamp?: string;
+  trace_id?: string;
+}
+
+// API响应包装器
+export interface ApiResponse<T = any> {
+  success: boolean;
+  data?: T;
+  error?: UnifiedErrorResponse;
+  message?: string;
+  timestamp: string;
+}
+
+// 字段级错误
+export interface FieldError {
+  field: string;
+  message: string;
+  code?: string;
+  value?: any;
+}
+
+// 验证错误响应
+export interface ValidationErrorResponse extends UnifiedErrorResponse {
+  field_errors: FieldError[];
 }

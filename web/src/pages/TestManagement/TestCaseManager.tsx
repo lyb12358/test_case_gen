@@ -1,722 +1,648 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   Card,
+  Button,
+  Table,
+  Space,
+  Tag,
+  Input,
+  Select,
+  Modal,
+  Form,
   Row,
   Col,
   Typography,
-  Button,
-  Space,
-  Table,
-  Tag,
-  Modal,
-  Form,
-  Input,
-  Select,
   message,
   Popconfirm,
-  Tooltip,
-  Badge,
-  Tabs,
   Divider,
-  Alert,
-  Steps,
-  List
+  Tabs,
+  Badge,
+  Tooltip
 } from 'antd';
 import {
   PlusOutlined,
   EditOutlined,
   DeleteOutlined,
   EyeOutlined,
-  PlayCircleOutlined,
-  FileTextOutlined,
+  ReloadOutlined,
   SearchOutlined,
   FilterOutlined,
-  ExportOutlined,
-  ImportOutlined,
-  ThunderboltOutlined,
-  BulbOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  LoadingOutlined
+  ExportOutlined
 } from '@ant-design/icons';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+
+import type { ColumnsType } from 'antd/es/table';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useProject } from '../../contexts/ProjectContext';
-import { unifiedGenerationService } from '../../services';
 
-const { Title, Text, Paragraph } = Typography;
-const { TextArea } = Input;
-const { Option } = Select;
-const { Step } = Steps;
+// 导入类型和服务
+import { businessService } from '../../services/businessService';
+import unifiedGenerationService from '../../services/unifiedGenerationService';
+import StepEditor from '../../components/TestGeneration/StepEditor';
+import {
+  UnifiedTestCaseResponse,
+  UnifiedTestCaseStatus,
+  UnifiedTestCaseCreate,
+  UnifiedTestCaseUpdate
+} from '../../types/unifiedTestCase';
+import { TestPoint } from '../../types/testPoints';
+import { debounce } from '../../utils/debounce';
 
-interface TestCase {
-  id: number;
-  test_case_id: string;
+type BusinessType = import('../../services/businessService').BusinessType;
+
+const { Title, Text } = Typography;
+const { Search } = Input;
+const { TabPane } = Tabs;
+
+interface UnifiedTestCaseFormData {
   name: string;
-  description: string;
   business_type: string;
-  module: string;
-  preconditions: string;
-  steps: string;
-  expected_result: string;
-  priority: 'high' | 'medium' | 'low';
-  status: 'draft' | 'approved' | 'completed';
+  priority: string;
   test_point_id?: number;
-  created_at: string;
-  updated_at: string;
-  project_id: number;
-  testPoint?: {
+  preconditions: string;
+  steps: Array<{
     id: number;
-    test_point_id: string;
-    title: string;
-  };
-}
-
-interface CreateTestCaseData {
-  name: string;
-  description: string;
-  business_type: string;
-  module: string;
-  preconditions: string;
-  steps: string;
-  expected_result: string;
-  priority: 'high' | 'medium' | 'low';
-  test_point_id?: number;
-}
-
-interface GenerateTestCaseData {
-  test_point_ids: number[];
-  include_negative_cases: boolean;
-  complexity_level: string;
-  additional_context?: string;
+    step_number: number;
+    action: string;
+    expected: string;
+  }>;
+  expected_result: string[];
 }
 
 const TestCaseManager: React.FC = () => {
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [form] = Form.useForm();
   const queryClient = useQueryClient();
-  const { currentProject } = useProject();
-
-  // 如果没有选择项目，显示提示
-  if (!currentProject) {
-    return (
-      <div style={{ padding: '24px' }}>
-        <Title level={2}>测试用例管理</Title>
-        <Card>
-          <div style={{ textAlign: 'center', padding: '50px' }}>
-            <Text type="secondary">请先选择一个项目来管理测试用例</Text>
-          </div>
-        </Card>
-      </div>
-    );
-  }
 
   // 状态管理
-  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [createModalVisible, setCreateModalVisible] = useState(false);
-  const [generateModalVisible, setGenerateModalVisible] = useState(false);
-  const [editingTestCase, setEditingTestCase] = useState<TestCase | null>(null);
-  const [form] = Form.useForm();
-  const [generateForm] = Form.useForm();
-  const [activeTab, setActiveTab] = useState('list');
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [viewModalVisible, setViewModalVisible] = useState(false);
+  const [selectedTestCase, setSelectedTestCase] = useState<UnifiedTestCaseResponse | null>(null);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [searchText, setSearchText] = useState('');
-  const [selectedTestPointId, setSelectedTestPointId] = useState<number | undefined>(searchParams.get('test_point_id') ? parseInt(searchParams.get('test_point_id')!) : undefined);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [activeTab, setActiveTab] = useState('list');
+  const [isGenerating, setIsGenerating] = useState(false);
 
-  // 获取业务类型数据
-  const { data: businessTypesData } = useQuery({
-    queryKey: ['businessTypes', { project_id: currentProject?.id, is_active: true }],
-    queryFn: () => unifiedGenerationService.getBusinessTypes(currentProject?.id),
-    enabled: !!currentProject?.id
-  });
+  // 简化的状态重置函数
+  const resetFormAndState = useCallback(() => {
+    form.resetFields();
+    setSelectedTestCase(null);
+  }, [form]);
 
-  // 获取测试点数据（用于生成测试用例）
-  const { data: testPointsData } = useQuery({
-    queryKey: ['testPoints', { project_id: currentProject?.id }],
-    queryFn: () => unifiedGenerationService.getTestPoints({ project_id: currentProject?.id }),
-    enabled: !!currentProject?.id
-  });
-
-  // 获取测试用例数据
-  const { data: testCases, isLoading, error: testCasesError, refetch: refetchTestCases } = useQuery({
-    queryKey: ['testCases', {
-      project_id: currentProject?.id,
-      test_point_id: selectedTestPointId
-    }],
+  // 获取数据
+  const { data: testCases, isLoading, error, refetch } = useQuery({
+    queryKey: ['testCases', currentPage, pageSize, searchText],
     queryFn: () => unifiedGenerationService.getUnifiedTestCases({
-      project_id: currentProject?.id,
-      test_point_id: selectedTestPointId,
-      page: 1,
-      size: 100
-    }),
-    staleTime: 5 * 60 * 1000,
-    enabled: !!currentProject?.id
+      page: currentPage,
+      size: pageSize,
+      keyword: searchText,
+      sort_by: 'created_at',
+      sort_order: 'desc'
+    })
   });
 
-  // 模拟获取测试点数据
   const { data: testPoints } = useQuery({
-    queryKey: ['testPoints', { project_id: currentProject?.id }],
-    queryFn: () => Promise.resolve({ data: mockTestPoints }),
-    staleTime: 5 * 60 * 1000
+    queryKey: ['testPoints'],
+    queryFn: () => unifiedGenerationService.getTestPoints({ page: 1, size: 100 })
   });
 
-  // 模拟创建测试用例
+  const { data: businessTypes } = useQuery({
+    queryKey: ['businessTypes'],
+    queryFn: () => businessService.getBusinessTypes()
+  });
+
+  // 创建测试用例
   const createMutation = useMutation({
-    mutationFn: async (data: CreateTestCaseData) => {
-      console.log('Creating test case:', data);
-      return { id: Date.now(), ...data, test_case_id: `TC${Date.now()}` };
-    },
+    mutationFn: unifiedGenerationService.createUnifiedTestCase,
     onSuccess: () => {
       message.success('测试用例创建成功');
       setCreateModalVisible(false);
-      form.resetFields();
+      resetFormAndState();
       queryClient.invalidateQueries({ queryKey: ['testCases'] });
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error('创建测试用例失败:', error);
       message.error('创建测试用例失败');
     }
   });
 
-  // 模拟更新测试用例
+  // 更新测试用例
   const updateMutation = useMutation({
-    mutationFn: async (data: { id: number; caseData: Partial<TestCase> }) => {
-      console.log('Updating test case:', data);
-      return data.caseData;
-    },
+    mutationFn: ({ id, data }: { id: number; data: UnifiedTestCaseUpdate }) =>
+      unifiedGenerationService.updateUnifiedTestCase(id, data),
     onSuccess: () => {
       message.success('测试用例更新成功');
-      setEditingTestCase(null);
-      form.resetFields();
+      setEditModalVisible(false);
+      resetFormAndState();
       queryClient.invalidateQueries({ queryKey: ['testCases'] });
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error('更新测试用例失败:', error);
       message.error('更新测试用例失败');
     }
   });
 
-  // 模拟删除测试用例
+  // 删除测试用例
   const deleteMutation = useMutation({
-    mutationFn: async (id: number) => {
-      console.log('Deleting test case:', id);
-      return id;
-    },
+    mutationFn: unifiedGenerationService.deleteUnifiedTestCase,
     onSuccess: () => {
       message.success('测试用例删除成功');
       setSelectedRowKeys([]);
       queryClient.invalidateQueries({ queryKey: ['testCases'] });
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error('删除测试用例失败:', error);
       message.error('删除测试用例失败');
     }
   });
 
-  // 模拟AI生成测试用例
-  const generateMutation = useMutation({
-    mutationFn: async (data: GenerateTestCaseData) => {
-      console.log('Generating test cases:', data);
-      // 模拟生成延迟
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      return { generated: data.test_point_ids.length * 2 }; // 每个测试点生成2个测试用例
-    },
-    onSuccess: (data) => {
-      message.success(`成功生成 ${data.generated} 个测试用例`);
-      setGenerateModalVisible(false);
-      generateForm.resetFields();
-      queryClient.invalidateQueries({ queryKey: ['testCases'] });
-    },
-    onError: () => {
-      message.error('AI生成测试用例失败');
+  // 防抖搜索
+  const debouncedSearch = useMemo(
+    () => debounce((value: string) => {
+      setSearchText(value);
+      setCurrentPage(1);
+    }, 300),
+    []
+  );
+
+  // 数据转换函数
+const convertFormDataToCreate = (formData: UnifiedTestCaseFormData, businessType: string, projectId: number): UnifiedTestCaseCreate => ({
+  project_id: projectId,
+  business_type: businessType,
+  case_id: `TC_${formData.business_type}_${Date.now()}`,
+  preconditions: formData.preconditions ? [formData.preconditions] : [],
+  test_point_id: formData.test_point_id,
+  name: formData.name,
+  priority: formData.priority as 'high' | 'medium' | 'low',
+  steps: formData.steps,
+  expected_result: formData.expected_result,
+  status: UnifiedTestCaseStatus.DRAFT
+});
+
+const convertFormDataToUpdate = (formData: UnifiedTestCaseFormData): UnifiedTestCaseUpdate => ({
+  test_point_id: formData.test_point_id,
+  name: formData.name,
+  priority: formData.priority as 'high' | 'medium' | 'low',
+  preconditions: formData.preconditions ? [formData.preconditions] : [],
+  steps: formData.steps,
+  expected_result: formData.expected_result
+});
+
+// 简单的测试点选择处理
+  const handleTestPointChange = (testPointId: number) => {
+    const testPoint = testPoints?.items?.find(tp => tp.id === testPointId);
+    if (testPoint) {
+      form.setFieldsValue({
+        business_type: testPoint.business_type,
+        priority: testPoint.priority,
+        name: testPoint.title
+      });
     }
-  });
-
-  const handleCreate = () => {
-    setEditingTestCase(null);
-    form.resetFields();
-    // 如果有选中的测试点ID，自动填充
-    if (selectedTestPointId) {
-      form.setFieldValue('test_point_id', selectedTestPointId);
-    }
-    setCreateModalVisible(true);
   };
 
-  const handleEdit = (record: TestCase) => {
-    setEditingTestCase(record);
-    form.setFieldsValue(record);
-    setCreateModalVisible(true);
-  };
+  // 提交表单
+  const handleSubmit = useCallback((isEdit: boolean) => {
+    form.validateFields().then((values) => {
+      const formData: UnifiedTestCaseFormData = {
+        ...values,
+        steps: values.steps || [],
+        expected_result: values.expected_result || []
+      };
 
-  const handleDelete = async (id: number) => {
-    await deleteMutation.mutateAsync(id);
-  };
-
-  const handleCreateOrUpdate = async () => {
-    try {
-      const values = await form.validateFields();
-      if (editingTestCase) {
-        await updateMutation.mutateAsync({ id: editingTestCase.id, caseData: values });
+      if (isEdit && selectedTestCase) {
+        const updateData = convertFormDataToUpdate(formData);
+        updateMutation.mutate({ id: selectedTestCase.id, data: updateData });
       } else {
-        await createMutation.mutateAsync(values);
+        // 需要project_id，这里使用默认值或从其他地方获取
+        const projectId = 1; // 默认项目ID，实际应该从项目上下文获取
+        const createData = convertFormDataToCreate(formData, formData.business_type, projectId);
+        createMutation.mutate(createData);
       }
-    } catch (error) {
-      console.error('Form validation failed:', error);
-    }
-  };
+    });
+  }, [form, selectedTestCase, createMutation, updateMutation]);
 
-  const handleGenerate = () => {
-    generateForm.resetFields();
-    // 如果有选中的测试点ID，自动填充
-    if (selectedTestPointId) {
-      generateForm.setFieldValue('test_point_ids', [selectedTestPointId]);
-    }
-    setGenerateModalVisible(true);
-  };
+  // 处理函数
+  const handleCreate = useCallback(() => {
+    setCreateModalVisible(true);
+    resetFormAndState();
+  }, [resetFormAndState]);
 
-  const handleGenerateSubmit = async () => {
-    try {
-      const values = await generateForm.validateFields();
-      await generateMutation.mutateAsync(values);
-    } catch (error) {
-      console.error('Generate form validation failed:', error);
-    }
-  };
+  const handleEdit = useCallback((record: UnifiedTestCaseResponse) => {
+    setSelectedTestCase(record);
+    setEditModalVisible(true);
+    setTimeout(() => {
+      form.setFieldsValue({
+        name: record.name,
+        business_type: record.business_type,
+        priority: record.priority,
+        test_point_id: record.test_point_id,
+        preconditions: record.preconditions,
+        steps: record.steps || [],
+        expected_result: record.expected_result || []
+      });
+    }, 100);
+  }, [form]);
 
-  const getStatusColor = (status: string) => {
-    const colors = {
-      draft: 'default',
-      approved: 'success',
-      completed: 'processing',
-      modified: 'warning'
-    };
-    return colors[status as keyof typeof colors] || 'default';
-  };
+  const handleView = useCallback((record: UnifiedTestCaseResponse) => {
+    setSelectedTestCase(record);
+    setViewModalVisible(true);
+  }, []);
 
-  const getStatusText = (status: string) => {
-    const texts = {
-      draft: '草稿',
-      approved: '已批准',
-      completed: '已完成',
-      modified: '已修改'
-    };
-    return texts[status as keyof typeof texts] || status;
-  };
+  const handleDelete = useCallback((id: number) => {
+    deleteMutation.mutate(id);
+  }, [deleteMutation]);
 
-  const getPriorityColor = (priority: string) => {
-    const colors = {
-      high: 'red',
-      medium: 'orange',
-      low: 'green'
-    };
-    return colors[priority as keyof typeof colors] || 'default';
-  };
-
-  const getPriorityText = (priority: string) => {
-    const texts = {
-      high: '高',
-      medium: '中',
-      low: '低'
-    };
-    return texts[priority as keyof typeof texts] || priority;
-  };
-
-  const columns = [
+  const columns: ColumnsType<UnifiedTestCaseResponse> = [
     {
       title: '测试用例ID',
-      dataIndex: 'test_case_id',
-      key: 'test_case_id',
-      width: 120,
+      dataIndex: 'case_id',
+      key: 'case_id',
+      width: 150,
     },
     {
       title: '名称',
       dataIndex: 'name',
       key: 'name',
       width: 200,
-      ellipsis: true,
-    },
-    {
-      title: '描述',
-      dataIndex: 'description',
-      key: 'description',
-      width: 250,
-      ellipsis: true,
-    },
-    {
-      title: '关联测试点',
-      dataIndex: 'testPoint',
-      key: 'testPoint',
-      width: 150,
-      render: (testPoint: TestCase['testPoint']) => (
-        testPoint ? (
-          <Tag color="blue">
-            {testPoint.test_point_id} - {testPoint.title}
-          </Tag>
-        ) : (
-          <Tag color="default">无关联</Tag>
-        )
-      )
     },
     {
       title: '业务类型',
       dataIndex: 'business_type',
       key: 'business_type',
-      width: 100,
-      render: (type: string) => <Tag color="blue">{type}</Tag>
-    },
-    {
-      title: '模块',
-      dataIndex: 'module',
-      key: 'module',
       width: 120,
-      render: (module: string) => <Tag color="green">{module}</Tag>
+      render: (type: string) => (
+        <Tag color="blue">{type}</Tag>
+      ),
     },
     {
       title: '优先级',
       dataIndex: 'priority',
       key: 'priority',
-      width: 80,
-      render: (priority: string) => (
-        <Tag color={getPriorityColor(priority)}>
-          {getPriorityText(priority)}
-        </Tag>
-      )
+      width: 100,
+      render: (priority: string) => {
+        const colorMap = {
+          high: 'red',
+          medium: 'orange',
+          low: 'green'
+        };
+        const textMap = {
+          high: '高',
+          medium: '中',
+          low: '低'
+        };
+        return (
+          <Tag color={colorMap[priority as keyof typeof colorMap]}>
+            {textMap[priority as keyof typeof textMap]}
+          </Tag>
+        );
+      },
     },
     {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      width: 100,
-      render: (status: string) => (
-        <Badge status={getStatusColor(status) as any} text={getStatusText(status)} />
-      )
+      title: '测试点',
+      dataIndex: 'test_point_id',
+      key: 'test_point_id',
+      width: 120,
+      render: (testPointId: number) => testPointId ? `TP-${testPointId}` : '-',
     },
     {
       title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',
-      width: 150,
-      render: (date: string) => new Date(date).toLocaleString()
+      width: 180,
+      render: (date: string) => new Date(date).toLocaleString(),
     },
     {
       title: '操作',
-      key: 'actions',
-      width: 150,
-      render: (_: any, record: TestCase) => (
+      key: 'action',
+      width: 200,
+      render: (_, record) => (
         <Space size="small">
-          <Tooltip title="查看详情">
+          <Button
+            type="link"
+            size="small"
+            icon={<EyeOutlined />}
+            onClick={() => handleView(record)}
+          >
+            查看
+          </Button>
+          <Button
+            type="link"
+            size="small"
+            icon={<EditOutlined />}
+            onClick={() => handleEdit(record)}
+          >
+            编辑
+          </Button>
+          <Popconfirm
+            title="确定删除这个测试用例吗？"
+            onConfirm={() => handleDelete(record.id)}
+            okText="确定"
+            cancelText="取消"
+          >
             <Button
-              type="text"
-              icon={<EyeOutlined />}
-              onClick={() => navigate(`/test-management/cases/${record.id}`)}
-            />
-          </Tooltip>
-          <Tooltip title="编辑">
-            <Button
-              type="text"
-              icon={<EditOutlined />}
-              onClick={() => handleEdit(record)}
-            />
-          </Tooltip>
-          <Tooltip title="删除">
-            <Popconfirm
-              title="确定要删除这个测试用例吗？"
-              onConfirm={() => handleDelete(record.id)}
-              okText="确定"
-              cancelText="取消"
+              type="link"
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
             >
-              <Button type="text" danger icon={<DeleteOutlined />} />
-            </Popconfirm>
-          </Tooltip>
+              删除
+            </Button>
+          </Popconfirm>
         </Space>
-      )
-    }
+      ),
+    },
   ];
 
-  const rowSelection = {
-    selectedRowKeys,
-    onChange: (newSelectedRowKeys: React.Key[]) => {
-      setSelectedRowKeys(newSelectedRowKeys);
-    },
-  };
-
-  // 使用真实API数据
-  const filteredTestCases = testCases?.items?.filter(item =>
-    item.name.toLowerCase().includes(searchText.toLowerCase()) ||
-    (item.description && item.description.toLowerCase().includes(searchText.toLowerCase()))
-  ) || [];
-
-  const tabItems = [
-    {
-      key: 'list',
-      label: '测试用例列表',
-      children: (
-        <div>
-          {selectedTestPointId && (
-            <Alert
-              message={`当前显示测试点 "${mockTestPoints.find(tp => tp.id === selectedTestPointId)?.title}" 的测试用例`}
-              type="info"
-              showIcon
-              style={{ marginBottom: 16 }}
-              action={
-                <Button size="small" onClick={() => navigate('/test-management/points')}>
-                  切换到测试点管理
-                </Button>
-              }
-            />
-          )}
-          <Card style={{ marginBottom: 16 }}>
-            <Space>
-              <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
-                创建测试用例
-              </Button>
-              <Button icon={<ThunderboltOutlined />} onClick={handleGenerate}>
-                AI生成
-              </Button>
-              <Button icon={<ExportOutlined />}>
-                导出
-              </Button>
-              <Button icon={<ImportOutlined />}>
-                导入
-              </Button>
-              <Input
-                placeholder="搜索测试用例..."
-                prefix={<SearchOutlined />}
-                value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-                style={{ width: 200 }}
-              />
-            </Space>
-          </Card>
-
-          <Table
-            rowSelection={rowSelection}
-            columns={columns}
-            dataSource={filteredTestCases}
-            rowKey="id"
-            loading={isLoading}
-            pagination={{
-              total: testCases?.total || 0,
-              pageSize: 10,
-              showSizeChanger: true,
-              showQuickJumper: true
-            }}
-          />
-        </div>
-      )
-    },
-    {
-      key: 'overview',
-      label: '统计概览',
-      children: (
-        <Card>
-          <Alert
-            message="测试用例统计概览"
-            description="这里是测试用例的统计数据和图表展示区域，可以展示各模块的测试用例分布、状态统计、执行结果等信息。"
-            type="info"
-            showIcon
-          />
-          <div style={{ textAlign: 'center', padding: '50px' }}>
-            <Text type="secondary">统计功能开发中...</Text>
-          </div>
-        </Card>
-      )
-    }
-  ];
-
-  return (
-    <div style={{ padding: '24px' }}>
-      <div style={{ marginBottom: 24 }}>
-        <Title level={2}>测试用例管理</Title>
-        <Paragraph type="secondary">
-          管理项目中的测试用例，支持基于测试点创建或AI智能生成
-        </Paragraph>
-      </div>
-
-      <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabItems} />
-
-      {/* 创建/编辑测试用例模态框 */}
-      <Modal
-        title={editingTestCase ? '编辑测试用例' : '创建测试用例'}
-        open={createModalVisible}
-        onCancel={() => setCreateModalVisible(false)}
-        onOk={handleCreateOrUpdate}
-        width={800}
-      >
-        <Form form={form} layout="vertical">
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                name="name"
-                label="测试用例名称"
-                rules={[{ required: true, message: '请输入测试用例名称' }]}
-              >
-                <Input placeholder="请输入测试用例名称" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="test_point_id"
-                label="关联测试点"
-              >
-                <Select placeholder="请选择关联的测试点（可选）" allowClear>
-                  {testPoints?.data?.map(tp => (
-                    <Option key={tp.id} value={tp.id}>
-                      {tp.test_point_id} - {tp.title}
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
+  // 渲染表单
+  const renderForm = () => (
+    <Form
+      form={form}
+      layout="vertical"
+      initialValues={{
+        priority: 'medium',
+        steps: [{ id: 1, step_number: 1, action: '', expected: '' }],
+        expected_result: []
+      }}
+    >
+      <Row gutter={16}>
+        <Col span={12}>
           <Form.Item
-            name="description"
-            label="测试用例描述"
-            rules={[{ required: true, message: '请输入测试用例描述' }]}
+            label="测试用例名称"
+            name="name"
+            rules={[{ required: true, message: '请输入测试用例名称' }]}
           >
-            <TextArea rows={3} placeholder="请输入测试用例描述" />
+            <Input placeholder="请输入测试用例名称" />
           </Form.Item>
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item
-                name="business_type"
-                label="业务类型"
-                rules={[{ required: true, message: '请选择业务类型' }]}
-              >
-                <Select
-                  placeholder="请选择业务类型"
-                  optionLabelProp="label"
-                  showSearch
-                  filterOption={(input, option) => {
-                    const searchText = input.toLowerCase();
-                    const businessCode = String(option?.key || '').toLowerCase();
-                    const businessName = String(option?.children || '').toLowerCase();
-                    const businessLabel = String(option?.label || '').toLowerCase();
-
-                    return (
-                      businessCode.includes(searchText) ||
-                      businessName.includes(searchText) ||
-                      businessLabel.includes(searchText)
-                    );
-                  }}
-                >
-                  {businessTypesData?.items?.map?.((type: any) => (
-                    <Option
-                      key={type.code || type.value}
-                      value={type.code || type.value}
-                      label={`[${type.code || type.value}] ${type.name || type.label}`}
-                    >
-                      [{type.code || type.value}] {type.name || type.label}
-                    </Option>
-                  )) || []}
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item
-                name="priority"
-                label="优先级"
-                rules={[{ required: true, message: '请选择优先级' }]}
-              >
-                <Select placeholder="请选择优先级">
-                  <Option value="high">高</Option>
-                  <Option value="medium">中</Option>
-                  <Option value="low">低</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
+        </Col>
+        <Col span={12}>
           <Form.Item
-            name="preconditions"
-            label="前置条件"
-            rules={[{ required: true, message: '请输入前置条件' }]}
-          >
-            <TextArea rows={3} placeholder="请输入测试执行前的准备条件" />
-          </Form.Item>
-          <Form.Item
-            name="steps"
-            label="执行步骤"
-            rules={[{ required: true, message: '请输入执行步骤' }]}
-          >
-            <TextArea rows={4} placeholder="请按步骤格式输入执行过程，每步一行" />
-          </Form.Item>
-          <Form.Item
-            name="expected_result"
-            label="预期结果"
-            rules={[{ required: true, message: '请输入预期结果' }]}
-          >
-            <TextArea rows={3} placeholder="请输入预期的测试结果" />
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      {/* AI生成测试用例模态框 */}
-      <Modal
-        title="AI生成测试用例"
-        open={generateModalVisible}
-        onCancel={() => setGenerateModalVisible(false)}
-        onOk={handleGenerateSubmit}
-        confirmLoading={generateMutation.isPending}
-        width={700}
-      >
-        <Alert
-          message="AI生成说明"
-          description="系统将基于选择的测试点，使用AI自动生成详细的测试用例，包含前置条件、执行步骤和预期结果。"
-          type="info"
-          showIcon
-          style={{ marginBottom: 16 }}
-        />
-        <Form form={generateForm} layout="vertical">
-          <Form.Item
-            name="test_point_ids"
-            label="选择测试点"
-            rules={[{ required: true, message: '请选择要生成测试用例的测试点' }]}
+            label="关联测试点"
+            name="test_point_id"
           >
             <Select
-              mode="multiple"
-              placeholder="请选择测试点（可多选）"
-              style={{ width: '100%' }}
+              placeholder="选择测试点（可选）"
+              allowClear
+              onChange={handleTestPointChange}
             >
-              {testPointsData?.items?.map(tp => (
-                <Option key={tp.id} value={tp.id}>
+              {testPoints?.items?.map((tp: TestPoint) => (
+                <Select.Option key={tp.id} value={tp.id}>
                   {tp.test_point_id} - {tp.title}
-                </Option>
-              )) || []}
+                </Select.Option>
+              ))}
             </Select>
           </Form.Item>
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                name="include_negative_cases"
-                label="包含负向用例"
-                valuePropName="checked"
-              >
-                <Select defaultValue={true}>
-                  <Option value={true}>是</Option>
-                  <Option value={false}>否</Option>
-                </Select>
-              </Form.Item>
+        </Col>
+      </Row>
+
+      <Row gutter={16}>
+        <Col span={12}>
+          <Form.Item
+            label="业务类型"
+            name="business_type"
+            rules={[{ required: true, message: '请选择业务类型' }]}
+          >
+            <Input readOnly placeholder="选择测试点后自动填充" />
+          </Form.Item>
+        </Col>
+        <Col span={12}>
+          <Form.Item
+            label="优先级"
+            name="priority"
+            rules={[{ required: true, message: '请选择优先级' }]}
+          >
+            <Select placeholder="选择测试点后自动填充" disabled>
+              <Select.Option value="high">高</Select.Option>
+              <Select.Option value="medium">中</Select.Option>
+              <Select.Option value="low">低</Select.Option>
+            </Select>
+          </Form.Item>
+        </Col>
+      </Row>
+
+      <Form.Item
+        label="前置条件"
+        name="preconditions"
+      >
+        <Input.TextArea
+          rows={3}
+          placeholder="请输入前置条件"
+        />
+      </Form.Item>
+
+      <Form.Item
+        label="测试步骤"
+        name="steps"
+      >
+        <StepEditor />
+      </Form.Item>
+
+      <Form.Item
+        label="预期结果"
+        name="expected_result"
+      >
+        <Input.TextArea
+          rows={3}
+          placeholder="请输入预期结果，每行一个"
+        />
+      </Form.Item>
+    </Form>
+  );
+
+  if (error) {
+    return (
+      <Card>
+        <div style={{ textAlign: 'center', padding: '50px' }}>
+          <Title level={4}>加载失败</Title>
+          <Button type="primary" onClick={() => refetch()}>
+            重新加载
+          </Button>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <div>
+      <Card>
+        <div style={{ marginBottom: 16 }}>
+          <Row justify="space-between" align="middle">
+            <Col>
+              <Title level={4} style={{ margin: 0 }}>
+                测试用例管理
+              </Title>
             </Col>
-            <Col span={12}>
-              <Form.Item
-                name="complexity_level"
-                label="生成复杂度"
-                rules={[{ required: true, message: '请选择生成复杂度' }]}
-              >
-                <Select placeholder="请选择生成复杂度">
-                  <Option value="simple">简单</Option>
-                  <Option value="standard">标准</Option>
-                  <Option value="complex">复杂</Option>
-                </Select>
-              </Form.Item>
+            <Col>
+              <Space>
+                <Search
+                  placeholder="搜索测试用例..."
+                  allowClear
+                  style={{ width: 300 }}
+                  onSearch={debouncedSearch}
+                  onChange={(e) => debouncedSearch(e.target.value)}
+                />
+                <Button
+                  icon={<ReloadOutlined />}
+                  onClick={() => refetch()}
+                >
+                  刷新
+                </Button>
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  onClick={handleCreate}
+                >
+                  新建测试用例
+                </Button>
+              </Space>
             </Col>
           </Row>
-          <Form.Item
-            name="additional_context"
-            label="额外上下文（可选）"
-          >
-            <TextArea
-              rows={3}
-              placeholder="可以输入额外的业务上下文信息，帮助AI生成更准确的测试用例"
-            />
-          </Form.Item>
-        </Form>
+        </div>
+
+        <Table
+          columns={columns}
+          dataSource={testCases?.items || []}
+          loading={isLoading}
+          rowKey="id"
+          rowSelection={{
+            selectedRowKeys,
+            onChange: setSelectedRowKeys,
+          }}
+          pagination={{
+            current: currentPage,
+            pageSize: pageSize,
+            total: testCases?.total || 0,
+            showSizeChanger: true,
+            showQuickJumper: true,
+            showTotal: (total, range) =>
+              `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
+            onChange: (page, size) => {
+              setCurrentPage(page);
+              setPageSize(size || 20);
+            },
+          }}
+        />
+      </Card>
+
+      {/* 创建测试用例模态框 */}
+      <Modal
+        title="新建测试用例"
+        open={createModalVisible}
+        onCancel={() => {
+          setCreateModalVisible(false);
+          resetFormAndState();
+        }}
+        onOk={() => handleSubmit(false)}
+        confirmLoading={createMutation.isPending}
+        width={1000}
+        destroyOnHidden
+      >
+        {renderForm()}
+      </Modal>
+
+      {/* 编辑测试用例模态框 */}
+      <Modal
+        title="编辑测试用例"
+        open={editModalVisible}
+        onCancel={() => {
+          setEditModalVisible(false);
+          resetFormAndState();
+        }}
+        onOk={() => handleSubmit(true)}
+        confirmLoading={updateMutation.isPending}
+        width={1000}
+        destroyOnHidden
+      >
+        {renderForm()}
+      </Modal>
+
+      {/* 查看测试用例模态框 */}
+      <Modal
+        title="查看测试用例"
+        open={viewModalVisible}
+        onCancel={() => {
+          setViewModalVisible(false);
+          setSelectedTestCase(null);
+        }}
+        footer={[
+          <Button key="close" onClick={() => {
+            setViewModalVisible(false);
+            setSelectedTestCase(null);
+          }}>
+            关闭
+          </Button>
+        ]}
+        width={1000}
+        destroyOnHidden
+      >
+        {selectedTestCase && (
+          <div>
+            <Row gutter={16}>
+              <Col span={12}>
+                <div style={{ marginBottom: 16 }}>
+                  <Text strong>测试用例ID：</Text>
+                  <Tag color="blue">{selectedTestCase.case_id}</Tag>
+                </div>
+              </Col>
+              <Col span={12}>
+                <div style={{ marginBottom: 16 }}>
+                  <Text strong>名称：</Text>
+                  {selectedTestCase.name}
+                </div>
+              </Col>
+            </Row>
+
+            <Row gutter={16}>
+              <Col span={12}>
+                <div style={{ marginBottom: 16 }}>
+                  <Text strong>业务类型：</Text>
+                  <Tag color="purple">{selectedTestCase.business_type}</Tag>
+                </div>
+              </Col>
+              <Col span={12}>
+                <div style={{ marginBottom: 16 }}>
+                  <Text strong>优先级：</Text>
+                  <Tag color={
+                    selectedTestCase.priority === 'high' ? 'red' :
+                    selectedTestCase.priority === 'medium' ? 'orange' : 'green'
+                  }>
+                    {selectedTestCase.priority === 'high' ? '高' :
+                     selectedTestCase.priority === 'medium' ? '中' : '低'}
+                  </Tag>
+                </div>
+              </Col>
+            </Row>
+
+            <div style={{ marginBottom: 16 }}>
+              <Text strong>前置条件：</Text>
+              <div style={{ marginTop: 8 }}>
+                {selectedTestCase.preconditions || '无'}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <Text strong>测试步骤：</Text>
+              <div style={{ marginTop: 8 }}>
+                {selectedTestCase.steps?.map((step, index) => (
+                  <div key={index} style={{ marginBottom: 8 }}>
+                    <div>
+                      <strong>步骤 {index + 1}:</strong> {step.action}
+                    </div>
+                    <div>
+                      <strong>预期结果:</strong> {step.expected}
+                    </div>
+                  </div>
+                )) || '无'}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <Text strong>预期结果：</Text>
+              <div style={{ marginTop: 8 }}>
+                {selectedTestCase.expected_result?.join('\n') || '无'}
+              </div>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

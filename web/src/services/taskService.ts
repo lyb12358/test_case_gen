@@ -7,7 +7,7 @@ import {
 export const taskService = {
   // 获取任务状态
   getTaskStatus: async (taskId: string): Promise<TaskStatusResponse> => {
-    const response = await apiClient.get<TaskStatusResponse>(`/api/v1/status/${taskId}`);
+    const response = await apiClient.get<TaskStatusResponse>(`/api/v1/generation/status/${taskId}`);
     return response.data;
   },
 

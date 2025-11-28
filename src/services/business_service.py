@@ -10,7 +10,7 @@ import json
 
 from src.database.models import (
     BusinessTypeConfig, Project, PromptCombination,
-    PromptCombinationItem, Prompt, BusinessType
+    PromptCombinationItem, Prompt, BusinessType, PromptType
 )
 from src.models.business import (
     BusinessTypeCreate, BusinessTypeUpdate, BusinessTypeResponse,
@@ -18,7 +18,8 @@ from src.models.business import (
     PromptCombinationCreate, PromptCombinationUpdate, PromptCombinationResponse,
     PromptCombinationListResponse, PromptCombinationPreviewRequest,
     PromptCombinationPreviewResponse, PromptCombinationItemResponse,
-    PromptCombinationItemCreate, BusinessTypeStatsResponse
+    PromptCombinationItemCreate, BusinessTypeStatsResponse,
+    ConfigurationStatus
 )
 from src.utils.database_prompt_builder import DatabasePromptBuilder
 
@@ -28,6 +29,15 @@ class BusinessService:
 
     def __init__(self, db: Session):
         self.db = db
+
+    def calculate_configuration_status(self, has_test_point: bool, has_test_case: bool) -> ConfigurationStatus:
+        """Calculate unified configuration status based on test point and test case combination status."""
+        if has_test_point and has_test_case:
+            return ConfigurationStatus.COMPLETE
+        elif has_test_point or has_test_case:
+            return ConfigurationStatus.PARTIAL
+        else:
+            return ConfigurationStatus.NONE
 
     def get_business_types(
         self,
@@ -65,6 +75,11 @@ class BusinessService:
         # Convert to response models
         business_types = []
         for item in items:
+            # Calculate configuration status
+            has_test_point = item.test_point_combination_id is not None
+            has_test_case = item.test_case_combination_id is not None
+            configuration_status = self.calculate_configuration_status(has_test_point, has_test_case)
+
             business_type = BusinessTypeResponse(
                 id=item.id,
                 code=item.code,
@@ -72,25 +87,18 @@ class BusinessService:
                 description=item.description,
                 project_id=item.project_id,
                 is_active=item.is_active,
-                # Note: BusinessTypeConfig only has test_point_combination_id and test_case_combination_id
-                # prompt_combination_id=item.prompt_combination_id,
                 test_point_combination_id=item.test_point_combination_id,
                 test_case_combination_id=item.test_case_combination_id,
                 created_at=item.created_at,
                 updated_at=item.updated_at,
                 # Get project name from joined relationship
                 project_name=item.project.name if item.project else None,
-                prompt_combination_id=None,  # Set to None since it doesn't exist in the model
-                prompt_combination_name=None,
-                # Business is configured only if both test_point_combination_id and test_case_combination_id are set
-                has_valid_prompt_combination=(
-                    item.test_point_combination_id is not None and
-                    item.test_case_combination_id is not None
-                ),
                 test_point_combination_name=None,
                 test_case_combination_name=None,
-                has_valid_test_point_combination=item.test_point_combination_id is not None,
-                has_valid_test_case_combination=item.test_case_combination_id is not None
+                # Unified configuration status
+                configuration_status=configuration_status,
+                has_valid_test_point_combination=has_test_point,
+                has_valid_test_case_combination=has_test_case
             )
             business_types.append(business_type)
 
@@ -121,6 +129,11 @@ class BusinessService:
         # Use the loaded business type with project data
         bt = business_type_with_project if business_type_with_project else business_type
 
+        # Calculate configuration status
+        has_test_point = bt.test_point_combination_id is not None
+        has_test_case = bt.test_case_combination_id is not None
+        configuration_status = self.calculate_configuration_status(has_test_point, has_test_case)
+
         return BusinessTypeResponse(
             id=bt.id,
             code=bt.code,
@@ -133,17 +146,12 @@ class BusinessService:
             created_at=bt.created_at,
             updated_at=bt.updated_at,
             project_name=bt.project.name if bt.project else None,
-            prompt_combination_id=None,  # Set to None since it doesn't exist in the model
-            prompt_combination_name=None,
-            # Business is configured only if both test_point_combination_id and test_case_combination_id are set
-            has_valid_prompt_combination=(
-                bt.test_point_combination_id is not None and
-                bt.test_case_combination_id is not None
-            ),
             test_point_combination_name=None,
             test_case_combination_name=None,
-            has_valid_test_point_combination=bt.test_point_combination_id is not None,
-            has_valid_test_case_combination=bt.test_case_combination_id is not None
+            # Unified configuration status
+            configuration_status=configuration_status,
+            has_valid_test_point_combination=has_test_point,
+            has_valid_test_case_combination=has_test_case
         )
 
     def create_business_type(self, business_type_data: BusinessTypeCreate) -> BusinessTypeResponse:
@@ -626,14 +634,24 @@ class PromptCombinationService:
         self.db.add(combination)
         self.db.flush()  # Get the ID
 
-        # Create items
+        # Create items with correct item_type mapping
         for item_data in items_data:
+            # Find the prompt to determine its type
+            prompt = next((p for p in prompts if p.id == item_data.prompt_id), None)
+
+            # Map prompt type to item_type
+            if prompt and prompt.type == PromptType.SYSTEM:
+                item_type = 'system_prompt'
+            else:
+                item_type = 'user_prompt'
+
             item = PromptCombinationItem(
                 combination_id=combination.id,
                 prompt_id=item_data.prompt_id,
                 order=item_data.order,
                 variable_name=item_data.variable_name,
-                is_required=item_data.is_required
+                is_required=item_data.is_required,
+                item_type=item_type
             )
             self.db.add(item)
 
@@ -675,15 +693,29 @@ class PromptCombinationService:
                 PromptCombinationItem.combination_id == combination_id
             ).delete()
 
-            # Add new items
+            # Add new items with correct item_type mapping
+            # Get all prompts for type mapping
+            prompt_ids = [item.prompt_id for item in items_data if item.prompt_id]
+            prompts = self.db.query(Prompt).filter(Prompt.id.in_(prompt_ids)).all()
+
             for item_data in items_data:
                 if item_data.prompt_id:  # Only add if prompt_id is provided
+                    # Find the prompt to determine its type
+                    prompt = next((p for p in prompts if p.id == item_data.prompt_id), None)
+
+                    # Map prompt type to item_type
+                    if prompt and prompt.type == PromptType.SYSTEM:
+                        item_type = 'system_prompt'
+                    else:
+                        item_type = 'user_prompt'
+
                     item = PromptCombinationItem(
                         combination_id=combination_id,
                         prompt_id=item_data.prompt_id,
                         order=item_data.order or 0,
                         variable_name=item_data.variable_name,
-                        is_required=item_data.is_required if item_data.is_required is not None else True
+                        is_required=item_data.is_required if item_data.is_required is not None else True,
+                        item_type=item_type
                     )
                     self.db.add(item)
 

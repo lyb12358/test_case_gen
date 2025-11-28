@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func, desc, asc
 import json
 import uuid
+import logging
 from datetime import datetime
 from pydantic import BaseModel
 
@@ -28,10 +29,22 @@ from ..models.unified_test_case import (
 from .dependencies import get_db
 from ..core.test_point_generator import TestPointGenerator
 from ..core.test_case_generator import TestCaseGenerator
+from ..services.sync_transaction_manager import SyncTransactionManager
 from ..utils.config import Config
 
 router = APIRouter(prefix="/api/v1/unified-test-cases", tags=["unified-test-cases"])
 
+logger = logging.getLogger(__name__)
+
+def _get_business_type_value(business_type):
+    """
+    安全地获取business_type的值，处理枚举和字符串类型
+    """
+    if business_type is None:
+        return None
+    if hasattr(business_type, 'value'):
+        return business_type.value
+    return business_type
 
 # Implementation function
 async def get_unified_test_cases_impl(
@@ -47,9 +60,6 @@ async def get_unified_test_cases_impl(
         query = db.query(UnifiedTestCase)
 
         # 应用过滤条件
-        if filter_params.project_id:
-            query = query.filter(UnifiedTestCase.project_id == filter_params.project_id)
-
         if filter_params.project_id:
             query = query.filter(UnifiedTestCase.project_id == filter_params.project_id)
 
@@ -112,7 +122,7 @@ async def get_unified_test_cases_impl(
             response_data = UnifiedTestCaseResponse(
                 id=test_case.id,
                 project_id=test_case.project_id,
-                business_type=test_case.business_type.value if test_case.business_type else test_case.business_type,
+                business_type=_get_business_type_value(test_case.business_type),
                 case_id=test_case.test_case_id,
                 name=test_case.name,
                 description=test_case.description,
@@ -151,12 +161,36 @@ async def get_unified_test_cases_impl(
 # API endpoints with both path variations
 @router.get("/", response_model=UnifiedTestCaseListResponse)
 async def get_unified_test_cases(
-    filter_params: UnifiedTestCaseFilter = Depends(),
+    page: int = Query(1, ge=1, description="页码"),
+    size: int = Query(20, ge=1, le=100, description="每页大小"),
+    project_id: Optional[int] = Query(None, description="项目ID"),
+    business_type: Optional[str] = Query(None, description="业务类型"),
+    status: Optional[UnifiedTestCaseStatus] = Query(None, description="状态"),
+    stage: Optional[UnifiedTestCaseStage] = Query(None, description="阶段"),
+    priority: Optional[str] = Query(None, pattern="^(low|medium|high)$", description="优先级"),
+    keyword: Optional[str] = Query(None, description="关键词搜索"),
+    test_point_ids: Optional[List[int]] = Query(None, description="测试点ID列表"),
+    sort_by: str = Query("created_at", description="排序字段"),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$", description="排序方向"),
     db: Session = Depends(get_db)
 ):
     """
     获取统一测试用例列表
     """
+    # 手动构建过滤器对象
+    filter_params = UnifiedTestCaseFilter(
+        page=page,
+        size=size,
+        project_id=project_id,
+        business_type=business_type,
+        status=status,
+        stage=stage,
+        priority=priority,
+        keyword=keyword,
+        test_point_ids=test_point_ids,
+        sort_by=sort_by,
+        sort_order=sort_order
+    )
     return await get_unified_test_cases_impl(filter_params, db)
 
 
@@ -183,7 +217,7 @@ async def get_unified_test_case(
         return UnifiedTestCaseResponse(
             id=test_case.id,
             project_id=test_case.project_id,
-            business_type=test_case.business_type.value if test_case.business_type else test_case.business_type,
+            business_type=_get_business_type_value(test_case.business_type),
             case_id=test_case.test_case_id,
             name=test_case.name,
             description=test_case.description,
@@ -234,15 +268,43 @@ async def create_unified_test_case(
         if existing_case:
             raise HTTPException(status_code=400, detail="测试用例ID在当前项目和业务类型中已存在")
 
-        # 创建统一测试用例
+        # Check for business-scoped name uniqueness
+        sync_manager = SyncTransactionManager(db)
+        if not sync_manager.validate_business_uniqueness(
+            business_type=test_case_data.business_type,
+            name=test_case_data.name,
+            entity_type='test_case'
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Test case name '{test_case_data.name}' already exists in business type '{test_case_data.business_type}'"
+            )
+
+        # 如果有test_point_id，需要从测试点继承字段
+        inherited_fields = {}
+        if hasattr(test_case_data, 'test_point_id') and test_case_data.test_point_id:
+            from ..database.models import TestPoint
+            test_point = db.query(TestPoint).filter(TestPoint.id == test_case_data.test_point_id).first()
+            if test_point:
+                logger.info(f"继承测试点字段: test_point_id={test_case_data.test_point_id}")
+                inherited_fields = {
+                    'business_type': test_point.business_type,
+                    'priority': test_point.priority
+                }
+                # 也可以继承名称和描述，但这可能导致冲突，根据业务需求决定
+                # name=test_point.title,
+                # description=test_point.description
+
+        # 创建统一测试用例，继承字段优先使用继承值，前端提供的值作为覆盖
         db_test_case = UnifiedTestCase(
             project_id=test_case_data.project_id,
-            business_type=test_case_data.business_type,
+            business_type=inherited_fields.get('business_type', test_case_data.business_type),
             test_case_id=test_case_data.case_id,
+            test_point_id=getattr(test_case_data, 'test_point_id', None),
             name=test_case_data.name,
             description=test_case_data.description,
-            priority=test_case_data.priority,
-            status=test_case_data.status.value,
+            priority=inherited_fields.get('priority', test_case_data.priority),
+            status=test_case_data.status.value if test_case_data.status else UnifiedTestCaseStatus.DRAFT,
             module=test_case_data.module,
             functional_module=test_case_data.functional_module,
             functional_domain=test_case_data.functional_domain,
@@ -268,7 +330,7 @@ async def create_unified_test_case(
         return UnifiedTestCaseResponse(
             id=db_test_case.id,
             project_id=db_test_case.project_id,
-            business_type=db_test_case.business_type.value if db_test_case.business_type else db_test_case.business_type,
+            business_type=_get_business_type_value(db_test_case.business_type),
             case_id=db_test_case.test_case_id,
             name=db_test_case.name,
             description=db_test_case.description,
@@ -324,10 +386,47 @@ async def update_unified_test_case(
         # 更新时间戳
         update_data['updated_at'] = datetime.now()
 
+        # Track if name is being updated for sync
+        name_updated = False
+        new_name = None
+        if 'name' in update_data and update_data['name'] != test_case.name:
+            # Check for business-scoped name uniqueness before updating
+            sync_manager = SyncTransactionManager(db)
+            if not sync_manager.validate_business_uniqueness(
+                business_type=test_case.business_type,
+                name=update_data['name'],
+                entity_type='test_case',
+                exclude_id=test_case.id
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Test case name '{update_data['name']}' already exists in business type '{test_case.business_type}'"
+                )
+
+            name_updated = True
+            new_name = update_data['name']
+            logger.info(f"Test case name update detected: '{test_case.name}' -> '{new_name}' (test_case_id: {test_case_id})")
+
+        # Apply updates to the test case
         for field, value in update_data.items():
             setattr(test_case, field, value)
 
+        # Sync name to test point if name was updated, within the same transaction
+        if name_updated and test_case.test_point_id:
+            sync_manager = SyncTransactionManager(db)
+            logger.info(f"Initiating name sync from test case {test_case_id} to test point {test_case.test_point_id}")
+            sync_success = sync_manager.sync_names_within_transaction(
+                source_type='test_case',
+                source_id=test_case_id,
+                new_name=new_name
+            )
+            if sync_success:
+                logger.info(f"Successfully synced name from test case {test_case_id} to test point {test_case.test_point_id}")
+            else:
+                logger.warning(f"Name sync failed for test case {test_case_id} to test point {test_case.test_point_id}, but test case update proceeded")
+
         db.commit()
+
         db.refresh(test_case)
 
         stage = (
@@ -339,7 +438,7 @@ async def update_unified_test_case(
         return UnifiedTestCaseResponse(
             id=test_case.id,
             project_id=test_case.project_id,
-            business_type=test_case.business_type.value if test_case.business_type else test_case.business_type,
+            business_type=_get_business_type_value(test_case.business_type),
             case_id=test_case.test_case_id,
             name=test_case.name,
             description=test_case.description,
@@ -362,8 +461,19 @@ async def update_unified_test_case(
     except HTTPException:
         raise
     except Exception as e:
+        error_str = str(e).lower()
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"更新测试用例失败: {str(e)}")
+        logger.error(f"Failed to update test case {test_case_id}: {str(e)}", exc_info=True)
+
+        # 根据错误类型返回不同的状态码
+        if "integrity" in error_str or "constraint" in error_str:
+            raise HTTPException(status_code=400, detail=f"数据完整性错误: {str(e)}")
+        elif "timeout" in error_str or "connection" in error_str:
+            raise HTTPException(status_code=503, detail=f"数据库连接超时: {str(e)}")
+        elif "not found" in error_str:
+            raise HTTPException(status_code=404, detail=f"测试用例不存在: {str(e)}")
+        else:
+            raise HTTPException(status_code=500, detail=f"更新测试用例失败: {str(e)}")
 
 
 @router.delete("/{test_case_id}", response_model=UnifiedTestCaseDeleteResponse)
@@ -714,8 +824,7 @@ async def generate_test_cases_unified(
             business_type=request.business_type.upper(),
             project_id=request.project_id,
             test_point_ids=request.test_point_ids,
-            complexity_level=request.complexity_level,
-            include_negative_cases=request.include_negative_cases
+            additional_context=request.additional_context
         )
 
         return {
@@ -782,9 +891,7 @@ async def generate_full_two_stage_unified(
             task_id=task_id,
             business_type=request.business_type.upper(),
             project_id=request.project_id,
-            count=request.count,
-            complexity_level=request.complexity_level,
-            include_negative_cases=request.include_negative_cases
+            additional_context=request.additional_context
         )
 
         return {
@@ -816,7 +923,7 @@ async def get_generation_status_unified(task_id: str, db: Session = Depends(get_
         return {
             "task_id": task_id,
             "status": job.status.value,
-            "business_type": job.business_type.value if job.business_type else None,
+            "business_type": _get_business_type_value(job.business_type),
             "project_id": job.project_id,
             "error_message": job.error_message,
             "result_data": job.result_data,
@@ -838,8 +945,7 @@ async def _generate_test_points_background_unified(
     task_id: str,
     business_type: str,
     project_id: int,
-    count: int,
-    complexity_level: str
+    additional_context: Optional[Dict[str, Any]] = None
 ):
     """Background task for generating test points in unified system."""
     try:
@@ -861,10 +967,9 @@ async def _generate_test_points_background_unified(
                 db.commit()
 
         # Generate test points
-        test_points_data = generator.generate_test_points_for_business(
+        test_points_data = generator.generate_test_points(
             business_type=business_type,
-            count=count,
-            complexity_level=complexity_level
+            additional_context=additional_context
         )
 
         if not test_points_data:
@@ -872,13 +977,14 @@ async def _generate_test_points_background_unified(
 
         # Create test case group
         with config.db_manager.get_session() as db:
-            group = object(
+            group = GenerationJob(
+                id=str(uuid.uuid4()),
                 project_id=project_id,
                 business_type=business_type,
                 generation_metadata=json.dumps({
                     "mode": "test_points_only",
                     "count": len(test_points_data.get('test_points', [])),
-                    "complexity_level": complexity_level
+                    "additional_context": additional_context
                 }, ensure_ascii=False)
             )
             db.add(group)
@@ -941,8 +1047,7 @@ async def _generate_test_cases_background_unified(
     business_type: str,
     project_id: int,
     test_point_ids: Optional[List[int]],
-    complexity_level: str,
-    include_negative_cases: bool
+    additional_context: Optional[Dict[str, Any]] = None
 ):
     """Background task for generating test cases from test points in unified system."""
     try:
@@ -993,8 +1098,7 @@ async def _generate_test_cases_background_unified(
         test_cases_data = generator.generate_test_cases_from_points(
             business_type=business_type,
             test_points_data=test_points_data,
-            complexity_level=complexity_level,
-            include_negative_cases=include_negative_cases
+            additional_context=additional_context or {}
         )
 
         if not test_cases_data:
@@ -1050,9 +1154,7 @@ async def _generate_full_two_stage_background_unified(
     task_id: str,
     business_type: str,
     project_id: int,
-    count: int,
-    complexity_level: str,
-    include_negative_cases: bool
+    additional_context: Optional[Dict[str, Any]] = None
 ):
     """Background task for complete two-stage generation in unified system."""
     try:
@@ -1061,7 +1163,7 @@ async def _generate_full_two_stage_background_unified(
 
         # Stage 1: Generate test points
         await _generate_test_points_background_unified(
-            task_id, business_type, project_id, count, complexity_level
+            task_id, business_type, project_id, additional_context
         )
 
         # Get the generated test point IDs
@@ -1082,8 +1184,7 @@ async def _generate_full_two_stage_background_unified(
 
         # Stage 2: Generate test cases from test points
         await _generate_test_cases_background_unified(
-            task_id, business_type, project_id, test_point_ids,
-            complexity_level, include_negative_cases
+            task_id, business_type, project_id, test_point_ids, additional_context
         )
 
         # Update final completion status

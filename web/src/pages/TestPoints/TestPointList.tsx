@@ -46,11 +46,8 @@ import type { ColumnsType } from 'antd/es/table';
 
 import {
   TestPointSummary,
-  TestPointStatus,
   Priority,
-  getTestPointStatusName,
   getPriorityName,
-  getTestPointStatusOptions,
   getPriorityOptions
 } from '../../types/testPoints';
 import { unifiedGenerationService } from '../../services';
@@ -72,36 +69,16 @@ const testPointUtils = {
     return colors[priority] || 'default';
   },
 
-  getStatusColor: (status: TestPointStatus) => {
-    const colors = {
-      draft: 'default',
-      approved: 'success',
-      modified: 'warning',
-      completed: 'processing'
-    };
-    return colors[status] || 'default';
-  },
-
-  getStatusTransitions: (currentStatus: TestPointStatus): TestPointStatus[] => {
-    const transitions: Record<TestPointStatus, TestPointStatus[]> = {
-      draft: ['approved', 'modified'],
-      approved: ['modified', 'completed'],
-      modified: ['approved', 'completed'],
-      completed: ['modified']
-    };
-    return transitions[currentStatus] || [];
-  },
-
   formatDate: (dateString: string) => {
     return new Date(dateString).toLocaleString('zh-CN');
   },
 
   canEdit: (record: TestPointSummary) => {
-    return record.status !== 'completed';
+    return true; // All test points can be edited now - no status restriction
   },
 
   canDelete: (record: TestPointSummary) => {
-    return record.status === 'draft';
+    return record.test_case_count === 0; // Can delete if no test cases associated
   }
 };
 
@@ -117,7 +94,7 @@ const TestPointList: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [searchText, setSearchText] = useState('');
-  const [statusFilter, setStatusFilter] = useState<TestPointStatus | undefined>();
+  // Status filter removed - test points no longer have status
   const [priorityFilter, setPriorityFilter] = useState<Priority | undefined>();
   const [businessTypeFilter, setBusinessTypeFilter] = useState<string | undefined>();
   const [selectedRowKeys, setSelectedRowKeys] = useState<number[]>([]);
@@ -151,12 +128,12 @@ const TestPointList: React.FC = () => {
     error,
     refetch
   } = useQuery({
-    queryKey: ['test-points', currentPage, pageSize, searchText, statusFilter, priorityFilter, businessTypeFilter, currentProject?.id],
+    queryKey: ['test-points', currentPage, pageSize, searchText, priorityFilter, businessTypeFilter, currentProject?.id],
     queryFn: () => unifiedGenerationService.getTestPoints({
       page: currentPage,
       size: pageSize,
       search: searchText || undefined,
-      status: statusFilter,
+      // status parameter removed
       priority: priorityFilter,
       business_type: businessTypeFilter,
       project_id: currentProject?.id
@@ -197,18 +174,7 @@ const TestPointList: React.FC = () => {
     }
   });
 
-  // Update status mutation
-  const updateStatusMutation = useMutation({
-    mutationFn: ({ id, status }: { id: number; status: TestPointStatus }) =>
-      unifiedGenerationService.updateTestPointStatus(id, { status }),
-    onSuccess: () => {
-      message.success('状态更新成功');
-      queryClient.invalidateQueries({ queryKey: ['test-points'] });
-    },
-    onError: (error: any) => {
-      message.error(`状态更新失败: ${error.response?.data?.detail || error.message}`);
-    }
-  });
+  // Status update mutation removed - test points no longer have status
 
   // Batch operation mutation
   const batchOperationMutation = useMutation({
@@ -233,9 +199,6 @@ const TestPointList: React.FC = () => {
   // Handle filter change
   const handleFilterChange = (key: string, value: any) => {
     switch (key) {
-      case 'status':
-        setStatusFilter(value);
-        break;
       case 'priority':
         setPriorityFilter(value);
         break;
@@ -249,7 +212,7 @@ const TestPointList: React.FC = () => {
   // Clear all filters
   const clearFilters = () => {
     setSearchText('');
-    setStatusFilter(undefined);
+    // setStatusFilter undefined removed - status filter no longer exists
     setPriorityFilter(undefined);
     setBusinessTypeFilter(undefined);
     setCurrentPage(1);
@@ -268,9 +231,7 @@ const TestPointList: React.FC = () => {
     deleteTestPointMutation.mutate(id);
   };
 
-  const handleStatusChange = (id: number, newStatus: TestPointStatus) => {
-    updateStatusMutation.mutate({ id, status: newStatus });
-  };
+  // handleStatusChange removed - status updates no longer supported
 
   const handleBatchApprove = () => {
     if (selectedRowKeys.length === 0) {
@@ -364,34 +325,7 @@ const TestPointList: React.FC = () => {
         value: value,
       })),
     },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      width: 100,
-      render: (status: TestPointStatus, record: TestPointSummary) => (
-        <Select
-          value={status}
-          size="small"
-          style={{ width: '100%' }}
-          onChange={(value) => handleStatusChange(record.id, value)}
-          options={testPointUtils.getStatusTransitions(status).map(s => ({
-            value: s,
-            label: getTestPointStatusName(s)
-          }))}
-        >
-          <Option value={status}>
-            <Tag color={testPointUtils.getStatusColor(status)}>
-              {getTestPointStatusName(status)}
-            </Tag>
-          </Option>
-        </Select>
-      ),
-      filters: getTestPointStatusOptions().map(({value, label}) => ({
-        text: label,
-        value: value,
-      })),
-    },
+    // Status column removed - test points no longer have status
     {
       title: '测试用例',
       dataIndex: 'test_case_count',
@@ -441,7 +375,7 @@ const TestPointList: React.FC = () => {
               type="text"
               icon={<PlayCircleOutlined />}
               onClick={() => handleGenerateTestCases(record.id)}
-              disabled={record.status !== 'approved'}
+              disabled={false}
             />
           </Tooltip>
           <Tooltip title="删除">
@@ -571,14 +505,7 @@ const TestPointList: React.FC = () => {
                 onChange={(e) => !e.target.value && setSearchText('')}
               />
 
-              <Select
-                placeholder="状态"
-                allowClear
-                style={{ width: 120 }}
-                value={statusFilter}
-                onChange={(value) => handleFilterChange('status', value)}
-                options={getTestPointStatusOptions()}
-              />
+              {/* Status filter removed - test points no longer have status */}
 
               <Select
                 placeholder="优先级"

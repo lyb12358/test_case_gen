@@ -21,25 +21,23 @@ import {
   Timeline,
   Badge,
   Modal,
-  Collapse
+  Collapse,
+  Empty
 } from 'antd';
 import {
   EditOutlined,
   ArrowLeftOutlined,
   PlayCircleOutlined,
-  DeleteOutlined,
   ExclamationCircleOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined
 } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
-import ReactMarkdown from 'react-markdown';
 import { useProject } from '../../contexts/ProjectContext';
 import { unifiedGenerationService } from '../../services';
 import { businessService } from '../../services/businessService';
 import {
   TestPoint,
-  TestPointStatus,
   Priority,
   TestCaseItem,
   TestPointGenerationRequest
@@ -67,7 +65,7 @@ const TestPointDetail: React.FC = () => {
         loadRelatedTestCases(testPointId);
       } else {
         message.error('无效的测试点ID');
-        navigate('/test-points/list');
+        navigate('/test-management/points');
       }
     }
   }, [id, navigate, currentProject]);
@@ -75,7 +73,7 @@ const TestPointDetail: React.FC = () => {
   const loadTestPoint = async (testPointId: number) => {
     setLoading(true);
     try {
-      const data = await unifiedGenerationService.getTestPoint(testPointId, currentProject?.id);
+      const data = await unifiedGenerationService.getTestPoint(testPointId);
       setTestPoint(data);
 
       // Load business type configuration
@@ -110,7 +108,7 @@ const TestPointDetail: React.FC = () => {
   };
 
   const handleGenerateTestCases = async () => {
-    if (!testPoint) return;
+    if (!testPoint || !currentProject) return;
 
     Modal.confirm({
       title: '生成测试用例',
@@ -119,20 +117,28 @@ const TestPointDetail: React.FC = () => {
       onOk: async () => {
         setGenerating(true);
         try {
-          const request: TestPointGenerationRequest = {
-            test_point_ids: [testPoint.id],
-            generation_config: {},
-            regenerate_existing: false
-          };
-
-          const response = await unifiedGenerationService.generateTestCases(request);
+          // 使用正确的方法调用 generateTestCasesFromPoints
+          const response = await unifiedGenerationService.generateTestCasesFromPoints(
+            testPoint.business_type,
+            [testPoint],
+            {
+              additionalContext: '',
+              saveToDatabase: true,
+              projectId: currentProject.id
+            }
+          );
           message.success('测试用例生成任务已启动');
 
-          // Navigate to task detail page
-          if (response.data.task_id) {
+          // Navigate to task detail page if task ID is returned
+          if (response?.data?.task_id) {
             navigate(`/tasks/${response.data.task_id}`);
+          } else {
+            // 如果没有返回任务ID，刷新相关测试用例列表
+            loadRelatedTestCases(testPoint.id);
+            message.success('测试用例生成完成');
           }
         } catch (error) {
+          console.error('Generate test cases error:', error);
           message.error('生成测试用例失败');
         } finally {
           setGenerating(false);
@@ -141,26 +147,7 @@ const TestPointDetail: React.FC = () => {
     });
   };
 
-  const getStatusColor = (status: TestPointStatus) => {
-    const colors = {
-      draft: 'default',
-      approved: 'success',
-      modified: 'warning',
-      completed: 'processing'
-    };
-    return colors[status] || 'default';
-  };
-
-  const getStatusText = (status: TestPointStatus) => {
-    const texts = {
-      draft: '草稿',
-      approved: '已批准',
-      modified: '已修改',
-      completed: '已完成'
-    };
-    return texts[status] || status;
-  };
-
+  
   const getPriorityColor = (priority: string) => {
     const colors = {
       high: 'red',
@@ -296,9 +283,6 @@ const TestPointDetail: React.FC = () => {
           <div>
             <Title level={3}>{testPoint.title}</Title>
             <Space>
-              <Tag color={getStatusColor(testPoint.status)}>
-                {getStatusText(testPoint.status)}
-              </Tag>
               <Tag color={getPriorityColor(testPoint.priority)}>
                 优先级: {getPriorityText(testPoint.priority)}
               </Tag>
@@ -310,7 +294,7 @@ const TestPointDetail: React.FC = () => {
           <Space>
             <Button
               icon={<ArrowLeftOutlined />}
-              onClick={() => navigate('/test-points')}
+              onClick={() => navigate('/test-management/points')}
             >
               返回列表
             </Button>
@@ -326,7 +310,6 @@ const TestPointDetail: React.FC = () => {
               icon={<PlayCircleOutlined />}
               onClick={handleGenerateTestCases}
               loading={generating}
-              disabled={testPoint.status === 'completed'}
             >
               生成测试用例
             </Button>
@@ -341,12 +324,7 @@ const TestPointDetail: React.FC = () => {
           <Descriptions.Item label="测试点ID">
             {testPoint.test_point_id}
           </Descriptions.Item>
-          <Descriptions.Item label="状态">
-            <Tag color={getStatusColor(testPoint.status)}>
-              {getStatusText(testPoint.status)}
-            </Tag>
-          </Descriptions.Item>
-          <Descriptions.Item label="优先级">
+            <Descriptions.Item label="优先级">
             <Tag color={getPriorityColor(testPoint.priority)}>
               {getPriorityText(testPoint.priority)}
             </Tag>
@@ -374,11 +352,6 @@ const TestPointDetail: React.FC = () => {
           <Timeline.Item dot={<CheckCircleOutlined />} color="green">
             <Text>更新时间: {new Date(testPoint.updated_at).toLocaleString('zh-CN')}</Text>
           </Timeline.Item>
-          {testPoint.status === 'completed' && (
-            <Timeline.Item dot={<CheckCircleOutlined />} color="green">
-              <Text>测试用例生成完成</Text>
-            </Timeline.Item>
-          )}
         </Timeline>
 
         {/* Related Test Cases */}

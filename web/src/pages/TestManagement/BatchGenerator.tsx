@@ -44,7 +44,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useProject } from '../../contexts/ProjectContext';
 import { unifiedGenerationService } from '../../services';
-import { useWebSocket } from '../../hooks';
+import { useTaskWebSocket } from '../../hooks';
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -65,27 +65,20 @@ interface GenerationTask {
   created_at: string;
   completed_at?: string;
   error_message?: string;
+  error_details?: string;
 }
 
 interface BatchGenerationConfig {
   business_types: string[];
   generation_mode: 'test_points_only' | 'test_cases_only' | 'both_stages';
-  test_points_config: {
-    count_per_type: number;
-    complexity_level: 'simple' | 'standard' | 'complex';
-    include_negative_cases: boolean;
-  };
-  test_cases_config: {
-    complexity_level: 'basic' | 'comprehensive' | 'detailed';
-    include_preconditions: boolean;
-    include_expected_results: boolean;
-    cases_per_point: number;
-  };
+  project_id: number;
+  additional_context?: string;
   advanced_settings: {
     enable_parallel: boolean;
     max_concurrent_tasks: number;
     retry_on_failure: boolean;
     export_format: 'json' | 'excel' | 'both';
+    async_mode: boolean;
   };
 }
 
@@ -115,6 +108,68 @@ const BatchGenerator: React.FC = () => {
   const [activeTasks, setActiveTasks] = useState<GenerationTask[]>([]);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewData, setPreviewData] = useState<any>(null);
+  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
+
+  // WebSocket连接用于实时进度监控
+  const { taskStatus, isConnected } = useTaskWebSocket(currentTaskId);
+
+  // 处理WebSocket消息
+  React.useEffect(() => {
+    if (taskStatus && currentTaskId) {
+      switch (taskStatus.status) {
+        case 'running':
+          setActiveTasks(prev => prev.map(task =>
+            task.id === currentTaskId
+              ? {
+                  ...task,
+                  progress: taskStatus.progress || 0,
+                  current_step: taskStatus.current_step || task.current_step,
+                  total_test_points: taskStatus.total_test_points || task.total_test_points,
+                  generated_test_points: taskStatus.generated_test_points || task.generated_test_points,
+                  total_test_cases: taskStatus.total_test_cases || task.total_test_cases,
+                  generated_test_cases: taskStatus.generated_test_cases || task.generated_test_cases,
+                  status: 'running'
+                }
+              : task
+          ));
+          break;
+
+        case 'completed':
+          setActiveTasks(prev => prev.map(task =>
+            task.id === currentTaskId
+              ? {
+                  ...task,
+                  status: 'completed',
+                  progress: 100,
+                  current_step: '已完成',
+                  completed_at: new Date().toISOString()
+                }
+              : task
+          ));
+          setIsGenerating(false);
+          setCurrentTaskId(null);
+          message.success('批量生成完成！');
+          break;
+
+        case 'failed':
+          setActiveTasks(prev => prev.map(task =>
+            task.id === currentTaskId
+              ? {
+                  ...task,
+                  status: 'failed',
+                  current_step: '生成失败',
+                  error_message: taskStatus.error?.message || taskStatus.error || '未知错误',
+                  completed_at: new Date().toISOString()
+                }
+              : task
+          ));
+          setIsGenerating(false);
+          setCurrentTaskId(null);
+          message.error(`生成失败: ${taskStatus.error?.message || taskStatus.error || '未知错误'}`);
+          break;
+      }
+    }
+  }, [taskStatus, currentTaskId]);
 
   // 获取动态业务类型
   const { data: businessTypesData } = useQuery({
@@ -129,100 +184,209 @@ const BatchGenerator: React.FC = () => {
     label: `[${type.code || type.value}] ${type.name || type.label}`
   })) || [];
 
-  // 模拟历史任务数据
+  // 获取历史生成任务数据
   const { data: historyTasks, isLoading } = useQuery({
     queryKey: ['generationTasks', 'history'],
-    queryFn: () => Promise.resolve({
-      data: [
-        {
-          id: 'task_1',
-          business_type: 'RCC,RPP',
-          generation_type: 'both',
-          status: 'completed',
-          progress: 100,
-          current_step: '已完成',
-          total_test_points: 100,
-          generated_test_points: 95,
-          total_test_cases: 380,
-          generated_test_cases: 361,
-          created_at: '2024-01-20T10:30:00Z',
-          completed_at: '2024-01-20T11:45:00Z'
-        },
-        {
-          id: 'task_2',
-          business_type: 'RSM',
-          generation_type: 'test_points',
-          status: 'failed',
-          progress: 45,
-          current_step: '测试点生成失败',
-          total_test_points: 50,
-          generated_test_points: 22,
-          total_test_cases: 0,
-          generated_test_cases: 0,
-          created_at: '2024-01-20T14:15:00Z',
-          error_message: 'API调用次数超限'
-        }
-      ]
-    }),
-    staleTime: 5 * 60 * 1000
+    queryFn: () => {
+      // 使用本地状态activeTasks作为历史数据
+      // 在真实应用中，这里可以调用API获取历史任务
+      return Promise.resolve({
+        data: activeTasks.map(task => ({
+          id: task.id,
+          business_type: task.business_type,
+          generation_type: task.generation_type,
+          status: task.status,
+          progress: task.progress,
+          current_step: task.current_step,
+          total_test_points: task.total_test_points,
+          generated_test_points: task.generated_test_points,
+          total_test_cases: task.total_test_cases,
+          generated_test_cases: task.generated_test_cases,
+          created_at: task.created_at,
+          completed_at: task.completed_at,
+          error_message: task.error_message
+        }))
+      });
+    },
+    staleTime: 30 * 1000, // 30秒刷新
+    refetchInterval: 5000 // 每5秒自动刷新
   });
 
-  // 模拟生成任务
+  // 真实批量生成任务
   const generateMutation = useMutation({
     mutationFn: async (config: BatchGenerationConfig) => {
-      console.log('Starting batch generation:', config);
+      console.log('Starting real batch generation:', config);
 
-      // 模拟任务创建
-      const taskId = `task_${Date.now()}`;
-      const newTask: GenerationTask = {
-        id: taskId,
-        business_type: config.business_types.join(','),
-        generation_type: config.generation_mode === 'test_points_only' ? 'test_points' :
-                        config.generation_mode === 'test_cases_only' ? 'test_cases' : 'both',
-        status: 'pending',
-        progress: 0,
-        current_step: '准备中...',
-        total_test_points: config.business_types.length * config.test_points_config.count_per_type,
-        generated_test_points: 0,
-        total_test_cases: 0,
-        generated_test_cases: 0,
-        created_at: new Date().toISOString()
-      };
+      try {
+        // 创建任务ID
+        const taskId = `batch_${Date.now()}`;
 
-      setActiveTasks(prev => [...prev, newTask]);
+        // 添加初始任务到本地状态
+        const newTask: GenerationTask = {
+          id: taskId,
+          business_type: config.business_types.join(','),
+          generation_type: config.generation_mode === 'test_points_only' ? 'test_points' :
+                          config.generation_mode === 'test_cases_only' ? 'test_cases' : 'both',
+          status: 'pending',
+          progress: 0,
+          current_step: '准备中...',
+          total_test_points: 0, // 将由后端返回
+          generated_test_points: 0,
+          total_test_cases: 0, // 将由后端返回
+          generated_test_cases: 0,
+          created_at: new Date().toISOString()
+        };
 
-      // 模拟生成过程
-      setIsGenerating(true);
-      for (let i = 0; i <= 100; i += 5) {
-        await new Promise(resolve => setTimeout(resolve, 200));
+        setActiveTasks(prev => [...prev, newTask]);
+        setIsGenerating(true);
+
+        // 启动WebSocket监控
+        if (config.advanced_settings.async_mode) {
+          // WebSocket会自动连接并监控进度
+          console.log(`WebSocket monitoring started for task: ${taskId}`);
+        }
+
+        let response;
+
+        if (config.generation_mode === 'both_stages') {
+          // 完整两阶段生成 - 为每个业务类型分别调用
+          const tasks = config.business_types.map(businessType =>
+            unifiedGenerationService.generateFullTwoStage({
+              business_type: businessType,
+              project_id: config.project_id,
+              additional_context: config.additional_context
+            })
+          );
+
+          // 等待所有任务完成
+          const results = await Promise.all(tasks);
+          response = {
+            generation_job_id: taskId,
+            message: `${config.business_types.length}个业务类型的两阶段生成已完成`,
+            results
+          };
+        } else if (config.generation_mode === 'test_points_only') {
+          // 仅生成测试点
+          response = await unifiedGenerationService.batchGenerateTestPoints(
+            config.business_types,
+            {
+              projectId: config.project_id
+            }
+          );
+        } else if (config.generation_mode === 'test_cases_only') {
+          // 仅生成测试用例
+          response = await unifiedGenerationService.batchGenerateTestCases(
+            config.business_types,
+            {
+              projectId: config.project_id
+            }
+          );
+        }
+
+        // 更新任务状态为进行中
         setActiveTasks(prev => prev.map(task =>
           task.id === taskId
             ? {
                 ...task,
-                progress: i,
-                current_step: i < 30 ? '生成测试点中...' : i < 70 ? '生成测试用例中...' : '完成处理...',
-                generated_test_points: Math.floor((i / 100) * task.total_test_points),
-                generated_test_cases: Math.floor((i / 100) * task.total_test_cases * 3.8),
-                status: 'running'
+                status: 'running',
+                current_step: '生成任务已提交，正在处理...',
+                progress: 10
               }
             : task
         ));
+
+        // 启动WebSocket监控（如果是异步模式）
+        if (config.advanced_settings.async_mode && response?.generation_job_id) {
+          setCurrentTaskId(response.generation_job_id);
+        }
+
+        message.success('批量生成任务已提交！');
+
+        return {
+          taskId,
+          business_types: config.business_types,
+          generation_mode: config.generation_mode,
+          status: 'submitted',
+          response
+        };
+
+      } catch (error: any) {
+        console.error('Batch generation failed:', error);
+
+        // 解析错误信息
+        let errorMessage = '未知错误';
+        let errorDetails = '';
+
+        if (error.response) {
+          // API响应错误
+          const status = error.response.status;
+          const data = error.response.data;
+
+          switch (status) {
+            case 400:
+              errorMessage = '请求参数错误';
+              errorDetails = data?.detail || '请检查输入参数';
+              break;
+            case 401:
+              errorMessage = '认证失败';
+              errorDetails = '请重新登录';
+              break;
+            case 429:
+              errorMessage = '请求频率过高';
+              errorDetails = '请稍后再试';
+              break;
+            case 500:
+              errorMessage = '服务器内部错误';
+              errorDetails = data?.detail || '服务器处理请求时发生错误';
+              break;
+            default:
+              errorMessage = `请求失败 (${status})`;
+              errorDetails = data?.detail || error.message;
+          }
+        } else if (error.request) {
+          // 网络错误
+          errorMessage = '网络连接失败';
+          errorDetails = '请检查网络连接或服务器状态';
+        } else {
+          // 其他错误
+          errorMessage = error.message || '未知错误';
+          errorDetails = error.stack || '';
+        }
+
+        // 更新失败状态
+        setActiveTasks(prev => prev.map(task =>
+          task.business_type.includes(config.business_types.join(','))
+            ? {
+                ...task,
+                status: 'failed',
+                current_step: '生成失败',
+                error_message: errorMessage,
+                error_details: errorDetails,
+                completed_at: new Date().toISOString()
+              }
+            : task
+        ));
+
+        setIsGenerating(false);
+        setCurrentTaskId(null);
+
+        // 显示详细错误信息
+        Modal.error({
+          title: '批量生成失败',
+          content: (
+            <div>
+              <p><strong>错误信息:</strong> {errorMessage}</p>
+              {errorDetails && <p><strong>详细信息:</strong> {errorDetails}</p>}
+              <p><strong>业务类型:</strong> {config.business_types.join(', ')}</p>
+              <p><strong>生成模式:</strong> {config.generation_mode}</p>
+            </div>
+          ),
+          width: 600,
+          okText: '确定'
+        });
+
+        throw new Error(errorMessage);
       }
-
-      setActiveTasks(prev => prev.map(task =>
-        task.id === taskId
-          ? {
-              ...task,
-              status: 'completed',
-              current_step: '已完成',
-              progress: 100,
-              completed_at: new Date().toISOString()
-            }
-          : task
-      ));
-
-      setIsGenerating(false);
-      return { taskId, success: true };
     },
     onSuccess: (data) => {
       message.success(`批量生成任务已启动：${data.taskId}`);
@@ -253,22 +417,14 @@ const BatchGenerator: React.FC = () => {
       const config: BatchGenerationConfig = {
         business_types: values.business_types,
         generation_mode: values.generation_mode,
-        test_points_config: {
-          count_per_type: values.test_points_count,
-          complexity_level: values.test_points_complexity,
-          include_negative_cases: values.include_negative_cases
-        },
-        test_cases_config: {
-          complexity_level: values.test_cases_complexity,
-          include_preconditions: values.include_preconditions,
-          include_expected_results: values.include_expected_results,
-          cases_per_point: values.cases_per_point
-        },
+        project_id: currentProject.id,
+        additional_context: values.additional_context,
         advanced_settings: {
-          enable_parallel: values.enable_parallel,
-          max_concurrent_tasks: values.max_concurrent_tasks,
-          retry_on_failure: values.retry_on_failure,
-          export_format: values.export_format
+          enable_parallel: values.enable_parallel || false,
+          max_concurrent_tasks: values.max_concurrent_tasks || 3,
+          retry_on_failure: values.retry_on_failure || true,
+          export_format: values.export_format || 'json',
+          async_mode: values.async_mode || true
         }
       };
 
@@ -277,6 +433,74 @@ const BatchGenerator: React.FC = () => {
     } catch (error) {
       console.error('Generation config validation failed:', error);
     }
+  };
+
+  // 重试失败的任务
+  const handleRetryTask = async (task: GenerationTask) => {
+    try {
+      // 从失败任务中提取配置信息
+      const config: BatchGenerationConfig = {
+        business_types: task.business_type.split(','),
+        generation_mode: task.generation_type === 'test_points' ? 'test_points_only' :
+                        task.generation_type === 'test_cases' ? 'test_cases_only' : 'both_stages',
+        project_id: currentProject.id,
+        additional_context: '', // 重试时使用空的上文
+        advanced_settings: {
+          enable_parallel: false,
+          max_concurrent_tasks: 1,
+          retry_on_failure: true,
+          export_format: 'json',
+          async_mode: true
+        }
+      };
+
+      // 移除失败任务
+      setActiveTasks(prev => prev.filter(t => t.id !== task.id));
+
+      // 重新提交生成任务
+      await generateMutation.mutateAsync(config);
+    } catch (error) {
+      console.error('Task retry failed:', error);
+      message.error('重试任务失败');
+    }
+  };
+
+  // 取消正在运行的任务
+  const handleCancelTask = async (task: GenerationTask) => {
+    try {
+      // 这里应该调用取消API
+      // await unifiedGenerationService.cancelGenerationTask(task.id);
+
+      // 更新任务状态
+      setActiveTasks(prev => prev.map(t =>
+        t.id === task.id
+          ? {
+              ...t,
+              status: 'failed',
+              current_step: '已取消',
+              error_message: '用户取消',
+              completed_at: new Date().toISOString()
+            }
+          : t
+      ));
+
+      // 如果是当前监控的任务，断开WebSocket
+      if (currentTaskId === task.id) {
+        setCurrentTaskId(null);
+      }
+
+      message.info('任务已取消');
+    } catch (error) {
+      console.error('Cancel task failed:', error);
+      message.error('取消任务失败');
+    }
+  };
+
+  // 清理已完成的任务
+  const handleClearCompletedTasks = () => {
+    setActiveTasks(prev => prev.filter(task =>
+      task.status !== 'completed' && task.status !== 'failed'
+    ));
   };
 
   const getStatusColor = (status: string) => {
@@ -361,12 +585,12 @@ const BatchGenerator: React.FC = () => {
       width: 150,
       render: (_: any, record: GenerationTask) => (
         <Space direction="vertical" size="small">
-          {record.generation_type !== 'test_cases_only' && (
+          {record.generation_type !== 'test_cases' && (
             <Text style={{ fontSize: '12px' }}>
               测试点: {record.generated_test_points}/{record.total_test_points}
             </Text>
           )}
-          {record.generation_type !== 'test_points_only' && (
+          {record.generation_type !== 'test_points' && (
             <Text style={{ fontSize: '12px' }}>
               测试用例: {record.generated_test_cases}/{record.total_test_cases}
             </Text>
@@ -507,44 +731,9 @@ const BatchGenerator: React.FC = () => {
                 >
                   <InputNumber min={1} max={500} style={{ width: '100%' }} />
                 </Form.Item>
-
-                <Form.Item
-                  name="test_points_complexity"
-                  label="复杂度级别"
-                  rules={[{ required: true, message: '请选择复杂度级别' }]}
-                  initialValue="standard"
-                >
-                  <Select>
-                    <Option value="simple">简单 - 基础功能测试点</Option>
-                    <Option value="standard">标准 - 常规业务测试点</Option>
-                    <Option value="complex">复杂 - 综合场景测试点</Option>
-                  </Select>
-                </Form.Item>
-
-                <Form.Item
-                  name="include_negative_cases"
-                  label="包含反向测试用例"
-                  valuePropName="checked"
-                  initialValue={true}
-                >
-                  <Switch /> <Text style={{ marginLeft: 8 }}>生成异常和边界条件测试点</Text>
-                </Form.Item>
               </Tabs.TabPane>
 
               <Tabs.TabPane tab="测试用例配置" key="test_cases">
-                <Form.Item
-                  name="test_cases_complexity"
-                  label="详细程度"
-                  rules={[{ required: true, message: '请选择详细程度' }]}
-                  initialValue="comprehensive"
-                >
-                  <Select>
-                    <Option value="basic">基础 - 核心测试步骤</Option>
-                    <Option value="comprehensive">全面 - 详细测试步骤</Option>
-                    <Option value="detailed">详细 - 完整测试文档</Option>
-                  </Select>
-                </Form.Item>
-
                 <Form.Item
                   name="cases_per_point"
                   label="每个测试点生成用例数"
@@ -651,7 +840,7 @@ const BatchGenerator: React.FC = () => {
                       <div><strong>测试点数量：</strong>{(form.getFieldValue('business_types')?.length || 0) * (form.getFieldValue('test_points_count') || 0)}</div>
                     )}
                     {form.getFieldValue('generation_mode') !== 'test_points_only' && (
-                      <div><strong>测试用例数量：</strong>{(form.getFieldValue('business_types')?.length || 0) * (form.getFieldValue('test_points_count') || 0) * (form.getFieldValue('cases_per_point') || 0)}</div>
+                      <div><strong>测试用例数量：</strong>{(form.getFieldValue('business_types')?.length || 0) * (form.getFieldValue('test_points_count') || 50) * (form.getFieldValue('cases_per_point') || 3)}</div>
                     )}
                   </Space>
                 </Card>

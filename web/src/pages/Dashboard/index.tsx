@@ -38,9 +38,14 @@ const Dashboard: React.FC = () => {
 
   // 获取测试用例数据
   const { data: testCasesData, isLoading: testCasesLoading } = useQuery({
-    queryKey: ['testCases'],
-    queryFn: () => unifiedGenerationService.getByProject(currentProject?.id),
+    queryKey: ['testCases', currentProject?.id],
+    queryFn: () => unifiedGenerationService.getUnifiedTestCases({
+      project_id: currentProject?.id || undefined,
+      page: 1,
+      size: 100 // 符合后端限制
+    }),
     refetchInterval: 30000, // 30秒自动刷新
+    enabled: !!currentProject?.id // 只有在有项目ID时才执行
   });
 
   // 获取任务数据
@@ -60,7 +65,7 @@ const Dashboard: React.FC = () => {
   
   // 计算统计数据
   const stats = React.useMemo(() => {
-    const testCases = testCasesData?.test_case_items || [];
+    const testCases = testCasesData?.items || [];
     const tasks = tasksData?.tasks || [];
 
     // 按业务类型分组测试用例，计算实际测试用例数量
@@ -180,14 +185,14 @@ const Dashboard: React.FC = () => {
             type="link"
             size="small"
             icon={<EyeOutlined />}
-            onClick={() => navigate(`/test-cases?business_type=${record.type}`)}
+            onClick={() => navigate(`/test-management/cases?business_type=${record.type}`)}
           >
             查看
           </Button>
           <Button
             type="primary"
             size="small"
-            onClick={() => navigate(`/test-cases/generate?business_type=${record.type}`)}
+            onClick={() => navigate(`/test-management/generate?business_type=${record.type}`)}
           >
             生成
           </Button>

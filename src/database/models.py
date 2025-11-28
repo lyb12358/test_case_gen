@@ -142,13 +142,15 @@ class UnifiedTestCase(Base):
         # New composite indexes for project + business_type queries
         Index('idx_test_case_project_business', 'project_id', 'business_type'),
         Index('idx_test_case_business_status', 'business_type', 'status'),
+        # Business-scoped uniqueness constraint for names
+        UniqueConstraint('business_type', 'name', name='uq_test_case_business_name'),
     )
 
     # === Core identification fields (simplified) ===
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     business_type = Column(Enum(BusinessType), nullable=False, index=True)
-    test_point_id = Column(Integer, ForeignKey("test_points.id"), nullable=True, index=True)
+    test_point_id = Column(Integer, ForeignKey("test_points.id"), nullable=True, unique=True, index=True)
     test_case_id = Column(String(50), nullable=False, index=True)  # Use existing field name
     name = Column(String(200), nullable=False, index=True)
     description = Column(Text, nullable=True)
@@ -500,12 +502,7 @@ class PromptCombinationItem(Base):
         return f"<PromptCombinationItem(id={self.id}, combination_id={self.combination_id}, order={self.order})>"
 
 
-class TestPointStatus(enum.Enum):
-    """Test point status for workflow management."""
-    DRAFT = "draft"                    # Initial draft, needs review
-    APPROVED = "approved"              # Approved and ready for test case generation
-    MODIFIED = "modified"              # Modified after approval, needs re-approval
-    COMPLETED = "completed"            # Test cases generated for this test point
+# TestPointStatus removed - using string field instead
 
 
 class TestPoint(Base):
@@ -513,9 +510,10 @@ class TestPoint(Base):
     __tablename__ = "test_points"
     __table_args__ = (
         # Composite indexes for test point management queries
-        Index('idx_test_point_business_status', 'business_type', 'status'),
         Index('idx_test_point_project_business', 'project_id', 'business_type'),
         Index('idx_test_point_created_business', 'created_at', 'business_type'),
+        # Business-scoped uniqueness constraint for titles
+        UniqueConstraint('business_type', 'title', name='uq_test_point_business_title'),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -531,9 +529,7 @@ class TestPoint(Base):
     # Complex structured fields removed for better user experience
     priority = Column(String(20), default='medium', nullable=False)  # high, medium, low
 
-    # Status and workflow
-    status = Column(Enum(TestPointStatus), default=TestPointStatus.DRAFT, nullable=False, index=True)
-
+    
     # Generation metadata
     generation_job_id = Column(String(36), ForeignKey("generation_jobs.id"), nullable=True, index=True)
     llm_metadata = Column(Text, nullable=True)  # JSON string for LLM generation metadata
@@ -548,7 +544,7 @@ class TestPoint(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
 
     def __repr__(self):
-        return f"<TestPoint(id={self.id}, test_point_id={self.test_point_id}, title='{self.title}', status={self.status})>"
+        return f"<TestPoint(id={self.id}, test_point_id={self.test_point_id}, title='{self.title}')>"
 
 
 class TemplateVariableType(enum.Enum):

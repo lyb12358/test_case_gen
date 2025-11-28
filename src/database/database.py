@@ -3,14 +3,17 @@ Database connection and session management.
 """
 
 import os
-from sqlalchemy import create_engine
+import logging
+from sqlalchemy import create_engine, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
-from typing import Generator
+from typing import Generator, Dict, Any
 from contextlib import contextmanager
 
 from ..utils.config import Config
 from .models import Base
+
+logger = logging.getLogger(__name__)
 
 
 class DatabaseSession:
@@ -54,19 +57,23 @@ class DatabaseManager:
         self.config = config
         self.database_url = config.database_url
 
-        # Configure MySQL engine with optimized connection pooling
+        # Configure MySQL engine with optimized connection pooling for high concurrency
         self.engine = create_engine(
             self.database_url,
             echo=False,
-            # MySQL connection pooling settings
-            pool_size=10,           # Number of connections to maintain
-            max_overflow=20,        # Additional connections beyond pool_size
-            pool_timeout=30,        # Timeout in seconds to get connection
-            pool_recycle=3600,      # Recycle connections every hour
-            # MySQL-specific settings
+            # Enhanced connection pooling settings for production stability
+            pool_size=15,                    # Increased base connections for concurrent requests
+            max_overflow=25,                # More overflow connections for peak loads
+            pool_timeout=10,                # Reduced timeout for faster failure detection
+            pool_recycle=3600,              # Recycle connections every hour (MySQL recommendation)
+            pool_pre_ping=True,             # Validate connections before use
+            # MySQL-specific optimizations for stability
             connect_args={
-                "charset": "utf8mb4",     # Support full Unicode including emojis
-                "autocommit": False,      # Use manual commit for better control
+                "charset": "utf8mb4",        # Support full Unicode including emojis
+                "autocommit": False,        # Use manual commit for better control
+                "connect_timeout": 10,      # Connection timeout
+                "read_timeout": 30,         # Read timeout
+                "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",  # Strict SQL mode
             }
         )
 
@@ -102,5 +109,49 @@ class DatabaseManager:
     def get_database_size(self) -> int:
         """Get approximate database size in bytes."""
         # For MySQL, we would need to query the information_schema
-        # This method can be implemented later if needed
-        return 0
+
+    def check_connection_health(self) -> Dict[str, Any]:
+        """
+        Check database connection health and pool statistics.
+
+        Returns:
+            Dict[str, Any]: Health check results
+        """
+        try:
+            pool = self.engine.pool
+            return {
+                "status": "healthy",
+                "pool_size": pool.size(),
+                "checked_in": pool.checkedin(),
+                "checked_out": pool.checkedout(),
+                "overflow": pool.overflow(),
+                "invalid": pool.invalid(),
+                "pool_connections": {
+                    "current_size": pool.size(),
+                    "max_overflow": pool._max_overflow,
+                    "active_connections": pool.checkedout(),
+                    "idle_connections": pool.checkedin() - pool.checkedout()
+                }
+            }
+        except Exception as e:
+            return {
+                "status": "unhealthy",
+                "error": str(e),
+                "pool_connections": None
+            }
+
+    def test_database_connection(self) -> bool:
+        """
+        Test database connection with a simple query.
+
+        Returns:
+            bool: True if connection is successful
+        """
+        try:
+            with self.get_session() as db:
+                # Simple test query
+                db.execute(text("SELECT 1"))
+                return True
+        except Exception as e:
+            logger.error(f"Database connection test failed: {str(e)}")
+            return False

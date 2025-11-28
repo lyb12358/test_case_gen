@@ -152,6 +152,8 @@ class HealthCheckResponse(BaseModel):
     service: str = Field(..., description="服务名称")
     timestamp: Optional[str] = Field(None, description="检查时间戳")
     error: Optional[str] = Field(None, description="错误信息（仅在unhealthy时）")
+    database: Optional[Dict[str, Any]] = Field(None, description="数据库连接池状态")
+    connection_test: Optional[bool] = Field(None, description="数据库连接测试结果")
 
 
 class GenerationStatisticsResponse(BaseModel):

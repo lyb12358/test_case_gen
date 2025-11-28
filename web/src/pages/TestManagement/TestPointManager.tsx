@@ -53,7 +53,6 @@ interface TestPoint {
   description: string;
   business_type: string;
   priority: 'high' | 'medium' | 'low';
-  status: 'draft' | 'approved' | 'completed' | 'modified';
   created_at: string;
   updated_at: string;
   project_id: number;
@@ -153,6 +152,7 @@ const TestPointManager: React.FC = () => {
     onSuccess: () => {
       message.success('测试点更新成功');
       setEditingTestPoint(null);
+      setCreateModalVisible(false);
       form.resetFields();
       queryClient.invalidateQueries({ queryKey: ['testPoints'] });
     },
@@ -240,26 +240,7 @@ const TestPointManager: React.FC = () => {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    const colors = {
-      draft: 'default',
-      approved: 'success',
-      completed: 'processing',
-      modified: 'warning'
-    };
-    return colors[status as keyof typeof colors] || 'default';
-  };
-
-  const getStatusText = (status: string) => {
-    const texts = {
-      draft: '草稿',
-      approved: '已批准',
-      completed: '已完成',
-      modified: '已修改'
-    };
-    return texts[status as keyof typeof texts] || status;
-  };
-
+  
   const getPriorityColor = (priority: string) => {
     const colors = {
       high: 'red',
@@ -317,16 +298,7 @@ const TestPointManager: React.FC = () => {
         </Tag>
       )
     },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      width: 100,
-      render: (status: string) => (
-        <Badge status={getStatusColor(status) as any} text={getStatusText(status)} />
-      )
-    },
-    {
+      {
       title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',

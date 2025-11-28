@@ -292,9 +292,7 @@ describe('UnifiedGenerationService', () => {
         test_points: testPoints,
         additional_context: '',
         save_to_database: true,
-        project_id: 1,
-        complexity_level: 'comprehensive',
-        include_negative_cases: true
+        project_id: 1
       });
       expect(result).toEqual(mockResponse.data);
     });
@@ -357,7 +355,7 @@ describe('UnifiedGenerationService', () => {
 
       const result = await unifiedGenerationService.getBusinessTypes(projectId);
 
-      expect(mockApiClient.get).toHaveBeenCalledWith('/api/v1/business-types', {
+      expect(mockApiClient.get).toHaveBeenCalledWith('/api/v1/business/business-types', {
         params: { project_id: projectId }
       });
       expect(result).toEqual(mockResponse.data);
@@ -379,7 +377,7 @@ describe('UnifiedGenerationService', () => {
 
       const result = await unifiedGenerationService.getBusinessTypesMapping();
 
-      expect(mockApiClient.get).toHaveBeenCalledWith('/api/v1/business-types/mapping');
+      expect(mockApiClient.get).toHaveBeenCalledWith('/api/v1/config/business-types');
       expect(result).toEqual(mockResponse.data);
     });
   });
@@ -420,47 +418,11 @@ describe('UnifiedGenerationService', () => {
 
       const result = await unifiedGenerationService.exportTestCasesToExcel(businessType, projectId);
 
-      expect(mockApiClient.get).toHaveBeenCalledWith(`/api/v1/test-cases/export/${businessType}`, {
-        params: { project_id: projectId },
+      expect(mockApiClient.get).toHaveBeenCalledWith(`/api/v1/test-cases/export`, {
+        params: { business_type: businessType, project_id: projectId },
         responseType: 'blob'
       });
       expect(result).toEqual(mockBlob);
-    });
-  });
-
-  describe('向后兼容性', () => {
-    it('应该支持旧版generateTestPointsLegacy方法', async () => {
-      const request = { business_type: 'RCC' };
-      const mockResponse = { data: { success: true } };
-
-      mockApiClient.post.mockResolvedValue(mockResponse);
-
-      const result = await unifiedGenerationService.generateTestPointsLegacy(request);
-
-      expect(mockApiClient.post).toHaveBeenCalledWith('/api/v1/test-points/generate', {
-        business_type: request,
-        additional_context: undefined,
-        save_to_database: false,
-        project_id: undefined,
-        async_mode: false
-      });
-      expect(result).toEqual(mockResponse.data);
-    });
-
-    it('应该支持旧版generateTestCasesLegacy方法', async () => {
-      const request = { business_type: 'RCC' };
-      const projectId = 1;
-      const mockResponse = { data: { success: true } };
-
-      mockApiClient.post.mockResolvedValue(mockResponse);
-
-      const result = await unifiedGenerationService.generateTestCasesLegacy(request, projectId);
-
-      expect(mockApiClient.post).toHaveBeenCalledWith('/api/v1/generate-test-cases', {
-        ...request,
-        project_id: projectId
-      });
-      expect(result).toEqual(mockResponse.data);
     });
   });
 });

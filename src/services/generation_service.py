@@ -14,7 +14,7 @@ from datetime import datetime
 from ..database.database import DatabaseManager
 from ..database.models import (
     TestPoint, UnifiedTestCase, GenerationJob, JobStatus,
-    BusinessTypeConfig, Project, TestPointStatus
+    BusinessTypeConfig, Project
 )
 from ..core.test_point_generator import TestPointGenerator
 from ..core.test_case_generator import TestCaseGenerator
@@ -126,7 +126,8 @@ class UnifiedGenerationService:
             # 生成测试点
             test_points_data = self.test_point_generator.generate_test_points(
                 business_type=business_type,
-                additional_context=additional_context
+                additional_context=additional_context,
+                project_id=project_id  # 添加缺失的project_id参数
             )
 
             

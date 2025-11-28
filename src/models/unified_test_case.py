@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 from enum import Enum
+from src.validators.json_validators import JSONFieldValidator
 
 
 class UnifiedTestCaseStatus(str, Enum):
@@ -37,7 +38,8 @@ class UnifiedTestCaseCreate(UnifiedTestCaseBase):
     """Unified test case creation model."""
     project_id: int = Field(..., gt=0, description="项目ID")
     business_type: str = Field(..., min_length=1, max_length=10, description="业务类型")
-    case_id: str = Field(..., min_length=1, max_length=50, description="测试用例ID")
+    case_id: str = Field(..., min_length=1, max_length=50, alias="test_case_id", description="测试用例ID")
+    test_point_id: Optional[int] = Field(None, gt=0, description="关联测试点ID（用于字段继承）")
 
     # Test case specific fields (optional for test point stage)
     module: Optional[str] = Field(None, max_length=100, description="功能模块")
@@ -53,16 +55,20 @@ class UnifiedTestCaseCreate(UnifiedTestCaseBase):
     # Metadata
     entity_order: Optional[float] = Field(None, description="排序顺序")
 
+    @field_validator('preconditions')
+    @classmethod
+    def validate_preconditions(cls, v):
+        return JSONFieldValidator.validate_preconditions(v)
+
     @field_validator('steps')
     @classmethod
     def validate_steps(cls, v):
-        if v is not None:
-            for i, step in enumerate(v):
-                if not isinstance(step, dict):
-                    raise ValueError(f"步骤 {i+1} 必须是字典格式")
-                if 'step_number' not in step or 'action' not in step:
-                    raise ValueError(f"步骤 {i+1} 必须包含 step_number 和 action 字段")
-        return v
+        return JSONFieldValidator.validate_steps(v)
+
+    @field_validator('expected_result')
+    @classmethod
+    def validate_expected_result(cls, v):
+        return JSONFieldValidator.validate_expected_result(v)
 
 
 class UnifiedTestCaseUpdate(BaseModel):
@@ -85,6 +91,21 @@ class UnifiedTestCaseUpdate(BaseModel):
 
     # Metadata
     entity_order: Optional[float] = Field(None, description="排序顺序")
+
+    @field_validator('preconditions')
+    @classmethod
+    def validate_preconditions(cls, v):
+        return JSONFieldValidator.validate_preconditions(v)
+
+    @field_validator('steps')
+    @classmethod
+    def validate_steps(cls, v):
+        return JSONFieldValidator.validate_steps(v)
+
+    @field_validator('expected_result')
+    @classmethod
+    def validate_expected_result(cls, v):
+        return JSONFieldValidator.validate_expected_result(v)
 
 
 # Response models
@@ -179,16 +200,16 @@ class UnifiedTestCaseGenerationRequest(BaseModel):
     project_id: int = Field(..., gt=0, description="项目ID")
     business_type: str = Field(..., description="业务类型")
 
-    # Generation parameters
-    count: Optional[int] = Field(50, ge=1, le=200, description="生成数量")
-    complexity_level: str = Field("standard", pattern="^(basic|standard|comprehensive)$", description="复杂度级别")
-    include_negative_cases: bool = Field(True, description="包含负面用例")
-
     # Existing data for enhancement modes
     test_point_ids: Optional[List[int]] = Field(None, description="现有测试点ID列表（用于从测试点生成模式）")
 
     # Additional context
     additional_context: Optional[Dict[str, Any]] = Field(None, description="额外上下文")
+
+    @field_validator('additional_context')
+    @classmethod
+    def validate_additional_context(cls, v):
+        return JSONFieldValidator.validate_additional_context(v)
 
 
 class UnifiedTestCaseGenerationResponse(BaseModel):

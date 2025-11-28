@@ -4,7 +4,7 @@ Data models for test point management system.
 
 from datetime import datetime
 from typing import List, Optional, Dict, Any, Literal
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 # Define literal types for type hints
 TestPointStatusLiteral = Literal[
@@ -33,14 +33,11 @@ class TestPointBase(BaseTestPointModel):
     business_type: str = Field(..., description="Associated business type")
 
     # Test point information
-    test_point_id: str = Field(..., description="Test point identifier (e.g., TP001)", min_length=1, max_length=50)
     title: str = Field(..., description="Test point title", min_length=1, max_length=200)
     description: Optional[str] = Field(default=None, description="Test point description")
     priority: str = Field(default="medium", description="Priority level")
 
-    # Status and workflow
-    status: str = Field(default="draft", description="Test point status")
-
+    
     # Generation metadata
     generation_job_id: Optional[str] = Field(default=None, description="Associated generation job ID")
     llm_metadata: Optional[Dict[str, Any]] = Field(default=None, description="LLM generation metadata")
@@ -48,7 +45,27 @@ class TestPointBase(BaseTestPointModel):
 
 class TestPointCreate(TestPointBase):
     """Model for creating test points."""
-    pass
+    test_point_id: Optional[str] = Field(None, description="Test point identifier (auto-generated if not provided)", min_length=1, max_length=50)
+
+    @field_validator('test_point_id', mode='before')
+    @classmethod
+    def generate_test_point_id(cls, v):
+        """Generate test_point_id if not provided."""
+        if v is None or v == '' or str(v).strip() == '':
+            import time
+            import random
+            timestamp = int(time.time())
+            random_suffix = random.randint(1000, 9999)
+            return f"TP-{timestamp}-{random_suffix}"
+        return v
+
+    @field_validator('priority')
+    @classmethod
+    def validate_priority(cls, v):
+        """Validate priority field."""
+        if v not in ['high', 'medium', 'low']:
+            raise ValueError(f"Priority must be one of: high, medium, low. Got: {v}")
+        return v
 
 
 class TestPointUpdate(BaseTestPointModel):
@@ -63,6 +80,7 @@ class TestPointUpdate(BaseTestPointModel):
 class TestPoint(TestPointBase):
     """Complete test point model with database fields."""
     id: int = Field(..., description="Test point ID")
+    test_point_id: str = Field(..., description="Test point identifier")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
 
@@ -76,7 +94,6 @@ class TestPointSummary(BaseTestPointModel):
     title: str = Field(..., description="Test point title")
     description: Optional[str] = Field(default=None, description="Test point description")
     priority: str = Field(..., description="Priority level")
-    status: str = Field(..., description="Test point status")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
 

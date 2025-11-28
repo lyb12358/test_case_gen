@@ -200,16 +200,30 @@ async def cancel_task(
 @router.get("/health", response_model=HealthCheckResponse)
 async def health_check():
     """
-    生成服务健康检查。
+    生成服务健康检查，包括数据库连接状态。
     """
     try:
-        # 简单的健康检查
-        service = UnifiedGenerationService()
         from datetime import datetime
+        from ..utils.config import Config
+        from ..database.database import DatabaseManager
+
+        # Check database health
+        config = Config()
+        db_manager = DatabaseManager(config)
+        db_health = db_manager.check_connection_health()
+
+        # Test actual database connection
+        connection_ok = db_manager.test_database_connection()
+
+        # Determine overall status
+        overall_status = "healthy" if db_health["status"] == "healthy" and connection_ok else "unhealthy"
+
         return HealthCheckResponse(
-            status="healthy",
+            status=overall_status,
             service="generation",
-            timestamp=datetime.utcnow().isoformat() + "Z"
+            timestamp=datetime.utcnow().isoformat() + "Z",
+            database=db_health["pool_connections"] if "pool_connections" in db_health else None,
+            connection_test=connection_ok
         )
     except Exception as e:
         logger.error(f"健康检查失败: {e}")
@@ -251,6 +265,199 @@ async def get_generation_statistics(
                 "error": {
                     "code": "INTERNAL_ERROR",
                     "message": "获取统计信息失败",
+                    "recoverable": True
+                }
+            }
+        )
+
+
+@router.get("/variables/preview/{business_type}")
+async def preview_variables(
+    business_type: str,
+    template_content: Optional[str] = Query(None, description="Template content to analyze for variables"),
+    additional_context: Optional[str] = Query(None, description="Additional context as JSON string"),
+    generation_stage: Optional[str] = Query(None, description="Generation stage: 'test_point' or 'test_case'"),
+    project_id: Optional[int] = Query(None, description="Project ID for context resolution"),
+    db: Session = Depends(get_db)
+):
+    """
+    Preview variable resolution for a business type.
+
+    - **business_type**: Business type code
+    - **template_content**: Optional template content to analyze
+    - **additional_context**: Optional additional context as JSON string
+    - **generation_stage**: Optional generation stage ('test_point' or 'test_case')
+    - **project_id**: Optional project ID for context resolution
+    """
+    try:
+        from ..utils.template_variable_resolver import TemplateVariableResolver
+        from ..utils.config import Config
+        from ..database.database import DatabaseManager
+        import json
+        import re
+        from datetime import datetime
+
+        # Parse additional_context
+        context_dict = {}
+        if additional_context:
+            try:
+                context_dict = json.loads(additional_context)
+            except json.JSONDecodeError:
+                context_dict = {"user_input": additional_context}
+
+        # Initialize resolver
+        config = Config()
+        db_manager = DatabaseManager(config)
+        resolver = TemplateVariableResolver(db_manager)
+
+        # Prepare endpoint_params with generation_stage
+        endpoint_params = {'additional_context': context_dict}
+        if generation_stage:
+            endpoint_params['generation_stage'] = generation_stage
+
+        # Resolve variables using the new 3-variable system with generation_stage support
+        resolved_variables = resolver.resolve_variables(
+            business_type=business_type,
+            project_id=project_id,
+            endpoint_params=endpoint_params
+        )
+
+        # If template content is provided, extract used variables
+        if template_content:
+            # Check if template contains variables
+            if '{{' not in template_content:
+                return {
+                    "business_type": business_type,
+                    "has_variables": False,
+                    "message": "Template contains no variables",
+                    "used_variables": [],
+                    "variable_values": {},
+                    "preview_timestamp": datetime.now().isoformat()
+                }
+
+            # Extract used variables
+            pattern = r'\{\{\s*(\w+)\s*\}\}'
+            used_variables = list(set(re.findall(pattern, template_content)))
+
+            # Filter only the variables that are actually used
+            variable_values = {var: resolved_variables.get(var) for var in used_variables}
+
+            return {
+                "business_type": business_type,
+                "has_variables": True,
+                "used_variables": used_variables,
+                "variable_count": len(used_variables),
+                "variable_values": variable_values,
+                "preview_timestamp": datetime.now().isoformat()
+            }
+        else:
+            # Return all available variables
+            return {
+                "business_type": business_type,
+                "variables": resolved_variables,
+                "variable_count": len(resolved_variables),
+                "preview_timestamp": datetime.now().isoformat()
+            }
+
+    except Exception as e:
+        logger.error(f"Error previewing variables for {business_type}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "VARIABLE_PREVIEW_ERROR",
+                    "message": f"Failed to preview variables: {str(e)}",
+                    "recoverable": True
+                }
+            }
+        )
+
+
+@router.post("/variables/resolve")
+async def test_resolve_variables(
+    request_data: Dict[str, Any],
+    db: Session = Depends(get_db)
+):
+    """
+    Test variable resolution with provided data.
+
+    - **business_type**: Business type code
+    - **template_content**: Template content to resolve
+    - **additional_context**: Additional context variables
+    - **generation_stage**: Optional generation stage ('test_point' or 'test_case')
+    - **project_id**: Optional project ID for context resolution
+    """
+    try:
+        from ..utils.template_variable_resolver import TemplateVariableResolver
+        from ..utils.config import Config
+        from ..database.database import DatabaseManager
+        from datetime import datetime
+
+        # Extract request parameters
+        business_type = request_data.get("business_type")
+        template_content = request_data.get("template_content", "")
+        additional_context = request_data.get("additional_context", {})
+        generation_stage = request_data.get("generation_stage")
+        project_id = request_data.get('project_id')
+
+        if not business_type:
+            raise HTTPException(
+                status_code=400,
+                detail="business_type is required"
+            )
+
+        # Initialize resolver
+        config = Config()
+        db_manager = DatabaseManager(config)
+        resolver = TemplateVariableResolver(db_manager)
+
+        # Prepare endpoint_params with generation_stage
+        endpoint_params = {'additional_context': additional_context}
+        if generation_stage:
+            endpoint_params['generation_stage'] = generation_stage
+
+        # Resolve variables using the new 3-variable system with generation_stage support
+        resolved_variables = resolver.resolve_variables(
+            business_type=business_type,
+            project_id=project_id,
+            endpoint_params=endpoint_params
+        )
+
+        # Apply variable resolution to template if provided
+        resolved_content = template_content
+        if template_content and '{{' in template_content:
+            from ..utils.database_prompt_builder import DatabasePromptBuilder
+            prompt_builder = DatabasePromptBuilder(config)
+            resolved_content = prompt_builder._apply_template_variables(
+                content=template_content,
+                additional_context=additional_context,
+                business_type=business_type,
+                project_id=project_id,
+                endpoint_params=endpoint_params
+            )
+
+        return {
+            "business_type": business_type,
+            "template_content": template_content,
+            "resolved_content": resolved_content,
+            "resolved_variables": resolved_variables,
+            "variable_count": len(resolved_variables),
+            "has_template_variables": '{{' in template_content if template_content else False,
+            "resolution_timestamp": datetime.now().isoformat()
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error testing variable resolution: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "VARIABLE_RESOLUTION_ERROR",
+                    "message": f"Failed to resolve variables: {str(e)}",
                     "recoverable": True
                 }
             }

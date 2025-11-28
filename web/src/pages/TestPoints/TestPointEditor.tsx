@@ -19,7 +19,8 @@ import {
   Spin,
   Alert,
   Switch,
-  Tag
+  Tag,
+  Empty
 } from 'antd';
 import {
   SaveOutlined,
@@ -35,7 +36,6 @@ import {
   TestPoint,
   TestPointCreate,
   TestPointUpdate,
-  TestPointStatus,
   Priority,
   BusinessType
 } from '../../types/testPoints';
@@ -101,8 +101,7 @@ const TestPointEditor: React.FC = () => {
         title: data.title,
         description: data.description,
         business_type: data.business_type,
-        priority: data.priority,
-        status: data.status
+        priority: data.priority
       });
     } catch (error) {
       message.error('加载测试点失败');
@@ -144,26 +143,6 @@ const TestPointEditor: React.FC = () => {
   };
 
   
-  const getStatusColor = (status: TestPointStatus) => {
-    const colors = {
-      draft: 'default',
-      approved: 'success',
-      modified: 'warning',
-      completed: 'processing'
-    };
-    return colors[status] || 'default';
-  };
-
-  const getStatusText = (status: TestPointStatus) => {
-    const texts = {
-      draft: '草稿',
-      approved: '已批准',
-      modified: '已修改',
-      completed: '已完成'
-    };
-    return texts[status] || status;
-  };
-
   if (loading) {
     return (
       <div style={{ padding: '24px', textAlign: 'center' }}>
@@ -208,9 +187,6 @@ const TestPointEditor: React.FC = () => {
             </Title>
             {testPoint && (
               <Space>
-                <Tag color={getStatusColor(testPoint.status)}>
-                  {getStatusText(testPoint.status)}
-                </Tag>
                 <Text type="secondary">
                   ID: {testPoint.test_point_id}
                 </Text>
@@ -288,21 +264,7 @@ const TestPointEditor: React.FC = () => {
                 </Select>
               </Form.Item>
             </Col>
-            <Col span={8}>
-              <Form.Item
-                label="状态"
-                name="status"
-                initialValue="draft"
-              >
-                <Select>
-                  <Select.Option value="draft">草稿</Select.Option>
-                  <Select.Option value="approved">已批准</Select.Option>
-                  <Select.Option value="modified">已修改</Select.Option>
-                  <Select.Option value="completed">已完成</Select.Option>
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
+            </Row>
 
           <Form.Item
             label="描述"

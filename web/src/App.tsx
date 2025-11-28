@@ -7,7 +7,6 @@ import zhCN from 'antd/locale/zh_CN';
 import MainLayout from '@/components/Layout/MainLayout';
 import Dashboard from '@/pages/Dashboard';
 import UnifiedTestCaseList from '@/components/UnifiedTestCase/UnifiedTestCaseList';
-import UnifiedTestCaseDetail from '@/pages/UnifiedTestCase/UnifiedTestCaseDetail';
 import TaskList from '@/pages/Tasks/TaskList';
 import TaskDetail from '@/pages/Tasks/TaskDetail';
 import KnowledgeGraph from '@/pages/KnowledgeGraph';

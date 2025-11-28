@@ -43,7 +43,6 @@ from .prompt_endpoints import router as prompt_router
 from .config_endpoints import router as config_router
 from .business_endpoints import router as business_router
 from .test_point_endpoints import router as test_point_router
-from .consistency_endpoints import router as consistency_router
 from .generation_endpoints import router as generation_router
 from .unified_test_case_endpoints import router as unified_test_case_router
 from ..middleware.error_handler import setup_error_handler
@@ -2642,7 +2641,6 @@ app.include_router(config_router)
 app.include_router(business_router)
 app.include_router(test_point_router)
 app.include_router(unified_test_case_router)
-app.include_router(consistency_router)
 app.include_router(generation_router)
 app.include_router(websocket_router)
 

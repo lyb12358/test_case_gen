@@ -200,6 +200,13 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   }, [state.isPolling, state.currentTask?.id]);
 
   const createTask = async (businessType: string) => {
+    // TODO: 这个函数需要重新实现，因为 generateTestCases 方法不存在
+    // 当前系统应该使用 BatchGenerator 组件进行测试用例生成
+    console.warn('createTask 函数当前不可用，请使用 BatchGenerator 组件');
+    showNotification('功能暂不可用', '请使用批量生成页面创建生成任务', 'warning');
+
+    // 暂时注释掉有问题的代码
+    /*
     try {
       const response = await unifiedGenerationService.generateTestCases({ business_type: businessType });
 
@@ -219,6 +226,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       console.error('Failed to create task:', error);
       throw error;
     }
+    */
   };
 
   const updateTask = (updates: Partial<GenerationTask>) => {

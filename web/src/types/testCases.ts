@@ -1,5 +1,6 @@
 /**
- * Type definitions for TSP Test Case Generator API
+ * Legacy type definitions for TSP Test Case Generator API
+ * @deprecated Use UnifiedTestCase types from unifiedTestCase.ts instead
  */
 
 // Basic interfaces
@@ -12,17 +13,6 @@ export interface GenerateResponse {
   task_id: string;
   status: string;
   message: string;
-}
-
-export interface TestCase {
-  id: number;
-  case_id: string;
-  title: string;
-  description: string;
-  business_type: string;
-  status: string;
-  created_at: string;
-  updated_at: string;
 }
 
 export interface TestCaseItem {
@@ -85,6 +75,12 @@ export interface TaskUpdateData {
     error?: string;
   };
   validation_errors?: any[];
+
+  // 测试点和测试用例统计字段
+  total_test_points?: number;
+  generated_test_points?: number;
+  total_test_cases?: number;
+  generated_test_cases?: number;
 }
 
 // BusinessType moved to types/index.ts to avoid duplication
@@ -126,6 +122,36 @@ export interface BusinessTypeMappingResponse {
       description: string;
     };
   };
+}
+
+export interface CreateTestCaseData {
+  name: string;
+  description: string;
+  business_type: string;
+  project_id: number;
+  case_id?: string;
+  module?: string;
+  functional_module?: string;
+  functional_domain?: string;
+  priority: 'high' | 'medium' | 'low';
+  test_point_id?: number;
+  preconditions?: string[];
+  steps?: Array<{step: number, action: string, expected: string}>;
+  expected_result?: string[];
+}
+
+export interface UpdateTestCaseData {
+  name?: string;
+  description?: string;
+  business_type?: string;
+  module?: string;
+  functional_module?: string;
+  functional_domain?: string;
+  priority?: 'high' | 'medium' | 'low';
+  test_point_id?: number;
+  preconditions?: string[];
+  steps?: Array<{step: number, action: string, expected: string}>;
+  expected_result?: string[];
 }
 
 export interface TaskListResponse {

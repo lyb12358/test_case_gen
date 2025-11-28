@@ -20,7 +20,7 @@ from ..core.json_extractor import JSONExtractor
 from ..core.enhanced_json_validator import EnhancedJSONValidator, ValidationSeverity
 from ..database.database import DatabaseManager
 from ..database.operations import DatabaseOperations
-from ..database.models import BusinessType, UnifiedTestCase, KnowledgeEntity, KnowledgeRelation, TestCaseEntity, EntityType, BusinessTypeConfig, TestPoint, TestPointStatus
+from ..database.models import BusinessType, UnifiedTestCase, KnowledgeEntity, KnowledgeRelation, TestCaseEntity, EntityType, BusinessTypeConfig, TestPoint
 
 
 class TestPointGenerator:
@@ -45,13 +45,14 @@ class TestPointGenerator:
         self.prompt_builder = DatabasePromptBuilder(config)
         self.db_manager = DatabaseManager(config)
 
-    def generate_test_points(self, business_type: str, additional_context: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    def generate_test_points(self, business_type: str, additional_context: Optional[Dict[str, Any]] = None, project_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
         """
         Generate test points for a specific business type.
 
         Args:
             business_type (str): Business type (e.g., RCC, RFD, ZAB, ZBA)
             additional_context (Optional[Dict[str, Any]]): Additional context for generation
+            project_id (Optional[int]): Project ID for getting existing test points
 
         Returns:
             Optional[Dict[str, Any]]: Generated test points JSON or None if failed
@@ -63,17 +64,24 @@ class TestPointGenerator:
             if not self._validate_business_type(business_type):
                 raise ValueError(f"Invalid or inactive business type: {business_type}")
 
-            # Get system prompt for test point generation
-            system_prompt = self.prompt_builder.get_system_prompt_by_stage('test_point')
-            if system_prompt is None:
-                raise RuntimeError("无法获取测试点生成系统提示词")
-
-            # Build user prompt for test point generation
-            user_prompt = self.prompt_builder.build_two_stage_user_prompt(
-                business_type, 'test_point', additional_context
+            # Get both system and user prompts from prompt combination
+            system_prompt, user_prompt = self.prompt_builder.get_two_stage_prompts(
+                business_type, 'test_point'
             )
-            if user_prompt is None:
-                raise RuntimeError(f"无法为 {business_type} 构建测试点生成用户提示词")
+            if system_prompt is None or user_prompt is None:
+                raise RuntimeError(f"无法为 {business_type} 获取测试点生成提示词组合")
+
+            # Apply template variables to user prompt
+            user_prompt = self.prompt_builder._apply_template_variables(
+                content=user_prompt,
+                additional_context=additional_context,
+                business_type=business_type,
+                project_id=project_id,  # Use provided project_id
+                endpoint_params={
+                    'additional_context': additional_context,
+                    'generation_stage': 'test_point'  # Explicitly identify generation stage
+                } if additional_context else {'generation_stage': 'test_point'}
+            )
 
             logger.info(f"开始生成测试点 | 业务类型: {business_type} | 用户提示词长度: {len(user_prompt)}")
 
@@ -260,7 +268,7 @@ class TestPointGenerator:
                                 title=test_point_data.get('title', ''),
                                 description=test_point_data.get('description', ''),
                                 priority=test_point_data.get('priority', 'medium'),
-                                status=TestPointStatus.DRAFT
+                                status="draft"
                             )
                             db.add(test_point)
                             stored_test_points.append(test_point)
@@ -391,7 +399,7 @@ class TestPointGenerator:
         try:
             with self.db_manager.get_session() as db:
                 # Query test points from TestPoint table
-                from ..database.models import TestPoint, TestPointStatus
+                from ..database.models import TestPoint
 
                 query = db.query(TestPoint)
 

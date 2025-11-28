@@ -19,7 +19,7 @@ from ..core.enhanced_json_validator import EnhancedJSONValidator, ValidationSeve
 from ..core.excel_converter import ExcelConverter
 from ..database.database import DatabaseManager
 from ..database.operations import DatabaseOperations
-from ..database.models import BusinessType, Project, UnifiedTestCase, KnowledgeEntity, KnowledgeRelation, TestCaseEntity, EntityType, BusinessTypeConfig, TestPoint, TestPointStatus
+from ..database.models import BusinessType, Project, UnifiedTestCase, KnowledgeEntity, KnowledgeRelation, TestCaseEntity, EntityType, BusinessTypeConfig, TestPoint
 
 
 class TestCaseGenerator:
@@ -116,9 +116,12 @@ class TestCaseGenerator:
         except Exception as e:
             return []
 
-    def generate_test_cases(self) -> Optional[Dict[str, Any]]:
+    def generate_test_cases(self, business_type: str = "RCC") -> Optional[Dict[str, Any]]:
         """
-        Generate test cases using LLM.
+        Generate test cases using LLM for a specific business type.
+
+        Args:
+            business_type (str): Business type (default: "RCC")
 
         Returns:
             Optional[Dict[str, Any]]: Generated test cases JSON or None if failed
@@ -135,9 +138,8 @@ class TestCaseGenerator:
             return None
         print("=== Generating Test Cases ===")
 
-        # This method is deprecated, use generate_test_cases_for_business instead
-        print("Warning: generate_test_cases method is deprecated, please use generate_test_cases_for_business method")
-        return None
+        # Delegate to the business-specific method
+        return self.generate_test_cases_for_business(business_type)
 
     def save_test_cases(self, test_cases_data: Dict[str, Any], output_dir: str = "output") -> Optional[str]:
         """
@@ -186,16 +188,19 @@ class TestCaseGenerator:
 
         return excel_path
 
-    def run(self) -> bool:
+    def run(self, business_type: str = "RCC") -> bool:
         """
         Run the complete test case generation process.
+
+        Args:
+            business_type (str): Business type for generation (default: "RCC")
 
         Returns:
             bool: True if successful, False otherwise
         """
         try:
             # Generate test cases
-            test_cases_data = self.generate_test_cases()
+            test_cases_data = self.generate_test_cases(business_type)
             if test_cases_data is None:
                 return False
 
@@ -294,20 +299,27 @@ class TestCaseGenerator:
             if not self.validate_business_type(business_type):
                 raise ValueError(f"Invalid or inactive business type: {business_type}")
 
-            # Get system prompt for test case generation
-            system_prompt = self.prompt_builder.get_system_prompt_by_stage('test_case')
-            if system_prompt is None:
-                raise RuntimeError("无法获取测试用例生成系统提示词")
-
-            # Build user prompt for test case generation
+            # Get both system and user prompts from prompt combination
             context_with_points = additional_context.copy() if additional_context else {}
             context_with_points['test_points_data'] = test_points_data
 
-            user_prompt = self.prompt_builder.build_two_stage_user_prompt(
-                business_type, 'test_case', context_with_points
+            system_prompt, user_prompt = self.prompt_builder.get_two_stage_prompts(
+                business_type, 'test_case'
             )
-            if user_prompt is None:
-                raise RuntimeError(f"无法为 {business_type} 构建测试用例生成用户提示词")
+            if system_prompt is None or user_prompt is None:
+                raise RuntimeError(f"无法为 {business_type} 获取测试用例生成提示词组合")
+
+            # Apply template variables to user prompt
+            user_prompt = self.prompt_builder._apply_template_variables(
+                content=user_prompt,
+                additional_context=context_with_points.get('additional_context'),
+                business_type=business_type,
+                project_id=context_with_points.get('project_id'),
+                endpoint_params={
+                    **context_with_points,
+                    'generation_stage': 'test_case'  # Explicitly identify as test_case generation
+                }
+            )
 
             logger.info(f"开始从测试点生成测试用例 | 业务类型: {business_type} | "
                        f"测试点数量: {len(test_points_data.get('test_points', []))}")
@@ -358,8 +370,9 @@ class TestCaseGenerator:
         """
         Save test cases to database using new object + UnifiedTestCase structure.
 
-        This method has been optimized to split long transactions into multiple short
-        transactions to prevent database blocking of other APIs.
+        This method uses a single ACID transaction to ensure data integrity and consistency.
+        All database operations (delete, create, verify) are performed atomically to prevent
+        data loss or corruption. The transaction includes proper rollback handling on failures.
 
         Args:
             test_cases_data (Dict[str, Any]): Test cases data
@@ -391,71 +404,43 @@ class TestCaseGenerator:
                 error_msg = f"Error during deduplication: {str(e)}"
                 raise RuntimeError(error_msg) from e
 
-            # Split operations into multiple short transactions to avoid blocking other APIs
-            project = None
-            test_case_items = []
-
-            # Transaction 1: Delete existing data (short transaction)
+            # Use a single transaction for data integrity, but implement batch processing for performance
             try:
                 with self.db_manager.get_session() as db:
                     db_operations = DatabaseOperations(db)
 
-                    # Delete existing test case groups and items
+                    # All operations in a single transaction to ensure data consistency
+                    # Step 1: Delete existing data
                     deleted_count = db_operations.delete_projects_by_business_type(business_enum)
 
                     # Delete existing test case knowledge entities
-                    deleted_entities_count = db_operations.db.query(KnowledgeEntity).filter(
-                        KnowledgeEntity.business_type == business_enum,
-                        KnowledgeEntity.type == EntityType.TEST_CASE
-                    ).count()
-
                     db_operations.db.query(KnowledgeEntity).filter(
                         KnowledgeEntity.business_type == business_enum,
                         KnowledgeEntity.type == EntityType.TEST_CASE
                     ).delete()
-                    db_operations.db.commit()
-            except Exception as e:
-                error_msg = f"Error deleting existing data: {str(e)}"
-                raise RuntimeError(error_msg) from e
 
-            # Transaction 2: Ensure business entities exist (short transaction)
-            try:
-                with self.db_manager.get_session() as db:
-                    db_operations = DatabaseOperations(db)
+                    # Step 2: Ensure business entities exist
                     self._ensure_business_entities_exist(db_operations, business_enum)
-            except Exception as e:
-                error_msg = f"Error ensuring business entities exist: {str(e)}"
-                raise RuntimeError(error_msg) from e
 
-            # Transaction 3: Create test case group (short transaction)
-            test_case_project_id = None
-            try:
-                generation_metadata = {
-                    'generated_at': test_cases_data.get('generated_at'),
-                    'total_test_cases': len(test_cases_list),
-                    'generator_version': '2.0'
-                }
+                    # Step 3: Create test case group
+                    generation_metadata = {
+                        'generated_at': test_cases_data.get('generated_at'),
+                        'total_test_cases': len(test_cases_list),
+                        'generator_version': '2.0'
+                    }
 
-                # Include test points data if available
-                if 'test_points' in test_cases_data:
-                    generation_metadata['test_points'] = test_cases_data['test_points']
+                    # Include test points data if available
+                    if 'test_points' in test_cases_data:
+                        generation_metadata['test_points'] = test_cases_data['test_points']
 
-                with self.db_manager.get_session() as db:
-                    db_operations = DatabaseOperations(db)
                     project = db_operations.create_project(
                         business_enum,
                         generation_metadata,
                         project_id
                     )
-                    # Get ID inside the transaction before session closes
                     test_case_project_id = project.id
-            except Exception as e:
-                error_msg = f"Error creating test case group: {str(e)}"
-                raise RuntimeError(error_msg) from e
 
-            # Transaction 4: Create test case items with test point associations (shorter transaction, batched if needed)
-            try:
-                with self.db_manager.get_session() as db:
+                    # Step 4: Create test case items with batch processing for performance
                     db_operations = DatabaseOperations(db)
 
                     # For two-stage generation, try to create test point associations
@@ -494,33 +479,27 @@ class TestCaseGenerator:
                             'entity_order': item.entity_order
                         }
                         test_case_items_data.append(item_data)
-            except Exception as e:
-                error_msg = f"Error creating test case items: {str(e)}"
-                raise RuntimeError(error_msg) from e
 
-            # Transaction 5: Create knowledge graph entities (shorter transaction)
-            try:
-                with self.db_manager.get_session() as db:
-                    db_operations = DatabaseOperations(db)
+                    # Step 5: Create knowledge graph entities (within the same transaction)
                     self._create_knowledge_entities_for_new_structure(
                         db_operations,
                         test_case_project_id,  # Pass the ID instead of object
                         test_case_items_data,  # Pass captured data instead of detached objects
                         business_enum
                     )
-            except Exception as e:
-                error_msg = f"Error creating knowledge graph entities: {str(e)}"
-                raise RuntimeError(error_msg) from e
 
-            # Transaction 6: Final verification (short transaction, read-only)
-            try:
-                with self.db_manager.get_session() as db:
-                    db_operations = DatabaseOperations(db)
+                    # Step 6: Final verification (within the same transaction, read-only operations)
                     self._verify_data_consistency(test_case_project_id, test_case_items_data, business_enum, db_operations)
+
+                    # Commit all operations in a single transaction
+                    db.commit()
+
             except Exception as e:
-                error_msg = f"Error during data consistency verification: {str(e)}"
-                logger.warning(error_msg)
-                # Don't fail the whole operation for consistency check failures
+                # Rollback the transaction if any step fails
+                db.rollback()
+                error_msg = f"Database transaction failed: {str(e)}"
+                logger.error(f"{error_msg}\n{traceback.format_exc()}")
+                raise RuntimeError(error_msg) from e
 
             # Run enhanced consistency validation using our new validator
             try:
@@ -832,15 +811,24 @@ class TestCaseGenerator:
             if not self.validate_business_type(business_type):
                 raise ValueError(f"Invalid or inactive business type: {business_type}")
 
-            # Get system prompt for test point generation
-            system_prompt = self.prompt_builder.get_system_prompt_by_stage('test_point')
-            if system_prompt is None:
-                raise RuntimeError("无法获取测试点生成系统提示词")
+            # Get both system and user prompts from prompt combination
+            system_prompt, user_prompt = self.prompt_builder.get_two_stage_prompts(
+                business_type, 'test_point'
+            )
+            if system_prompt is None or user_prompt is None:
+                raise RuntimeError(f"无法为 {business_type} 获取测试点生成提示词组合")
 
-            # Build user prompt for test point generation
-            user_prompt = self.prompt_builder.build_two_stage_user_prompt(business_type, 'test_point')
-            if user_prompt is None:
-                raise RuntimeError(f"无法为 {business_type} 构建测试点生成用户提示词")
+            # Apply template variables to user prompt
+            user_prompt = self.prompt_builder._apply_template_variables(
+                content=user_prompt,
+                additional_context=additional_context,
+                business_type=business_type,
+                project_id=project_id,  # 从方法参数获取
+                endpoint_params={
+                    'additional_context': additional_context,
+                    'generation_stage': 'test_point'  # This method is in a two-stage flow, currently generating test_points
+                } if additional_context else {'generation_stage': 'test_point'}
+            )
             print(f"[USER] 测试点生成用户提示词已构建 | 长度: {len(user_prompt)}")
 
             # Generate test points using LLM
@@ -878,7 +866,7 @@ class TestCaseGenerator:
             traceback.print_exc()
             return None
 
-    def generate_test_cases_from_points(self, business_type: str, test_points: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def generate_test_cases_from_points(self, business_type: str, test_points: Dict[str, Any], additional_context: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         """
         Generate test cases from test points for a specific business type (Stage 2).
 
@@ -891,22 +879,34 @@ class TestCaseGenerator:
         """
         try:
 
-            # Get system prompt for test case generation
-            system_prompt = self.prompt_builder.get_system_prompt_by_stage('test_case')
-            if system_prompt is None:
-                raise RuntimeError("无法获取测试用例生成系统提示词")
+            # Get both system and user prompts from prompt combination
+            system_prompt, user_prompt = self.prompt_builder.get_two_stage_prompts(
+                business_type, 'test_case'
+            )
+            if system_prompt is None or user_prompt is None:
+                raise RuntimeError(f"无法为 {business_type} 获取测试用例生成提示词组合")
 
-            # Build user prompt for test case generation with test points context
-            additional_context = {
+            # Build context for template variable resolution
+            context = {
                 'test_points': json.dumps(test_points, indent=2, ensure_ascii=False),
                 'test_points_count': len(test_points.get('test_points', []))
             }
 
-            user_prompt = self.prompt_builder.build_two_stage_user_prompt(
-                business_type, 'test_case', additional_context
+            # Merge with provided additional_context
+            if additional_context:
+                context.update(additional_context)
+
+            # Apply template variables to user prompt
+            user_prompt = self.prompt_builder._apply_template_variables(
+                content=user_prompt,
+                additional_context=context,
+                business_type=business_type,
+                project_id=project_id,  # 从方法参数获取
+                endpoint_params={
+                    **context,
+                    'generation_stage': 'test_case'  # This method generates test cases
+                }
             )
-            if user_prompt is None:
-                raise RuntimeError(f"无法为 {business_type} 构建测试用例生成用户提示词")
             print(f"[USER] 测试用例生成用户提示词已构建 | 长度: {len(user_prompt)}")
 
             # Generate test cases using LLM
@@ -1108,7 +1108,7 @@ class TestCaseGenerator:
                             title=tp_data.get('title', ''),
                             description=tp_data.get('description', ''),
                             priority=tp_data.get('priority', 'medium'),
-                            status=TestPointStatus.DRAFT  # Will be updated to APPROVED when test cases are generated
+                            status="draft"  # Will be updated to APPROVED when test cases are generated
                         )
                         db.add(test_point)
                         stored_count += 1
