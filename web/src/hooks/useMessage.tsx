@@ -28,10 +28,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const { message } = AntdApp.useApp();
 
   return (
-    <AntdApp>
-      <AppContext.Provider value={{ message }}>
-        {children}
-      </AppContext.Provider>
-    </AntdApp>
+    <AppContext.Provider value={{ message }}>
+      {children}
+    </AppContext.Provider>
   );
 };

@@ -4704,10 +4704,10 @@ export interface components {
             /** Updated At */
             updated_at?: string | null;
             /**
-             * Test Case Items
+             * Test Cases
              * @default []
              */
-            test_case_items: components["schemas"]["__main____UnifiedTestCaseResponse"][];
+            test_cases: components["schemas"]["__main____UnifiedTestCaseResponse"][];
         };
         /**
          * TestCasesListResponse
@@ -5401,10 +5401,10 @@ export interface components {
              */
             test_cases_generated: number;
             /**
-             * Test Case Items
+             * Test Cases
              * @description 生成的测试用例列表
              */
-            test_case_items?: components["schemas"]["src__models__unified_test_case__UnifiedTestCaseResponse"][] | null;
+            test_cases?: components["schemas"]["src__models__unified_test_case__UnifiedTestCaseResponse"][] | null;
             /**
              * Generation Time
              * @description 生成耗时（秒）

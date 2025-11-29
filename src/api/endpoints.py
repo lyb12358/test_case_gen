@@ -29,20 +29,17 @@ from ..core.test_case_generator import TestCaseGenerator
 from ..utils.config import Config
 from ..database.database import DatabaseManager
 from ..database.operations import DatabaseOperations
-from ..database.models import BusinessType, JobStatus, EntityType, BusinessTypeConfig, Project, GenerationJob, UnifiedTestCaseStatus
+from ..database.models import BusinessType, JobStatus, EntityType, BusinessTypeConfig, Project, GenerationJob, UnifiedTestCaseStatus, UnifiedTestCase
 from ..core.business_data_extractor import BusinessDataExtractor
 from ..core.excel_converter import ExcelConverter
 from ..models.test_case import TestCase
 from ..models.project import ProjectCreate, ProjectUpdate, ProjectResponse, ProjectListResponse, ProjectStats, ProjectStatsResponse
-from ..models.test_point import (
-    TestPoint, TestPointCreate, TestPointUpdate,
-    BatchTestCaseGenerationRequest, BatchTestPointGenerationRequest, BatchGenerationResponse
-)
+# test_point module removed - using unified test case system
 from .dependencies import get_db, get_current_project
 from .prompt_endpoints import router as prompt_router
 from .config_endpoints import router as config_router
 from .business_endpoints import router as business_router
-from .test_point_endpoints import router as test_point_router
+# test_point_endpoints removed - using unified_test_case_endpoints for both test points and test cases
 from .generation_endpoints import router as generation_router
 from .unified_test_case_endpoints import router as unified_test_case_router
 from ..middleware.error_handler import setup_error_handler
@@ -132,7 +129,7 @@ class TestCaseGroupResponse(BaseModel):
     generation_metadata: Optional[Dict[str, Any]] = None
     created_at: str
     updated_at: Optional[str] = None
-    test_case_items: List[UnifiedTestCaseResponse] = []
+    unified_test_cases: List[UnifiedTestCaseResponse] = []
 
 
 class TestCasesListResponse(BaseModel):
@@ -911,66 +908,47 @@ async def get_test_cases_by_business_type(
     project = validate_project_id(project_id, db, use_default=True)
     effective_project_id = project.id if project_id is None else project_id
 
-    # Get test case groups from database
-    from ..database.models import Project, UnifiedTestCase, Project
+    # Get test case items directly from database
+    from ..database.models import UnifiedTestCase
     db_operations = DatabaseOperations(db)
 
-    # Build query with project filtering
-    query = db.query(Project).filter(Project.business_type == business_enum)
-    query = query.filter(Project.project_id == effective_project_id)
+    # Query test cases for the given business type and project
+    items = db.query(UnifiedTestCase).filter(
+        UnifiedTestCase.project_id == effective_project_id,
+        UnifiedTestCase.business_type == business_enum.value
+    ).order_by(UnifiedTestCase.created_at.desc()).all()
 
-    # Join with Project to get project name
-    query = query.join(Project, Project.project_id == Project.id)
+    # Convert items to response format
+    item_responses = []
+    for item in items:
+        # Parse JSON fields
+        preconditions = json.loads(item.preconditions) if item.preconditions else []
+        steps = json.loads(item.steps) if item.steps else []
+        expected_result = json.loads(item.expected_result) if item.expected_result else []
 
-    groups = query.order_by(Project.created_at.desc()).all()
+        item_responses.append(UnifiedTestCaseResponse(
+            id=item.id,
+            project_id=item.project_id,
+            test_case_id=item.test_case_id,
+            name=item.name,
+            description=item.description,
+            business_type=item.business_type,
+            module=item.module,
+            functional_module=item.functional_module,
+            functional_domain=item.functional_domain,
+            preconditions=preconditions,
+            steps=steps,
+            expected_result=expected_result,
+            remarks=item.remarks,
+            entity_order=item.entity_order,
+            created_at=item.created_at.isoformat()
+        ))
 
-    # Convert to response format
-    
-    for group in groups:
-        # Get test case items for this group
-        items = db.query(UnifiedTestCase).filter(
-            UnifiedTestCase.project_id == group.id
-        ).order_by(UnifiedTestCase.entity_order.asc()).all()
-
-        # Convert items to response format
-        item_responses = []
-        for item in items:
-            # Parse JSON fields
-            preconditions = json.loads(item.preconditions) if item.preconditions else []
-            steps = json.loads(item.steps) if item.steps else []
-            expected_result = json.loads(item.expected_result) if item.expected_result else []
-
-            item_responses.append(UnifiedTestCaseResponse(
-                id=item.id,
-                project_id=item.project_id,
-                test_case_id=item.test_case_id,
-                name=item.name,
-                description=item.description,
-                module=item.module,
-                functional_module=item.functional_module,
-                functional_domain=item.functional_domain,
-                preconditions=preconditions,
-                steps=steps,
-                expected_result=expected_result,
-                remarks=item.remarks,
-                entity_order=item.entity_order,
-                created_at=item.created_at.isoformat()
-            ))
-
-        # Parse generation metadata
-        generation_metadata = None
-        if group.generation_metadata:
-            try:
-                generation_metadata = json.loads(group.generation_metadata)
-            except:
-                pass
-
-        
-        return TestCasesListResponse(
-            business_type=business_enum.value,
-            count=len(test_cases),
-            test_cases=test_cases
-        )
+    return TestCasesListResponse(
+        business_type=business_enum.value,
+        count=len(item_responses),
+        test_cases=item_responses
+    )
 
 
 @main_router.get("/test-cases", response_model=TestCasesListResponse, tags=["test-cases"])
@@ -1582,7 +1560,7 @@ async def generate_test_cases_two_stage_background(task_id: str, business_type: 
 
         # Update progress for Stage 2
         with DatabaseManager(config).get_session() as db:
-            job = db.query(GenerationJob).filter(GenerationJob).filter(GenerationJob.id == task_id).first()
+            job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
             if job:
                 job.current_step = 4
                 job.step_description = "阶段 2: 基于测试点生成测试用例..."
@@ -1707,11 +1685,12 @@ async def batch_generate_test_cases_background(
             })
 
             try:
-                # Get test points for this business type
-                test_points = db.query(TestPoint).filter(
-                    TestPoint.business_type == business_type.upper(),
-                    TestPoint.project_id == project_id,
-                    TestPoint.status == "approved"
+                # Get test points for this business type (using unified test case system)
+                test_points = db.query(UnifiedTestCase).filter(
+                    UnifiedTestCase.stage == 'test_point',
+                    UnifiedTestCase.business_type == business_type.upper(),
+                    UnifiedTestCase.project_id == project_id,
+                    UnifiedTestCase.status == UnifiedTestCaseStatus.APPROVED
                 ).all()
 
                 if not test_points:
@@ -1726,7 +1705,7 @@ async def batch_generate_test_cases_background(
                     "test_points": [
                         {
                             "id": tp.id,
-                            "test_point_id": tp.test_point_id,
+                            "test_point_id": tp.test_case_id,
                             "title": tp.title,
                             "description": tp.description,
                             "business_type": tp.business_type,
@@ -2121,7 +2100,7 @@ async def get_entity_details(entity_id: int):
             test_cases_data = []
             for tc_entity in test_case_entities:
                 # Get data from UnifiedTestCase
-                item = tc_entity.test_case_item
+                item = tc_entity.unified_test_case
                 test_cases_data.append({
                     "id": item.id,
                     "name": tc_entity.name,
@@ -2284,7 +2263,7 @@ async def get_entity_test_cases(entity_id: int):
             test_cases_data = []
             for tc_entity in test_case_entities:
                 # Get data from UnifiedTestCase
-                item = tc_entity.test_case_item
+                item = tc_entity.unified_test_case
                 test_cases_data.append({
                     "id": item.id,
                     "name": tc_entity.name,
@@ -2446,7 +2425,7 @@ async def generate_test_cases_from_points(
     )
 
     return GenerateResponse(
-        id=task_id,
+        task_id=task_id,
         status=JobStatus.PENDING,
         message=f"基于测试点的测试用例生成任务已创建: {task_id}"
     )
@@ -2563,71 +2542,8 @@ async def configure_business_type(
 # BATCH TEST CASE GENERATION ENDPOINTS
 # ========================================
 
-# BatchTestCaseGenerationRequest is now imported from models.test_point
-
-
-@main_router.post("/test-cases/batch/generate", response_model=Dict[str, Any], tags=["test-cases"])
-async def batch_generate_test_cases(
-    request: BatchTestCaseGenerationRequest,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    project = Depends(get_current_project)
-):
-    """
-    Batch generate test cases for multiple business types.
-
-    Args:
-        request: Batch generation request
-        background_tasks: FastAPI BackgroundTasks
-        db: Database session
-        project: Current project
-
-    Returns:
-        Dict with task ID and status
-    """
-    # Validate business types
-    for business_type in request.business_types:
-        business_config = db.query(BusinessTypeConfig).filter(
-            BusinessTypeConfig.code == business_type.upper(),
-            BusinessTypeConfig.is_active == True
-        ).first()
-
-        if not business_config:
-            raise HTTPException(
-                status_code=400,
-                detail=f"业务类型 '{business_type}' 不存在或未激活"
-            )
-
-    # Create task ID
-    task_id = str(uuid.uuid4())
-
-    # Create generation job record for each business type
-    for business_type in request.business_types:
-        job = GenerationJob(
-            id=f"{task_id}-{business_type}",
-            business_type=business_type.upper(),
-            status=JobStatus.PENDING,
-            project_id=project.id
-        )
-        db.add(job)
-
-    db.commit()
-
-    # Start background task for batch generation
-    background_tasks.add_task(
-        batch_generate_test_cases_background,
-        task_id=task_id,
-        business_types=request.business_types,
-        additional_context=request.additional_context,
-        project_id=project.id
-    )
-
-    return {
-        "generation_id": task_id,
-        "business_types": request.business_types,
-        "status": "started",
-        "message": f"批量测试用例生成任务已创建，涉及 {len(request.business_types)} 个业务类型"
-    }
+# Batch generation endpoints removed - using unified generation service
+# BatchTestCaseGenerationRequest and related functionality replaced by unified test case generation
 
 
 # ========================================
@@ -2639,7 +2555,7 @@ async def batch_generate_test_cases(
 app.include_router(prompt_router)
 app.include_router(config_router)
 app.include_router(business_router)
-app.include_router(test_point_router)
+# test_point_router removed - using unified_test_case_router
 app.include_router(unified_test_case_router)
 app.include_router(generation_router)
 app.include_router(websocket_router)

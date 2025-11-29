@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from datetime import datetime
 
-from ..database.models import TestPoint, UnifiedTestCase
+from ..database.models import UnifiedTestCase
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -105,15 +105,19 @@ class SyncTransactionManager:
     def _sync_from_test_point(self, test_point_id: int, new_title: str) -> bool:
         """从测试点同步到测试用例"""
         try:
-            # 查找测试点
-            test_point = self.db.query(TestPoint).filter(TestPoint.id == test_point_id).first()
+            # 查找测试点 (现在使用UnifiedTestCase表中的stage='test_point')
+            test_point = self.db.query(UnifiedTestCase).filter(
+                UnifiedTestCase.id == test_point_id,
+                UnifiedTestCase.stage == 'test_point'
+            ).first()
             if not test_point:
                 logger.error(f"Test point not found: {test_point_id}")
                 return False
 
             # 查找关联的测试用例
             test_case = self.db.query(UnifiedTestCase).filter(
-                UnifiedTestCase.test_point_id == test_point_id
+                UnifiedTestCase.test_point_id == test_point_id,
+                UnifiedTestCase.stage == 'test_case'
             ).first()
 
             if test_case:
@@ -139,7 +143,8 @@ class SyncTransactionManager:
         try:
             # 查找测试用例
             test_case = self.db.query(UnifiedTestCase).filter(
-                UnifiedTestCase.id == test_case_id
+                UnifiedTestCase.id == test_case_id,
+                UnifiedTestCase.stage == 'test_case'
             ).first()
 
             if not test_case:
@@ -150,20 +155,21 @@ class SyncTransactionManager:
                 logger.debug(f"Test case {test_case_id} has no associated test point, skipping sync")
                 return True
 
-            # 查找关联的测试点
-            test_point = self.db.query(TestPoint).filter(
-                TestPoint.id == test_case.test_point_id
+            # 查找关联的测试点 (现在使用UnifiedTestCase表中的stage='test_point')
+            test_point = self.db.query(UnifiedTestCase).filter(
+                UnifiedTestCase.id == test_case.test_point_id,
+                UnifiedTestCase.stage == 'test_point'
             ).first()
 
             if test_point:
-                if test_point.title != new_name:
-                    old_title = test_point.title
-                    test_point.title = new_name
+                if test_point.name != new_name:
+                    old_name = test_point.name
+                    test_point.name = new_name
                     test_point.updated_at = datetime.now()
-                    logger.info(f"Synced test point title: '{old_title}' -> '{new_title}' (test_point_id: {test_point.id})")
+                    logger.info(f"Synced test point name: '{old_name}' -> '{new_name}' (test_point_id: {test_point.id})")
                     return True
                 else:
-                    logger.debug(f"Test point title already matches: '{new_name}', no sync needed")
+                    logger.debug(f"Test point name already matches: '{new_name}', no sync needed")
                     return True
             else:
                 logger.error(f"Test point not found for test_point_id: {test_case.test_point_id}")
@@ -189,22 +195,25 @@ class SyncTransactionManager:
         """
         try:
             if entity_type == 'test_point':
-                query = self.db.query(TestPoint).filter(
-                    TestPoint.business_type == business_type,
-                    TestPoint.title == name
+                # 使用UnifiedTestCase表查找测试点 (stage='test_point')
+                query = self.db.query(UnifiedTestCase).filter(
+                    UnifiedTestCase.business_type == business_type,
+                    UnifiedTestCase.name == name,
+                    UnifiedTestCase.stage == 'test_point'
                 )
                 if exclude_id:
-                    query = query.filter(TestPoint.id != exclude_id)
+                    query = query.filter(UnifiedTestCase.id != exclude_id)
 
                 existing = query.first()
                 if existing:
-                    logger.warning(f"Test point title '{name}' already exists in business type '{business_type}' (ID: {existing.id})")
+                    logger.warning(f"Test point name '{name}' already exists in business type '{business_type}' (ID: {existing.id})")
                     return False
 
             elif entity_type == 'test_case':
                 query = self.db.query(UnifiedTestCase).filter(
                     UnifiedTestCase.business_type == business_type,
-                    UnifiedTestCase.name == name
+                    UnifiedTestCase.name == name,
+                    UnifiedTestCase.stage == 'test_case'
                 )
                 if exclude_id:
                     query = query.filter(UnifiedTestCase.id != exclude_id)
@@ -235,30 +244,34 @@ class SyncTransactionManager:
             dict: 同步状态信息
         """
         try:
-            test_point = self.db.query(TestPoint).filter(
-                TestPoint.id == test_point_id
+            # 使用UnifiedTestCase表查找测试点 (stage='test_point')
+            test_point = self.db.query(UnifiedTestCase).filter(
+                UnifiedTestCase.id == test_point_id,
+                UnifiedTestCase.stage == 'test_point'
             ).first()
 
             if not test_point:
                 return {"error": "Test point not found"}
 
+            # 查找关联的测试用例 (stage='test_case')
             test_case = self.db.query(UnifiedTestCase).filter(
-                UnifiedTestCase.test_point_id == test_point_id
+                UnifiedTestCase.test_point_id == test_point_id,
+                UnifiedTestCase.stage == 'test_case'
             ).first()
 
             if not test_case:
                 return {
-                    "test_point_title": test_point.title,
+                    "test_point_name": test_point.name,
                     "test_case_name": None,
                     "synced": True,  # 没有关联测试用例，视为已同步
                     "message": "No associated test case"
                 }
 
-            is_synced = test_point.title == test_case.name
+            is_synced = test_point.name == test_case.name
             business_type_match = test_point.business_type == test_case.business_type
 
             return {
-                "test_point_title": test_point.title,
+                "test_point_name": test_point.name,
                 "test_case_name": test_case.name,
                 "business_type": test_point.business_type,
                 "synced": is_synced and business_type_match,

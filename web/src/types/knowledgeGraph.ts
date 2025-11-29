@@ -107,7 +107,7 @@ export interface TestCaseGroupInfo {
   generation_metadata?: Record<string, any>;
   created_at: string;
   updated_at?: string;
-  test_case_items: TestCaseItemInfo[];
+  test_cases: TestCaseInfo[]; // 修复：改为与当前数据库一致
 }
 
 export interface TestCaseInfo {

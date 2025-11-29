@@ -16,6 +16,7 @@ import {
   DragOutlined,
   CheckCircleOutlined
 } from '@ant-design/icons';
+import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -59,6 +60,24 @@ const StepEditor: React.FC<StepEditorProps> = ({
     setSteps(newSteps);
     onChange?.(newSteps);
   }, [onChange]);
+
+  const handleDragEnd = useCallback((result: any) => {
+    if (!result.destination) {
+      return;
+    }
+
+    const items = Array.from(steps);
+    const [reorderedItem] = items.splice(result.source.index, 1);
+    items.splice(result.destination.index, 0, reorderedItem);
+
+    // 重新编号
+    const newSteps = items.map((step, index) => ({
+      ...step,
+      step_number: index + 1
+    }));
+
+    triggerChange(newSteps);
+  }, [steps, triggerChange]);
 
   const addStep = useCallback(() => {
     if (steps.length >= maxSteps) {
@@ -126,101 +145,138 @@ const StepEditor: React.FC<StepEditorProps> = ({
           border: disabled ? '1px dashed #d9d9d9' : '1px solid #d9d9d9'
         }}
         className="step-editor"
-      >
-        {steps.map((step, index) => (
-          <div key={step.id}>
-            <Row gutter={16} style={{ marginBottom: 12, alignItems: 'center' }}>
-              <Col span={2} style={{ textAlign: 'center' }}>
-                <div
-                  style={{
-                    backgroundColor: '#1890ff',
-                    color: 'white',
-                    borderRadius: '50%',
-                    width: '28px',
-                    height: '28px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontWeight: 'bold',
-                    fontSize: '12px'
-                  }}
-                >
-                  {step.step_number}
-                </div>
-              </Col>
+          >
+        <DragDropContext onDragEnd={handleDragEnd}>
+          <Droppable droppableId="steps" isDropDisabled={disabled} isCombineEnabled={false} ignoreContainerClipping={false}>
+            {(provided) => (
+              <div
+                {...provided.droppableProps}
+                ref={provided.innerRef}
+                style={{ minHeight: '100px' }}
+              >
+                {steps.map((step, index) => (
+                  <Draggable key={step.id} draggableId={step.id.toString()} index={index} isDragDisabled={disabled} disableInteractiveElementBlocking={false}>
+                    {(provided, snapshot) => (
+                      <div
+                        ref={provided.innerRef}
+                        {...provided.draggableProps}
+                        style={{
+                          ...provided.draggableProps.style,
+                          opacity: snapshot.isDragging ? 0.5 : 1,
+                          marginBottom: '12px'
+                        }}
+                      >
+                        <Row gutter={16} style={{ alignItems: 'center' }}>
+                          <Col span={1} style={{ textAlign: 'center' }}>
+                            <div
+                              {...provided.dragHandleProps}
+                              style={{
+                                cursor: 'grab',
+                                marginRight: '8px',
+                                color: '#666'
+                              }}
+                            >
+                              <DragOutlined />
+                            </div>
+                          </Col>
+                          <Col span={1} style={{ textAlign: 'center' }}>
+                            <div
+                              style={{
+                                backgroundColor: '#1890ff',
+                                color: 'white',
+                                borderRadius: '50%',
+                                width: '28px',
+                                height: '28px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontWeight: 'bold',
+                                fontSize: '12px'
+                              }}
+                            >
+                              {step.step_number}
+                            </div>
+                          </Col>
 
-              <Col span={11}>
-                <div style={{ position: 'relative' }}>
-                  <TextArea
-                    placeholder={placeholder.action}
-                    value={step.action}
-                    onChange={(e) => updateStep(index, 'action', e.target.value)}
-                    disabled={disabled}
-                    rows={2}
-                    style={{ resize: 'none' }}
-                    maxLength={500}
-                    showCount
-                  />
-                  {step.action && (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: '-8px',
-                        right: '-8px',
-                        backgroundColor: '#52c41a',
-                        borderRadius: '50%',
-                        width: '16px',
-                        height: '16px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}
-                    >
-                      <CheckCircleOutlined style={{ color: 'white', fontSize: '10px' }} />
-                    </div>
-                  )}
-                </div>
-              </Col>
+                          <Col span={10}>
+                            <div style={{ position: 'relative' }}>
+                              <TextArea
+                                placeholder={placeholder.action}
+                                value={step.action}
+                                onChange={(e) => updateStep(index, 'action', e.target.value)}
+                                disabled={disabled}
+                                rows={2}
+                                style={{ resize: 'none' }}
+                                maxLength={500}
+                                showCount
+                              />
+                              {step.action && (
+                                <div
+                                  style={{
+                                    position: 'absolute',
+                                    top: '-8px',
+                                    right: '-8px',
+                                    backgroundColor: '#52c41a',
+                                    borderRadius: '50%',
+                                    width: '16px',
+                                    height: '16px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                  }}
+                                >
+                                  <CheckCircleOutlined style={{ color: 'white', fontSize: '10px' }} />
+                                </div>
+                              )}
+                            </div>
+                          </Col>
 
-              <Col span={11}>
-                <div style={{ position: 'relative' }}>
-                  <TextArea
-                    placeholder={placeholder.expected}
-                    value={step.expected}
-                    onChange={(e) => updateStep(index, 'expected', e.target.value)}
-                    disabled={disabled}
-                    rows={2}
-                    style={{ resize: 'none' }}
-                    maxLength={500}
-                    showCount
-                  />
-                  {step.expected && (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: '-8px',
-                        right: '-8px',
-                        backgroundColor: '#52c41a',
-                        borderRadius: '50%',
-                        width: '16px',
-                        height: '16px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}
-                    >
-                      <CheckCircleOutlined style={{ color: 'white', fontSize: '10px' }} />
-                    </div>
-                  )}
-                </div>
-              </Col>
-            </Row>
+                          <Col span={10}>
+                            <div style={{ position: 'relative' }}>
+                              <TextArea
+                                placeholder={placeholder.expected}
+                                value={step.expected}
+                                onChange={(e) => updateStep(index, 'expected', e.target.value)}
+                                disabled={disabled}
+                                rows={2}
+                                style={{ resize: 'none' }}
+                                maxLength={500}
+                                showCount
+                              />
+                              {step.expected && (
+                                <div
+                                  style={{
+                                    position: 'absolute',
+                                    top: '-8px',
+                                    right: '-8px',
+                                    backgroundColor: '#52c41a',
+                                    borderRadius: '50%',
+                                    width: '16px',
+                                    height: '16px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                  }}
+                                >
+                                  <CheckCircleOutlined style={{ color: 'white', fontSize: '10px' }} />
+                                </div>
+                              )}
+                            </div>
+                          </Col>
+                        </Row>
 
-            {index < steps.length - 1 && (
-              <Divider style={{ margin: '12px 0', borderColor: '#e8e8e8' }} />
+                        {index < steps.length - 1 && (
+                          <Divider style={{ margin: '12px 0', borderColor: '#e8e8e8' }} />
+                        )}
+                      </div>
+                    )}
+                  </Draggable>
+                ))}
+                {provided.placeholder}
+              </div>
             )}
-          </div>
-        ))}
+          </Droppable>
+        </DragDropContext>
 
         {!disabled && (
           <div style={{ marginTop: 16, textAlign: 'center' }}>

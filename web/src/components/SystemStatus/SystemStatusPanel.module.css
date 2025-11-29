@@ -1,0 +1,213 @@
+/* 系统状态面板样式 */
+
+.systemStatusPanel {
+  padding: 16px;
+  background: #fafafa;
+  border-radius: 8px;
+}
+
+.compactPanel {
+  background: white;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  margin: 8px 0;
+}
+
+.alertsSection {
+  margin-bottom: 16px;
+}
+
+.alertsSection .ant-alert {
+  border-left: 4px solid;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.statusTags {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e8e8e8;
+}
+
+/* 状态指示器动画 */
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.systemStatusPanel .ant-statistic-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.systemStatusPanel .ant-statistic-content {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.systemStatusPanel .ant-card {
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  transition: box-shadow 0.3s ease;
+}
+
+.systemStatusPanel .ant-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.systemStatusPanel .ant-list-item {
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.systemStatusPanel .ant-list-item:last-child {
+  border-bottom: none;
+}
+
+.systemStatusPanel .ant-progress-line {
+  margin: 8px 0;
+}
+
+/* 状态指示点 */
+.statusDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.statusDot.healthy {
+  background-color: #52c41a;
+}
+
+.statusDot.warning {
+  background-color: #fa8c16;
+}
+
+.statusDot.error {
+  background-color: #ff4d4f;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .systemStatusPanel {
+    padding: 12px;
+  }
+
+  .systemStatusPanel .ant-statistic-title {
+    font-size: 12px;
+  }
+
+  .systemStatusPanel .ant-statistic-content {
+    font-size: 16px;
+  }
+
+  .systemStatusPanel .ant-card {
+    margin-bottom: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .systemStatusPanel {
+    padding: 8px;
+  }
+
+  .compactPanel {
+    margin: 4px 0;
+  }
+
+  .statusTags .ant-tag {
+    margin: 2px;
+    font-size: 11px;
+  }
+}
+
+/* 深色主题支持 */
+@media (prefers-color-scheme: dark) {
+  .systemStatusPanel {
+    background: #1f1f1f;
+  }
+
+  .compactPanel {
+    background: #262626;
+    border-color: #434343;
+  }
+
+  .systemStatusPanel .ant-card {
+    background: #1f1f1f;
+    border-color: #434343;
+  }
+
+  .systemStatusPanel .ant-statistic-title {
+    color: #999;
+  }
+
+  .statusTags {
+    border-top-color: #434343;
+  }
+
+  .systemStatusPanel .ant-list-item {
+    border-bottom-color: #303030;
+  }
+}
+
+/* 高对比度模式支持 */
+@media (prefers-contrast: high) {
+  .systemStatusPanel {
+    border: 2px solid #000;
+  }
+
+  .systemStatusPanel .ant-card {
+    border: 2px solid #666;
+  }
+
+  .statusDot.healthy {
+    background-color: #006600;
+  }
+
+  .statusDot.warning {
+    background-color: #cc6600;
+  }
+
+  .statusDot.error {
+    background-color: #cc0000;
+  }
+}
+
+/* 减少动画模式支持 */
+@media (prefers-reduced-motion: reduce) {
+  .statusDot {
+    animation: none;
+  }
+
+  .systemStatusPanel .ant-card {
+    transition: none;
+  }
+}
+
+/* 打印样式 */
+@media print {
+  .systemStatusPanel {
+    background: white;
+    box-shadow: none;
+  }
+
+  .systemStatusPanel .ant-card {
+    box-shadow: none;
+    border: 1px solid #000;
+  }
+
+  .alertsSection {
+    display: none;
+  }
+}

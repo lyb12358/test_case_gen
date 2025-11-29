@@ -137,6 +137,7 @@ const ProjectProtectedRoute: React.FC<ProjectProtectedRouteProps> = ({
           flexDirection: 'column',
           background: '#f5f5f5'
         }}>
+
           <ExclamationCircleOutlined style={{ fontSize: 64, color: '#1890ff', marginBottom: 16 }} />
           <h2>需要选择项目</h2>
           <p style={{ color: '#666', marginBottom: 24 }}>

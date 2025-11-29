@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import {
   Card,
   Row,
@@ -30,25 +30,52 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useProject } from '../../contexts/ProjectContext';
 import { unifiedGenerationService } from '../../services';
+import { taskService } from '../../services/taskService';
 import { useWebSocket } from '../../hooks';
 
 const { Title, Paragraph, Text } = Typography;
 
 interface TestManagementHubProps {}
 
+// 时间格式化函数
+const formatTimeAgo = (dateString?: string): string => {
+  if (!dateString) return '未知时间';
+
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffInMs = now.getTime() - date.getTime();
+  const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
+  const diffInHours = Math.floor(diffInMinutes / 60);
+  const diffInDays = Math.floor(diffInHours / 24);
+
+  if (diffInMinutes < 1) return '刚刚';
+  if (diffInMinutes < 60) return `${diffInMinutes}分钟前`;
+  if (diffInHours < 24) return `${diffInHours}小时前`;
+  if (diffInDays < 7) return `${diffInDays}天前`;
+
+  return date.toLocaleDateString('zh-CN');
+};
+
 const TestManagementHub: React.FC<TestManagementHubProps> = () => {
   const navigate = useNavigate();
   const { currentProject } = useProject();
 
-  // WebSocket连接状态
-  const { isConnected, isConnecting, error, connect } = useWebSocket();
+  // 如果没有选择项目，显示提示
+  if (!currentProject) {
+    return (
+      <div style={{ padding: '24px' }}>
+        <Title level={2}>测试管理中心</Title>
+        <Card>
+          <div style={{ textAlign: 'center', padding: '50px' }}>
+            <Text type="secondary">请先选择一个项目来查看测试管理概览</Text>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
-  // 自动连接WebSocket
-  useEffect(() => {
-    if (!isConnected && !isConnecting && !error) {
-      connect().catch(console.error);
-    }
-  }, [isConnected, isConnecting, error, connect]);
+  // WebSocket连接状态 - 仅监控状态，不主动连接
+  const { isConnected, isConnecting, error } = useWebSocket();
 
   // 获取统计数据
   const { data: testPointsStats } = useQuery({
@@ -63,10 +90,45 @@ const TestManagementHub: React.FC<TestManagementHubProps> = () => {
     enabled: !!currentProject?.id
   });
 
+  // 获取运行中的任务
+  const { data: tasksData } = useQuery({
+    queryKey: ['tasks', { project_id: currentProject?.id }],
+    queryFn: () => taskService.getAllTasks(currentProject?.id),
+    enabled: !!currentProject?.id,
+    refetchInterval: 10000 // 每10秒刷新任务状态
+  });
+
+  // 获取最近活动（从任务历史中获取）
+  const { data: recentActivitiesData } = useQuery({
+    queryKey: ['recentActivities', { project_id: currentProject?.id }],
+    queryFn: async () => {
+      if (!currentProject?.id) return [];
+
+      // 从任务数据中提取最近活动
+      const tasks = tasksData?.tasks || [];
+      return tasks
+        .filter(task => task.status === 'completed' || task.status === 'failed')
+        .slice(0, 10)
+        .map(task => ({
+          id: task.id,
+          action: task.generation_type === 'test_points' ? '生成了测试点' :
+                  task.generation_type === 'test_cases' ? '生成了测试用例' :
+                  task.generation_type === 'both' ? '批量生成完成' : '执行了任务',
+          target: task.business_type ? `${task.business_type}相关测试` : '测试任务',
+          type: task.generation_type === 'test_points' ? 'test_point' :
+                task.generation_type === 'test_cases' ? 'test_case' : 'batch',
+          time: formatTimeAgo(task.completed_at || task.created_at),
+          businessType: task.business_type || 'GEN'
+        }));
+    },
+    enabled: !!currentProject?.id && !!tasksData,
+    refetchInterval: 30000 // 每30秒刷新最近活动
+  });
+
   const stats = {
     testPointsCount: testPointsStats?.total_test_points || 0,
     testCasesCount: testCasesStats?.total_count || 0,
-    generationJobsRunning: 0, // TODO: 从taskService.getAllTasks()获取运行中的任务数量
+    generationJobsRunning: tasksData?.tasks?.filter(task => task.status === 'running' || task.status === 'pending').length || 0,
     completionRate: testCasesStats?.test_case_count && testCasesStats?.total_count
       ? Math.round((testCasesStats.test_case_count / testCasesStats.total_count) * 100)
       : 0
@@ -74,20 +136,12 @@ const TestManagementHub: React.FC<TestManagementHubProps> = () => {
 
   const features = [
     {
-      title: '测试点管理',
-      description: '手动创建或AI生成测试点，支持批量操作和模板管理',
-      icon: <BulbOutlined style={{ fontSize: '32px', color: '#1890ff' }} />,
-      path: '/test-management/points',
-      stats: `${stats.testPointsCount} 个测试点`,
-      color: '#1890ff'
-    },
-    {
-      title: '测试用例管理',
-      description: '基于测试点创建详细测试用例，支持手动编写和AI生成',
-      icon: <FileTextOutlined style={{ fontSize: '32px', color: '#52c41a' }} />,
-      path: '/test-management/cases',
-      stats: `${stats.testCasesCount} 个测试用例`,
-      color: '#52c41a'
+      title: '统一测试用例管理',
+      description: '统一的测试点和测试用例管理界面，支持一对一转换和灵活创建',
+      icon: <ExperimentOutlined style={{ fontSize: '32px', color: '#722ed1' }} />,
+      path: '/test-management/unified',
+      stats: `${stats.testPointsCount + stats.testCasesCount} 条记录`,
+      color: '#722ed1'
     },
     {
       title: '批量生成',
@@ -99,50 +153,19 @@ const TestManagementHub: React.FC<TestManagementHubProps> = () => {
     }
   ];
 
-  const recentActivities = [
-    {
-      id: 1,
-      action: '生成了测试点',
-      target: '登录功能测试点',
-      type: 'test_point',
-      time: '5分钟前',
-      businessType: 'RCC'
-    },
-    {
-      id: 2,
-      action: '更新了测试用例',
-      target: '支付流程测试用例',
-      type: 'test_case',
-      time: '15分钟前',
-      businessType: 'RPP'
-    },
-    {
-      id: 3,
-      action: '批量生成完成',
-      target: '用户管理模块测试',
-      type: 'batch',
-      time: '1小时前',
-      businessType: 'RSM'
-    }
-  ];
+  const recentActivities = recentActivitiesData || [];
 
   const quickActions = [
     {
-      title: '快速创建测试点',
-      description: '立即创建新的测试点',
-      icon: <PlusOutlined />,
-      action: () => navigate('/test-management/points?action=create')
+      title: '统一测试管理',
+      description: '打开统一的测试用例管理界面',
+      icon: <ExperimentOutlined />,
+      action: () => navigate('/test-management/unified')
     },
     {
       title: 'AI生成测试用例',
       description: '基于现有测试点生成测试用例',
       icon: <PlayCircleOutlined />,
-      action: () => navigate('/test-management/generate')
-    },
-    {
-      title: '批量操作',
-      description: '批量生成或导入测试数据',
-      icon: <ExperimentOutlined />,
       action: () => navigate('/test-management/generate')
     }
   ];
@@ -184,7 +207,7 @@ const TestManagementHub: React.FC<TestManagementHubProps> = () => {
         </div>
 
         {/* WebSocket连接状态指示器 */}
-        <Card size="small" style={{ width: '200px' }}>
+        <Card size="small" style={{ width: '220px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center' }}>
               {isConnected ? (
@@ -196,16 +219,21 @@ const TestManagementHub: React.FC<TestManagementHubProps> = () => {
               ) : (
                 <Badge status="default" />
               )}
-              <span style={{ marginLeft: '8px', fontSize: '14px' }}>
-                {isConnected ? '实时连接' : isConnecting ? '连接中...' : error ? '连接失败' : '未连接'}
+              <span style={{ marginLeft: '8px', fontSize: '12px' }}>
+                {isConnected ? '实时监控' : isConnecting ? '连接中...' : error ? '连接异常' : '待连接'}
               </span>
             </div>
             {isConnected ? (
-              <WifiOutlined style={{ color: '#52c41a' }} />
+              <WifiOutlined style={{ color: '#52c41a', fontSize: '14px' }} />
             ) : (
-              <DisconnectOutlined style={{ color: '#8c8c8c' }} />
+              <DisconnectOutlined style={{ color: '#8c8c8c', fontSize: '14px' }} />
             )}
           </div>
+          {stats.generationJobsRunning > 0 && (
+            <div style={{ marginTop: '4px', fontSize: '11px', color: '#666' }}>
+              {stats.generationJobsRunning} 个任务运行中
+            </div>
+          )}
         </Card>
       </div>
 
@@ -354,16 +382,16 @@ const TestManagementHub: React.FC<TestManagementHubProps> = () => {
                 description={
                   <div>
                     <div style={{ marginBottom: '8px' }}>
-                      <strong>1. 创建测试点</strong>：手动编写或使用AI生成基础测试点
+                      <strong>1. 统一管理（推荐）</strong>：使用统一界面管理测试点和测试用例，支持一对一转换
                     </div>
                     <div style={{ marginBottom: '8px' }}>
-                      <strong>2. 生成测试用例</strong>：基于测试点创建详细测试用例
+                      <strong>2. 创建测试点</strong>：手动编写或使用AI生成基础测试点
                     </div>
                     <div style={{ marginBottom: '8px' }}>
-                      <strong>3. 批量操作</strong>：支持批量生成和导入导出
+                      <strong>3. 转换为测试用例</strong>：将测试点一对一转换为完整的测试用例
                     </div>
                     <div>
-                      <strong>4. 持续优化</strong>：根据测试反馈迭代改进
+                      <strong>4. 批量操作</strong>：支持批量生成和导入导出
                     </div>
                   </div>
                 }
@@ -371,10 +399,10 @@ const TestManagementHub: React.FC<TestManagementHubProps> = () => {
                 showIcon
               />
 
-              <div style={{ padding: '12px', backgroundColor: '#f6ffed', borderRadius: '6px' }}>
-                <Text strong>💡 小贴士</Text>
+              <div style={{ padding: '12px', backgroundColor: '#f9f0ff', borderRadius: '6px' }}>
+                <Text strong>✨ 新功能</Text>
                 <div style={{ marginTop: '8px', fontSize: '14px' }}>
-                  测试点是测试用例的基础，建议先完善测试点再生成对应的测试用例，这样能获得更好的测试覆盖率。
+                  <strong>统一测试用例管理</strong>：测试点和测试用例是同一数据的不同阶段，支持无缝转换，使用专业图标界面。
                 </div>
               </div>
             </Space>

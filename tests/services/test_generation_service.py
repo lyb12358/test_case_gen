@@ -17,7 +17,7 @@ from unittest.mock import Mock, patch, AsyncMock, MagicMock
 from typing import Dict, Any
 
 from src.services.generation_service import UnifiedGenerationService
-from src.database.models import BusinessType, TestPointStatus, GenerationJob, JobStatus
+from src.database.models import BusinessType, UnifiedTestCaseStatus, GenerationJob, JobStatus
 from src.models.generation import GenerationStage, GenerationStatus, TaskStatusResponse
 from src.utils.config import Config
 from src.exceptions.generation import GenerationError, BusinessTypeError, ValidationError
@@ -36,19 +36,16 @@ class TestUnifiedGenerationService:
 
         # Create service with mocked dependencies
         with patch('src.services.generation_service.DatabaseManager') as mock_db_manager:
-            with patch('src.services.generation_service.TestPointGenerator') as mock_tp_gen:
-                with patch('src.services.generation_service.TestCaseGenerator') as mock_tc_gen:
-                    mock_db_manager.return_value = Mock()
-                    mock_tp_gen.return_value = Mock()
-                    mock_tc_gen.return_value = Mock()
+            with patch('src.services.generation_service.TestCaseGenerator') as mock_tc_gen:
+                mock_db_manager.return_value = Mock()
+            mock_tc_gen.return_value = Mock()
 
-                    self.service = UnifiedGenerationService(self.config)
-                    self.mock_db = mock_db_manager.return_value
-                    self.mock_test_point_generator = mock_tp_gen.return_value
-                    self.mock_test_case_generator = mock_tc_gen.return_value
+            self.service = UnifiedGenerationService(self.config)
+            self.mock_db = mock_db_manager.return_value
+            self.mock_test_case_generator = mock_tc_gen.return_value
 
-                    # Clear active jobs
-                    self.service.active_jobs = {}
+            # Clear active jobs
+            self.service.active_jobs = {}
 
     def teardown_method(self):
         """测试后清理。"""
@@ -541,9 +538,8 @@ class TestUnifiedGenerationServiceIntegration:
 
         # Create service with mocked dependencies
         with patch('src.services.generation_service.DatabaseManager'):
-            with patch('src.services.generation_service.TestPointGenerator'):
-                with patch('src.services.generation_service.TestCaseGenerator'):
-                    self.service = UnifiedGenerationService()
+            with patch('src.services.generation_service.TestCaseGenerator'):
+                self.service = UnifiedGenerationService()
 
     @pytest.mark.asyncio
     async def test_end_to_end_generation_workflow(self):

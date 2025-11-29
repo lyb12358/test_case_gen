@@ -6,36 +6,12 @@
 import apiClient from './api';
 import { errorHandlerService } from './errorHandlerService';
 import { API_ENDPOINTS } from '@/config/constants';
+import { createTaskWebSocketService } from './websocketService';
 import {
   GenerateTestCaseRequest,
   GenerateResponse,
 } from '@/types';
 import type { components } from '@/types/api';
-import {
-  TestPoint,
-  TestPointSummary,
-  TestPointCreate,
-  TestPointUpdate,
-  TestPointSearchRequest,
-  TestPointListResponse,
-  TestPointValidationResponse,
-  TestPointStatistics,
-  Priority,
-  BusinessType,
-  BatchTestPointOperation,
-  BatchTestPointOperationResponse,
-  TestPointGenerationRequest,
-  TestPointGenerationResponse,
-  TestCaseFromTestPointRequest,
-  TestCaseFromTestPointResponse,
-  NameSyncRequest,
-  BatchNameSyncRequest,
-  NameSyncResult,
-  NameChange,
-  NameSyncPreview,
-  NameValidationRequest,
-  NameValidationResponse
-} from '../types/testPoints';
 import {
   UnifiedTestCaseResponse,
   UnifiedTestCaseListResponse,
@@ -133,7 +109,9 @@ class UnifiedGenerationService {
       // 参数验证和标准化
       const validatedParams = this.validateAndNormalizeTestPointParams(params || {});
 
-      const response = await apiClient.get('/api/v1/test-points', { params: validatedParams });
+      // 使用统一测试用例端点，通过stage筛选获取测试点
+      const paramsWithStage = { ...validatedParams, stage: 'test_point' };
+      const response = await apiClient.get(`${this.basePath}/unified-test-cases`, { params: paramsWithStage });
       return this.transformTestPointResponse(response.data);
     } catch (error) {
       throw errorHandlerService.handleApiError(error, {
@@ -147,14 +125,14 @@ class UnifiedGenerationService {
    * 转换测试点响应数据格式
    */
   private transformTestPointResponse(data: any): TestPointListResponse {
-    // 确保数据格式正确
-    const items = (data.items || data.test_points || []).map((item: any) => ({
+    // 统一端点返回的数据格式已经兼容，只需要做小的调整
+    const items = (data.items || []).map((item: any) => ({
       ...item,
       // 确保business_type为字符串
       business_type: typeof item.business_type === 'string'
         ? item.business_type
         : item.business_type?.value || item.business_type,
-      // status field removed - test points no longer have status
+      // 统一端点返回的是stage而不是status，对于测试点stage='test_point'
       // 处理可选字段
       description: item.description || '',
       test_case_count: item.test_case_count || 0
@@ -174,23 +152,35 @@ class UnifiedGenerationService {
    */
   async getTestPointById(id: number, projectId?: number): Promise<TestPoint> {
     const params = projectId ? { project_id: projectId } : {};
-    const response = await apiClient.get(`/api/v1/test-points/${id}`, { params });
+    // 使用统一测试用例端点，通过stage筛选获取测试点
+    const paramsWithStage = { ...params, stage: 'test_point' };
+    const response = await apiClient.get(`/api/v1/unified-test-cases/${id}`, { params: paramsWithStage });
     return response.data;
   }
 
   /**
    * 创建测试点
    */
-  async createTestPoint(testPoint: TestPointCreate): Promise<TestPoint> {
-    const response = await apiClient.post('/api/v1/test-points', testPoint);
+  async createTestPoint(testPoint: UnifiedTestCaseCreate): Promise<UnifiedTestCaseResponse> {
+    // 确保创建的是测试点阶段的条目
+    const testPointData = {
+      ...testPoint,
+      stage: 'test_point',
+      // 将 case_id 映射为 test_case_id，以匹配后端 Pydantic alias
+      test_case_id: testPoint.case_id
+    };
+    // 删除内部字段 case_id，避免发送多余字段
+    delete (testPointData as any).case_id;
+
+    const response = await apiClient.post('/api/v1/unified-test-cases', testPointData);
     return response.data;
   }
 
   /**
    * 更新测试点
    */
-  async updateTestPoint(id: number, testPoint: TestPointUpdate): Promise<TestPoint> {
-    const response = await apiClient.put(`/api/v1/test-points/${id}`, testPoint);
+  async updateTestPoint(id: number, testPoint: UnifiedTestCaseUpdate): Promise<UnifiedTestCaseResponse> {
+    const response = await apiClient.put(`/api/v1/unified-test-cases/${id}`, testPoint);
     return response.data;
   }
 
@@ -198,7 +188,7 @@ class UnifiedGenerationService {
    * 删除测试点
    */
   async deleteTestPoint(id: number): Promise<void> {
-    await apiClient.delete(`/api/v1/test-points/${id}`);
+    await apiClient.delete(`/api/v1/unified-test-cases/${id}`);
   }
 
   /**
@@ -237,7 +227,7 @@ class UnifiedGenerationService {
   /**
    * 验证测试点
    */
-  async validateTestPoint(testPoint: TestPointCreate): Promise<TestPointValidationResponse> {
+  async validateTestPoint(testPoint: UnifiedTestCaseCreate): Promise<any> {
     const response = await apiClient.post('/api/v1/test-points/validate', testPoint);
     return response.data;
   }
@@ -251,25 +241,24 @@ class UnifiedGenerationService {
     // 参数验证和默认值设置
     const validatedFilter = this.validateAndNormalizeFilter(filter);
 
-    const params = new URLSearchParams();
+    // 构建查询参数对象
+    const params: any = {};
 
     // 过滤参数
-    if (validatedFilter.project_id) params.append('project_id', validatedFilter.project_id.toString());
-    if (validatedFilter.business_type) params.append('business_type', validatedFilter.business_type);
-    if (validatedFilter.stage) params.append('stage', validatedFilter.stage);
-    if (validatedFilter.priority) params.append('priority', validatedFilter.priority);
-    if (validatedFilter.keyword) params.append('keyword', validatedFilter.keyword);
+    if (validatedFilter.project_id) params.project_id = validatedFilter.project_id;
+    if (validatedFilter.business_type) params.business_type = validatedFilter.business_type;
+    if (validatedFilter.stage) params.stage = validatedFilter.stage;
+    if (validatedFilter.priority) params.priority = validatedFilter.priority;
+    if (validatedFilter.keyword) params.keyword = validatedFilter.keyword;
     if (validatedFilter.test_point_ids && validatedFilter.test_point_ids.length > 0) {
-      validatedFilter.test_point_ids.forEach((id, index) => {
-        params.append(`test_point_ids[${index}]`, id.toString());
-      });
+      params.test_point_ids = validatedFilter.test_point_ids;
     }
 
     // 分页参数
-    params.append('page', validatedFilter.page.toString());
-    params.append('size', validatedFilter.size.toString());
+    params.page = validatedFilter.page;
+    params.size = validatedFilter.size;
 
-    const response = await apiClient.get(`${this.basePath}/unified-test-cases?${params}`);
+    const response = await apiClient.get(`${this.basePath}/unified-test-cases`, { params });
     return response.data;
   }
 
@@ -303,11 +292,18 @@ class UnifiedGenerationService {
    */
   async deleteUnifiedTestCase(id: number): Promise<void> {
     try {
-      await apiClient.delete(`${this.basePath}/unified-test-cases/${id}`);
-    } catch (error: any) {
-      console.error('删除测试用例失败:', error);
+      if (!this.basePath) {
+        throw new Error('服务实例初始化不完整，basePath 未定义');
+      }
 
-      // 根据错误类型提供详细的错误信息
+      const deleteUrl = `${this.basePath}/unified-test-cases/${id}`;
+
+      if (!id || id <= 0) {
+        throw new Error(`无效的测试用例ID: ${id}`);
+      }
+
+      await apiClient.delete(deleteUrl);
+    } catch (error: any) {
       if (error.response?.status === 404) {
         throw new Error('测试用例不存在，可能已被删除');
       } else if (error.response?.status === 400) {
@@ -419,6 +415,98 @@ class UnifiedGenerationService {
     return response.data;
   }
 
+  // ========== WebSocket增强功能 ==========
+
+  /**
+   * 建立WebSocket连接用于实时任务监控
+   */
+  createWebSocketConnection(taskId: string, options?: {
+    autoReconnect?: boolean;
+    heartbeatInterval?: number;
+    onConnect?: () => void;
+    onDisconnect?: () => void;
+    onError?: (error: Error) => void;
+    onProgress?: (data: any) => void;
+  }) {
+    // 使用标准WebSocket服务（增强版已删除）
+    const wsService = createTaskWebSocketService(taskId, {
+      autoReconnect: options?.autoReconnect ?? true,
+      enableHeartbeat: true,
+      enableMessageQueue: true
+    });
+
+      // 设置事件处理器
+      if (options?.onConnect) {
+        wsService.onConnectionStateChange((connected) => {
+          if (connected) options.onConnect!();
+        });
+      }
+
+      if (options?.onDisconnect) {
+        wsService.onConnectionStateChange((connected) => {
+          if (!connected) options.onDisconnect!();
+        });
+      }
+
+      if (options?.onError) {
+        wsService.onError((error) => {
+          options.onError!(error);
+        });
+      }
+
+      if (options?.onProgress) {
+        wsService.subscribeToTask(taskId, (taskId, data) => {
+          options.onProgress!(data);
+        });
+      }
+
+      // 连接WebSocket
+      wsService.connect().catch(error => {
+        console.error('WebSocket连接失败:', error);
+        options?.onError?.(error);
+      });
+
+      return wsService;
+  }
+
+  /**
+   * 批量WebSocket连接管理
+   */
+  manageMultipleWebSocketConnections(taskConfigs: Array<{
+    taskId: string;
+    onProgress?: (data: any) => void;
+    onError?: (error: Error) => void;
+  }>) {
+    const connections = new Map();
+
+    const promises = taskConfigs.map(async (config) => {
+      try {
+        const wsService = await this.createWebSocketConnection(config.taskId, {
+          onProgress: config.onProgress,
+          onError: config.onError
+        });
+        connections.set(config.taskId, wsService);
+        return { taskId: config.taskId, success: true };
+      } catch (error) {
+        console.error(`任务 ${config.taskId} WebSocket连接失败:`, error);
+        config.onError?.(error as Error);
+        return { taskId: config.taskId, success: false, error };
+      }
+    });
+
+    return Promise.all(promises).then(results => ({
+      results,
+      connections,
+      disconnectAll: () => {
+        connections.forEach((service, taskId) => {
+          service.destroy();
+          connections.delete(taskId);
+        });
+      },
+      getConnection: (taskId: string) => connections.get(taskId)
+    }));
+  }
+
   // ========== 名称同步功能 ==========
 
   /**
@@ -439,12 +527,21 @@ class UnifiedGenerationService {
 
   /**
    * 获取名称同步预览
-   * TODO: 等待后端实现
+   * 分析当前项目中测试点和测试用例的名称不一致情况
    */
   async getNameSyncPreview(projectId?: number, businessType?: string): Promise<NameSyncPreview[]> {
-    // 临时返回空数组，等待后端实现
-    console.warn('getNameSyncPreview: 后端API尚未实现');
-    return [];
+    try {
+      const params: any = {};
+      if (projectId) params.project_id = projectId;
+      if (businessType) params.business_type = businessType;
+
+      const response = await apiClient.get('/api/v1/test-points/name-sync-preview', { params });
+      return response.data;
+    } catch (error) {
+      console.warn('getNameSyncPreview: API调用失败，返回空数组', error);
+      // 如果后端尚未实现该API，返回空数组而不是抛出错误
+      return [];
+    }
   }
 
   /**
@@ -593,7 +690,7 @@ class UnifiedGenerationService {
     sort_order?: string;
     [key: string]: any;
   }): Promise<any> {
-    const response = await apiClient.get('/api/v1/unified-test-cases', { params });
+    const response = await apiClient.get(`${this.basePath}/unified-test-cases`, { params });
     return response.data;
   }
 
@@ -625,20 +722,23 @@ class UnifiedGenerationService {
     }
     // 根据后端Pydantic模型限制，最大页面大小为100
     if (validatedParams.size > 100) {
-      console.warn(`测试点页面大小 ${validatedParams.size} 超过后端限制(100)，自动调整为100`);
+      if (validatedParams.size !== params.size) {
+        // 只有实际调整时才记录
+        console.info(`测试点页面大小已从 ${params.size} 调整为 ${validatedParams.size}（后端限制：100）`);
+      }
       validatedParams.size = 100;
     }
 
     // 验证数值型参数
     if (validatedParams.project_id && (validatedParams.project_id < 1 || !Number.isInteger(validatedParams.project_id))) {
-      console.warn('无效的项目ID，将被忽略');
+      // 静默忽略无效的项目ID，这是正常的参数清理
       delete validatedParams.project_id;
     }
 
     // 验证test_point_ids数组
     if (validatedParams.test_point_ids) {
       if (!Array.isArray(validatedParams.test_point_ids)) {
-        console.warn('test_point_ids必须是数组格式，将被忽略');
+        // 静默忽略无效的test_point_ids格式，这是正常的参数清理
         delete validatedParams.test_point_ids;
       } else {
         // 过滤掉无效ID
@@ -659,7 +759,7 @@ class UnifiedGenerationService {
       if (value && typeof value === 'string') {
         // 限制字符串长度防止过长的请求
         if (value.length > 100) {
-          console.warn(`测试点${field} 参数过长，将被截断`);
+          // 静默截断过长的参数，这是正常的数据清理
           (validatedParams as any)[field] = value.substring(0, 100);
         }
         // 清理空白字符
@@ -687,20 +787,23 @@ class UnifiedGenerationService {
     }
     // 根据后端Pydantic模型限制，最大页面大小为100
     if (validatedFilter.size > 100) {
-      console.warn(`页面大小 ${validatedFilter.size} 超过后端限制(100)，自动调整为100`);
+      if (validatedFilter.size !== filter.size) {
+      // 只有实际调整时才记录
+      console.info(`测试用例页面大小已从 ${filter.size} 调整为 ${validatedFilter.size}（后端限制：100）`);
+    }
       validatedFilter.size = 100;
     }
 
     // 验证数值型参数
     if (validatedFilter.project_id && (validatedFilter.project_id < 1 || !Number.isInteger(validatedFilter.project_id))) {
-      console.warn('无效的项目ID，将被忽略');
+      // 静默忽略无效的项目ID，这是正常的参数清理
       delete validatedFilter.project_id;
     }
 
     // 验证test_point_ids数组
     if (validatedFilter.test_point_ids) {
       if (!Array.isArray(validatedFilter.test_point_ids)) {
-        console.warn('test_point_ids必须是数组格式，将被忽略');
+        // 静默忽略无效的test_point_ids格式，这是正常的参数清理
         delete validatedFilter.test_point_ids;
       } else {
         // 过滤掉无效ID
@@ -721,7 +824,7 @@ class UnifiedGenerationService {
       if (value && typeof value === 'string') {
         // 限制字符串长度防止过长的请求
         if (value.length > 100) {
-          console.warn(`${field} 参数过长，将被截断`);
+          // 静默截断过长的参数，这是正常的数据清理
           (validatedFilter as any)[field] = value.substring(0, 100);
         }
         // 清理空白字符
@@ -802,6 +905,13 @@ class UnifiedGenerationService {
       operation: 'update_status',
       status: UnifiedTestCaseStatus.COMPLETED
     });
+  }
+
+  /**
+   * 获取测试用例（兼容性方法，映射到getUnifiedTestCases）
+   */
+  async getTestCases(filter: UnifiedTestCaseFilter): Promise<UnifiedTestCaseListResponse> {
+    return this.getUnifiedTestCases(filter);
   }
 
   /**

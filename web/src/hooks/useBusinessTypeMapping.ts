@@ -31,7 +31,7 @@ export function useBusinessTypeMapping() {
         // 验证返回数据的格式
         if (!result || typeof result !== 'object') {
           console.warn('业务类型API返回了无效的数据格式');
-          return { business_types: {} };
+          return {};
         }
 
         return result;
@@ -39,7 +39,7 @@ export function useBusinessTypeMapping() {
         console.warn('无法获取业务类型配置:', apiError);
 
         // 返回空对象，触发错误处理
-        return { business_types: {} };
+        return {};
       }
     },
     staleTime: 10 * 60 * 1000, // 10分钟缓存
@@ -56,7 +56,8 @@ export function useBusinessTypeMapping() {
   // 处理业务类型映射，完全基于API数据
   const businessTypesMapping = useMemo(() => {
     try {
-      const dynamicTypes = businessTypesData?.business_types || {};
+      // API直接返回业务类型对象，不是包装在business_types字段中
+      const dynamicTypes = businessTypesData || {};
 
       // 如果有错误，记录但继续使用空配置
       if (isError) {

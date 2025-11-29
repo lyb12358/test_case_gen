@@ -1,36 +1,52 @@
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
 import { taskService } from '../services/taskService';
 import { unifiedGenerationService } from '../services';
+import { useWebSocket } from '../hooks';
 
 export interface GenerationTask {
   id: string;
   business_type: string;
+  generation_type: 'test_points' | 'test_cases' | 'both';
   status: 'pending' | 'running' | 'completed' | 'failed';
   progress?: number;
+  current_step?: string;
   message?: string;
+  error_message?: string;
   created_at: string;
   completed_at?: string;
+  // 新增字段支持统一架构
+  total_test_points?: number;
+  generated_test_points?: number;
+  total_test_cases?: number;
+  generated_test_cases?: number;
+  project_id?: number;
+  generation_config?: any;
 }
 
 interface TaskState {
   currentTask: GenerationTask | null;
-  isPolling: boolean;
+  isConnected: boolean;
+  activeTasks: GenerationTask[]; // 支持多个并发任务
   taskHistory: GenerationTask[];
 }
 
 type TaskAction =
   | { type: 'CREATE_TASK'; payload: GenerationTask }
-  | { type: 'UPDATE_TASK'; payload: Partial<GenerationTask> }
-  | { type: 'SET_POLLING'; payload: boolean }
-  | { type: 'COMPLETE_TASK' }
-  | { type: 'FAIL_TASK'; payload: string }
-  | { type: 'CLEAR_TASK' }
+  | { type: 'UPDATE_TASK'; payload: { id: string; updates: Partial<GenerationTask> } }
+  | { type: 'SET_CONNECTION_STATUS'; payload: boolean }
+  | { type: 'ADD_ACTIVE_TASK'; payload: GenerationTask }
+  | { type: 'REMOVE_ACTIVE_TASK'; payload: string }
+  | { type: 'COMPLETE_TASK'; payload: string }
+  | { type: 'FAIL_TASK'; payload: { id: string; error: string } }
+  | { type: 'CLEAR_CURRENT_TASK' }
   | { type: 'ADD_TO_HISTORY'; payload: GenerationTask }
-  | { type: 'LOAD_FROM_STORAGE'; payload: TaskState };
+  | { type: 'LOAD_FROM_STORAGE'; payload: TaskState }
+  | { type: 'UPDATE_FROM_WEBSOCKET'; payload: { taskId: string; message: any } };
 
 const initialState: TaskState = {
   currentTask: null,
-  isPolling: false,
+  isConnected: false,
+  activeTasks: [],
   taskHistory: [],
 };
 
@@ -40,67 +56,166 @@ function taskReducer(state: TaskState, action: TaskAction): TaskState {
       return {
         ...state,
         currentTask: action.payload,
-        isPolling: true,
+        activeTasks: [...state.activeTasks, action.payload],
       };
 
     case 'UPDATE_TASK':
-      if (!state.currentTask) return state;
+      const { id, updates } = action.payload;
       return {
         ...state,
-        currentTask: {
-          ...state.currentTask,
-          ...action.payload,
-        },
+        currentTask: state.currentTask?.id === id
+          ? { ...state.currentTask, ...updates }
+          : state.currentTask,
+        activeTasks: state.activeTasks.map(task =>
+          task.id === id ? { ...task, ...updates } : task
+        ),
       };
 
-    case 'SET_POLLING':
+    case 'SET_CONNECTION_STATUS':
       return {
         ...state,
-        isPolling: action.payload,
+        isConnected: action.payload,
+      };
+
+    case 'ADD_ACTIVE_TASK':
+      return {
+        ...state,
+        activeTasks: [...state.activeTasks, action.payload],
+      };
+
+    case 'REMOVE_ACTIVE_TASK':
+      return {
+        ...state,
+        activeTasks: state.activeTasks.filter(task => task.id !== action.payload),
+        currentTask: state.currentTask?.id === action.payload ? null : state.currentTask,
       };
 
     case 'COMPLETE_TASK':
-      if (!state.currentTask) return state;
+      const taskId = action.payload;
+      const taskToComplete = state.activeTasks.find(task => task.id === taskId);
+      if (!taskToComplete) return state;
+
       const completedTask = {
-        ...state.currentTask,
+        ...taskToComplete,
         status: 'completed' as const,
         completed_at: new Date().toISOString(),
         progress: 100,
       };
+
       return {
         ...state,
-        currentTask: completedTask,
-        isPolling: false,
-        taskHistory: [completedTask, ...state.taskHistory.slice(0, 9)], // 保留最近10个
+        activeTasks: state.activeTasks.filter(task => task.id !== taskId),
+        currentTask: state.currentTask?.id === taskId ? completedTask : state.currentTask,
+        taskHistory: [completedTask, ...state.taskHistory.slice(0, 19)], // 保留最近20个
       };
 
     case 'FAIL_TASK':
-      if (!state.currentTask) return state;
+      const { id: failId, error } = action.payload;
+      const taskToFail = state.activeTasks.find(task => task.id === failId);
+      if (!taskToFail) return state;
+
       const failedTask = {
-        ...state.currentTask,
+        ...taskToFail,
         status: 'failed' as const,
-        message: action.payload,
+        error_message: error,
         completed_at: new Date().toISOString(),
       };
+
       return {
         ...state,
-        currentTask: failedTask,
-        isPolling: false,
-        taskHistory: [failedTask, ...state.taskHistory.slice(0, 9)],
+        activeTasks: state.activeTasks.filter(task => task.id !== failId),
+        currentTask: state.currentTask?.id === failId ? failedTask : state.currentTask,
+        taskHistory: [failedTask, ...state.taskHistory.slice(0, 19)],
       };
 
-    case 'CLEAR_TASK':
+    case 'CLEAR_CURRENT_TASK':
       return {
         ...state,
         currentTask: null,
-        isPolling: false,
       };
 
     case 'ADD_TO_HISTORY':
       return {
         ...state,
-        taskHistory: [action.payload, ...state.taskHistory.slice(0, 9)],
+        taskHistory: [action.payload, ...state.taskHistory.slice(0, 19)],
       };
+
+    case 'UPDATE_FROM_WEBSOCKET':
+      const { taskId: wsTaskId, message: wsMessage } = action.payload;
+
+      switch (wsMessage.type) {
+        case 'progress_update':
+          return {
+            ...state,
+            activeTasks: state.activeTasks.map(task =>
+              task.id === wsTaskId
+                ? {
+                    ...task,
+                    progress: wsMessage.data.progress || task.progress,
+                    current_step: wsMessage.data.current_step || task.current_step,
+                    total_test_points: wsMessage.data.total_test_points || task.total_test_points,
+                    generated_test_points: wsMessage.data.generated_test_points || task.generated_test_points,
+                    total_test_cases: wsMessage.data.total_test_cases || task.total_test_cases,
+                    generated_test_cases: wsMessage.data.generated_test_cases || task.generated_test_cases,
+                    status: 'running'
+                  }
+                : task
+            ),
+            currentTask: state.currentTask?.id === wsTaskId
+              ? {
+                  ...state.currentTask,
+                  progress: wsMessage.data.progress || state.currentTask.progress,
+                  current_step: wsMessage.data.current_step || state.currentTask.current_step,
+                  total_test_points: wsMessage.data.total_test_points || state.currentTask.total_test_points,
+                  generated_test_points: wsMessage.data.generated_test_points || state.currentTask.generated_test_points,
+                  total_test_cases: wsMessage.data.total_test_cases || state.currentTask.total_test_cases,
+                  generated_test_cases: wsMessage.data.generated_test_cases || state.currentTask.generated_test_cases,
+                  status: 'running'
+                }
+              : state.currentTask
+          };
+
+        case 'task_completed':
+          const completedWsTask = state.activeTasks.find(task => task.id === wsTaskId);
+          if (!completedWsTask) return state;
+
+          const finalCompletedTask = {
+            ...completedWsTask,
+            status: 'completed' as const,
+            progress: 100,
+            current_step: '已完成',
+            completed_at: new Date().toISOString()
+          };
+
+          return {
+            ...state,
+            activeTasks: state.activeTasks.filter(task => task.id !== wsTaskId),
+            currentTask: state.currentTask?.id === wsTaskId ? finalCompletedTask : state.currentTask,
+            taskHistory: [finalCompletedTask, ...state.taskHistory.slice(0, 19)]
+          };
+
+        case 'task_failed':
+          const failedWsTask = state.activeTasks.find(task => task.id === wsTaskId);
+          if (!failedWsTask) return state;
+
+          const finalFailedTask = {
+            ...failedWsTask,
+            status: 'failed' as const,
+            error_message: wsMessage.data.error_message || '未知错误',
+            current_step: '生成失败',
+            completed_at: new Date().toISOString()
+          };
+
+          return {
+            ...state,
+            activeTasks: state.activeTasks.filter(task => task.id !== wsTaskId),
+            currentTask: state.currentTask?.id === wsTaskId ? finalFailedTask : state.currentTask,
+            taskHistory: [finalFailedTask, ...state.taskHistory.slice(0, 19)]
+          };
+
+        default:
+          return state;
+      }
 
     case 'LOAD_FROM_STORAGE':
       return action.payload;
@@ -112,12 +227,29 @@ function taskReducer(state: TaskState, action: TaskAction): TaskState {
 
 interface TaskContextType {
   state: TaskState;
-  createTask: (businessType: string) => Promise<void>;
-  updateTask: (updates: Partial<GenerationTask>) => void;
-  completeTask: () => void;
-  failTask: (message: string) => void;
-  clearTask: () => void;
+  // 统一API - 使用新的生成架构
+  createGenerationTask: (request: {
+    business_type: string;
+    project_id: number;
+    generation_config: any;
+    generation_type?: 'test_points' | 'test_cases' | 'both';
+  }) => Promise<string>;
+
+  // 任务管理
+  updateTask: (taskId: string, updates: Partial<GenerationTask>) => void;
+  completeTask: (taskId: string) => void;
+  failTask: (taskId: string, error: string) => void;
+  clearCurrentTask: () => void;
+  removeActiveTask: (taskId: string) => void;
+
+  // 查询功能
   getTaskById: (id: string) => GenerationTask | null;
+  getActiveTasks: () => GenerationTask[];
+  getRunningTasksCount: () => number;
+
+  // WebSocket连接管理
+  connectWebSocket: (taskId: string) => void;
+  disconnectWebSocket: () => void;
 }
 
 const TaskContext = createContext<TaskContextType | undefined>(undefined);
@@ -127,18 +259,19 @@ const STORAGE_KEY = 'tsp_task_state';
 export function TaskProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(taskReducer, initialState);
 
-  // 从localStorage恢复状态
+  // 从localStorage恢复状态（只恢复历史记录，不恢复实时状态）
   useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const parsedState = JSON.parse(stored);
-        // 只恢复任务历史，不恢复当前任务和轮询状态
+        // 只恢复任务历史，不恢复当前任务和连接状态
         dispatch({
           type: 'LOAD_FROM_STORAGE',
           payload: {
             ...initialState,
             taskHistory: parsedState.taskHistory || [],
+            currentTask: null, // 不恢复当前任务，避免重连问题
           },
         });
       }
@@ -147,121 +280,238 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // 保存状态到localStorage
+  // 保存状态到localStorage（只保存历史和当前任务，不保存实时状态）
   useEffect(() => {
     try {
       const toStore = {
         currentTask: state.currentTask,
-        isPolling: state.isPolling,
         taskHistory: state.taskHistory,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore));
     } catch (error) {
       console.warn('Failed to save task state to storage:', error);
     }
-  }, [state]);
+  }, [state.currentTask, state.taskHistory]);
 
-  // 轮询任务状态
+  // 增强版WebSocket集成 - 替代轮询，提供更稳定的连接
+  const {
+    lastMessage,
+    isConnected,
+    connectionState,
+    error: wsError,
+    connect,
+    disconnect,
+    subscribeToTask,
+    getConnectionHealth
+  } = useWebSocket({
+    autoConnect: true,
+    showNotifications: true,
+    reconnectNotifications: true,
+    connectionMonitoring: true
+  });
+
+  // 为所有活动任务建立订阅
   useEffect(() => {
-    if (!state.isPolling || !state.currentTask?.id) {
-      return;
-    }
+    const unsubscribes: (() => void)[] = [];
 
-    const pollInterval = setInterval(async () => {
-      try {
-        const status = await taskService.getTaskStatus(state.currentTask!.id);
-
-        // 更新任务状态
+    state.activeTasks.forEach(task => {
+      const unsubscribe = subscribeToTask(task.id, (taskData) => {
         dispatch({
-          type: 'UPDATE_TASK',
+          type: 'UPDATE_FROM_WEBSOCKET',
           payload: {
-            status: status.status as GenerationTask['status'],
-            progress: status.progress,
-            message: status.error,
-          },
+            taskId: task.id,
+            message: {
+              type: 'progress_update',
+              data: taskData
+            }
+          }
+        });
+      });
+      unsubscribes.push(unsubscribe);
+    });
+
+    return () => {
+      unsubscribes.forEach(unsub => unsub());
+    };
+  }, [state.activeTasks.map(t => t.id).join(','), subscribeToTask]);
+
+  // 处理全局WebSocket消息
+  useEffect(() => {
+    if (lastMessage && state.activeTasks.length > 0) {
+      // 找到对应的任务ID
+      const taskId = lastMessage.data?.task_id || state.activeTasks[0]?.id;
+
+      if (taskId) {
+        dispatch({
+          type: 'UPDATE_FROM_WEBSOCKET',
+          payload: {
+            taskId,
+            message: lastMessage
+          }
         });
 
-        // 根据状态处理完成或失败
-        if (status.status === 'completed') {
-          dispatch({ type: 'COMPLETE_TASK' });
-          // 显示浏览器通知
-          showNotification('测试用例生成完成', `${state.currentTask.business_type} 类型的测试用例已成功生成`, 'success');
-        } else if (status.status === 'failed') {
-          dispatch({ type: 'FAIL_TASK', payload: status.error || '生成失败' });
-          showNotification('测试用例生成失败', status.error || '生成过程中遇到错误', 'error');
+        // 处理完成和失败的通知
+        if (lastMessage.type === 'task_completed') {
+          const completedTask = state.activeTasks.find(t => t.id === taskId);
+          if (completedTask) {
+            showNotification(
+              '任务完成',
+              `${completedTask.business_type} - ${completedTask.generation_type} 生成已完成`,
+              'success'
+            );
+          }
+        } else if (lastMessage.type === 'task_failed') {
+          const failedTask = state.activeTasks.find(t => t.id === taskId);
+          if (failedTask) {
+            showNotification(
+              '任务失败',
+              `${failedTask.business_type} - ${failedTask.generation_type} 生成失败: ${lastMessage.data.error_message || '未知错误'}`,
+              'error'
+            );
+          }
         }
-      } catch (error) {
-        console.error('Failed to poll task status:', error);
-        dispatch({ type: 'FAIL_TASK', payload: '状态查询失败' });
       }
-    }, 2000); // 恢复到2秒轮询间隔
+    }
+  }, [lastMessage, state.activeTasks]);
 
-    return () => clearInterval(pollInterval);
-  }, [state.isPolling, state.currentTask?.id]);
+  // 更新连接状态和错误信息
+  useEffect(() => {
+    dispatch({
+      type: 'SET_CONNECTION_STATUS',
+      payload: isConnected
+    });
 
-  const createTask = async (businessType: string) => {
-    // TODO: 这个函数需要重新实现，因为 generateTestCases 方法不存在
-    // 当前系统应该使用 BatchGenerator 组件进行测试用例生成
-    console.warn('createTask 函数当前不可用，请使用 BatchGenerator 组件');
-    showNotification('功能暂不可用', '请使用批量生成页面创建生成任务', 'warning');
+    // 如果连接状态错误，记录错误信息
+    if (wsError && connectionState === 'error') {
+      console.error('WebSocket连接错误:', wsError);
+    }
+  }, [isConnected, connectionState, wsError]);
 
-    // 暂时注释掉有问题的代码
-    /*
+  // 新的统一生成任务创建函数
+  const createGenerationTask = async (request: {
+    business_type: string;
+    project_id: number;
+    generation_config: any;
+    generation_type?: 'test_points' | 'test_cases' | 'both';
+  }): Promise<string> => {
     try {
-      const response = await unifiedGenerationService.generateTestCases({ business_type: businessType });
+      // 调用统一生成API
+      const response = await unifiedGenerationService.generate({
+        business_type: request.business_type,
+        project_id: request.project_id,
+        generation_config: request.generation_config
+      });
 
-      // 使用后端返回的状态，让前端UI根据实际状态显示
+      // 创建新任务记录
       const newTask: GenerationTask = {
         id: response.task_id,
-        business_type: businessType,
-        status: response.status as GenerationTask['status'],
+        business_type: request.business_type,
+        generation_type: request.generation_type || 'both',
+        status: 'pending',
+        progress: 0,
+        current_step: '任务已创建',
         created_at: new Date().toISOString(),
+        project_id: request.project_id,
+        generation_config: request.generation_config,
       };
 
+      // 添加到状态管理
       dispatch({ type: 'CREATE_TASK', payload: newTask });
 
+      // 自动建立WebSocket连接
+      if (response.task_id) {
+        connect(response.task_id);
+      }
+
       // 显示开始通知
-      showNotification('开始生成测试用例', `正在生成 ${businessType} 类型的测试用例`, 'info');
+      showNotification(
+        '任务已启动',
+        `正在处理 ${request.business_type} - ${newTask.generation_type} 生成任务`,
+        'info'
+      );
+
+      return response.task_id;
     } catch (error) {
-      console.error('Failed to create task:', error);
+      console.error('Failed to create generation task:', error);
+      showNotification(
+        '任务创建失败',
+        `无法创建生成任务: ${error.message || '未知错误'}`,
+        'error'
+      );
       throw error;
     }
-    */
   };
 
-  const updateTask = (updates: Partial<GenerationTask>) => {
-    dispatch({ type: 'UPDATE_TASK', payload: updates });
+  // 任务管理函数
+  const updateTask = (taskId: string, updates: Partial<GenerationTask>) => {
+    dispatch({
+      type: 'UPDATE_TASK',
+      payload: { id: taskId, updates }
+    });
   };
 
-  const completeTask = () => {
-    dispatch({ type: 'COMPLETE_TASK' });
+  const completeTask = (taskId: string) => {
+    dispatch({ type: 'COMPLETE_TASK', payload: taskId });
   };
 
-  const failTask = (message: string) => {
-    dispatch({ type: 'FAIL_TASK', payload: message });
+  const failTask = (taskId: string, error: string) => {
+    dispatch({
+      type: 'FAIL_TASK',
+      payload: { id: taskId, error }
+    });
   };
 
-  const clearTask = () => {
-    dispatch({ type: 'CLEAR_TASK' });
+  const clearCurrentTask = () => {
+    dispatch({ type: 'CLEAR_CURRENT_TASK' });
   };
 
+  const removeActiveTask = (taskId: string) => {
+    dispatch({ type: 'REMOVE_ACTIVE_TASK', payload: taskId });
+  };
+
+  // 查询功能
   const getTaskById = (id: string): GenerationTask | null => {
     if (state.currentTask?.id === id) {
       return state.currentTask;
     }
-    return state.taskHistory.find(task => task.id === id) || null;
+    return state.activeTasks.find(task => task.id === id) ||
+           state.taskHistory.find(task => task.id === id) || null;
+  };
+
+  const getActiveTasks = (): GenerationTask[] => {
+    return state.activeTasks;
+  };
+
+  const getRunningTasksCount = (): number => {
+    return state.activeTasks.filter(task =>
+      task.status === 'pending' || task.status === 'running'
+    ).length;
+  };
+
+  // WebSocket连接管理
+  const connectWebSocket = (taskId: string) => {
+    connect(taskId);
+  };
+
+  const disconnectWebSocket = () => {
+    disconnect();
   };
 
   return (
     <TaskContext.Provider
       value={{
         state,
-        createTask,
+        createGenerationTask,
         updateTask,
         completeTask,
         failTask,
-        clearTask,
+        clearCurrentTask,
+        removeActiveTask,
         getTaskById,
+        getActiveTasks,
+        getRunningTasksCount,
+        connectWebSocket,
+        disconnectWebSocket,
       }}
     >
       {children}

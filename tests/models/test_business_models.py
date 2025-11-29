@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from src.database.models import (
     Project, BusinessTypeConfig, UnifiedTestCase, UnifiedTestCaseStatus,
-    TestPoint, TestPointStatus, GenerationJob, JobStatus
+    GenerationJob, JobStatus
 )
 from tests.utils import TestDataManager
 
@@ -268,70 +268,6 @@ class TestUnifiedTestCaseModel:
         assert queried_test_case.name == "数据库测试用例"
 
 
-@pytest.mark.unit
-class TestTestPointModel:
-    """测试TestPoint模型"""
-
-    def test_test_point_creation(self):
-        """测试测试点创建"""
-        test_point = TestPoint(
-            name="空调功能测试点",
-            description="测试空调的远程控制功能",
-            business_type="RCC",
-            project_id=1,
-            status=TestPointStatus.ACTIVE,
-            priority="high"
-        )
-
-        assert test_point.name == "空调功能测试点"
-        assert test_point.description == "测试空调的远程控制功能"
-        assert test_point.business_type == "RCC"
-        assert test_point.project_id == 1
-        assert test_point.status == TestPointStatus.ACTIVE
-        assert test_point.priority == "high"
-
-    def test_test_point_status_values(self):
-        """测试测试点状态值"""
-        valid_statuses = [
-            TestPointStatus.ACTIVE,
-            TestPointStatus.INACTIVE,
-            TestPointStatus.DRAFT,
-            TestPointStatus.ARCHIVED
-        ]
-
-        for status in valid_statuses:
-            test_point = TestPoint(
-                name=f"测试点_{status.value}",
-                business_type="RCC",
-                project_id=1,
-                status=status
-            )
-            assert test_point.status == status
-
-    def test_test_point_with_test_db_session(self, test_db_session):
-        """测试测试点与数据库会话的交互"""
-        data_manager = TestDataManager(test_db_session)
-
-        # 创建项目
-        project = data_manager.create_test_project(name="测试项目")
-
-        # 创建测试点
-        test_point = data_manager.create_test_test_point(
-            project_id=project.id,
-            business_type="RFD",
-            name="车门控制测试点"
-        )
-
-        assert test_point.id is not None
-        assert test_point.project_id == project.id
-        assert test_point.business_type == "RFD"
-
-        # 验证数据库中的数据
-        queried_test_point = test_db_session.query(TestPoint).filter(
-            TestPoint.id == test_point.id
-        ).first()
-        assert queried_test_point is not None
-        assert queried_test_point.name == "车门控制测试点"
 
 
 @pytest.mark.integration
@@ -397,15 +333,18 @@ class TestModelRelationships:
         # 创建项目
         project = data_manager.create_test_project(name="测试项目")
 
-        # 创建测试点
-        test_point = data_manager.create_test_test_point(
+        # 创建测试点 (使用UnifiedTestCase表中的stage='test_point')
+        test_point = data_manager.create_test_unified_test_case(
             project_id=project.id,
+            name="空调控制测试点",
             business_type="RCC"
         )
 
-        # 为测试点创建测试用例
+        # 为测试点创建测试用例 (使用UnifiedTestCase表中的stage='test_case')
         test_case = data_manager.create_test_unified_test_case(
             project_id=project.id,
+            name="空调开启测试用例",
+            business_type="RCC",
             test_point_id=test_point.id
         )
 

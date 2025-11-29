@@ -25,6 +25,7 @@ import {
   BuildOutlined,
   ThunderboltOutlined,
   DeploymentUnitOutlined,
+  ExperimentOutlined,
 } from '@ant-design/icons';
 import { useTask } from '@/contexts/TaskContext';
 import { useProject } from '@/contexts/ProjectContext';
@@ -73,16 +74,12 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
     },
     {
       key: '/test-management',
-      icon: <FileTextOutlined />,
+      icon: <ExperimentOutlined />,
       label: '测试管理',
       children: [
         {
-          key: '/test-management/points',
-          label: '测试点管理',
-        },
-        {
-          key: '/test-management/cases',
-          label: '测试用例管理',
+          key: '/test-management/unified',
+          label: '统一测试管理',
         },
         {
           key: '/test-management/generate',
@@ -117,16 +114,13 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
     if (pathname === '/' || pathname === '/dashboard') {
       return ['/dashboard'];
     }
-    // Handle new unified test management routes
+    // Handle unified test management routes
     if (pathname.startsWith('/test-management')) {
       if (pathname === '/test-management') {
         return ['/test-management'];
       }
-      if (pathname.startsWith('/test-management/points')) {
-        return ['/test-management/points'];
-      }
-      if (pathname.startsWith('/test-management/cases')) {
-        return ['/test-management/cases'];
+      if (pathname.startsWith('/test-management/unified')) {
+        return ['/test-management/unified'];
       }
       if (pathname.startsWith('/test-management/generate')) {
         return ['/test-management/generate'];

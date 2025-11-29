@@ -1,8 +1,10 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import { vi } from 'vitest';
+import { errorHandlerService } from './errorHandlerService';
 
 // API 基础配置
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+
 
 // 创建 axios 实例 - 添加环境兼容性检查
 const apiClient: AxiosInstance =
@@ -43,58 +45,33 @@ if (typeof window !== 'undefined' && typeof window.document !== 'undefined') {
   }
 );
 
-// 响应拦截器
+// 响应拦截器 - 统一错误处理，与errorHandlerService协同工作
   apiClient.interceptors.response.use(
     (response: AxiosResponse) => {
       return response;
     },
     (error) => {
-      console.error('API Error:', error);
-
-      if (error.response) {
-        // 服务器响应错误
-        const status = error.response.status;
-        const message = error.response.data?.detail || error.response.data?.message || '请求失败';
-
-        switch (status) {
-        case 401:
-          // 处理未授权
-          break;
-        case 403:
-          // 处理禁止访问
-          break;
-        case 404:
-          // 处理资源未找到
-          break;
-        case 422:
-          // 处理验证错误 - 提供更详细的错误信息
-          const errorData = error.response.data;
-          if (errorData?.detail && typeof errorData.detail === 'object') {
-            // 如果detail是对象，提取字段验证错误
-            const fieldErrors = Object.entries(errorData.detail)
-              .map(([field, errors]) => `${field}: ${Array.isArray(errors) ? errors.join(', ') : errors}`)
-              .join('; ');
-            return Promise.reject(new Error(`数据验证失败: ${fieldErrors}`));
-          }
-          break;
-        case 500:
-          // 处理服务器错误
-          break;
-        default:
-          // 处理其他错误
-          break;
+      // 记录原始错误（开发环境）
+      if (process.env.NODE_ENV === 'development') {
+        console.error('API Error:', error);
       }
 
-      return Promise.reject(new Error(message));
-    } else if (error.request) {
-      // 网络错误
-      return Promise.reject(new Error('网络连接失败，请检查网络设置'));
-    } else {
-      // 其他错误
-      return Promise.reject(new Error('请求配置错误'));
+      // 对于422验证错误，提供更详细的字段级错误信息
+      if (error.response?.status === 422) {
+        const errorData = error.response.data;
+        if (errorData?.detail && typeof errorData.detail === 'object') {
+          const fieldErrors = Object.entries(errorData.detail)
+            .map(([field, errors]) => `${field}: ${Array.isArray(errors) ? errors.join(', ') : errors}`)
+            .join('; ');
+          error.fieldErrors = fieldErrors; // 附加字段错误信息
+        }
+      }
+
+      // 不在这里显示用户通知，让errorHandlerService统一处理
+      // 这样可以避免重复的错误提示
+      return Promise.reject(error);
     }
-  }
-);
+  );
 }
 
 export default apiClient;

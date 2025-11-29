@@ -17,6 +17,16 @@ class UnifiedTestCaseStatus(enum.Enum):
     APPROVED = "approved"              # Approved and ready for test case generation
     COMPLETED = "completed"            # Test case fully completed with steps
 
+
+class UnifiedTestCaseStage(enum.Enum):
+    """Test case stage to distinguish between test point and test case."""
+    test_point = "test_point"          # Test point stage (basic info only) - 匹配数据库中的小写值
+    test_case = "test_case"            # Test case stage (with execution details) - 匹配数据库中的小写值
+
+    # 提供大写常量以便代码中使用
+    TEST_POINT = "test_point"
+    TEST_CASE = "test_case"
+
 Base = declarative_base()
 
 
@@ -134,28 +144,39 @@ class JobStatus(enum.Enum):
 
 
 class UnifiedTestCase(Base):
-    """Unified test case model that combines test points and test cases with one-to-one relationship."""
-    __tablename__ = "test_case_items"
+    """Unified test case model that represents both test points and test cases as the same entity.
+
+    Test points and test cases are the same record at different stages:
+    - test_point: Initial stage with basic information (test_case_id + name + description)
+    - test_case: Complete stage with execution steps and details
+
+    They share the same id and test_case_id, differentiated only by the 'stage' field and
+    the presence of execution-related fields like steps, preconditions, and expected_result.
+    """
+    __tablename__ = "unified_test_cases"
     __table_args__ = (
         Index('idx_test_case_id', 'test_case_id'),
-        Index('idx_test_case_test_point', 'test_point_id'),
         # New composite indexes for project + business_type queries
         Index('idx_test_case_project_business', 'project_id', 'business_type'),
         Index('idx_test_case_business_status', 'business_type', 'status'),
+        Index('idx_test_case_stage_status', 'stage', 'status'),
+        Index('idx_test_case_project_stage', 'project_id', 'stage'),
         # Business-scoped uniqueness constraint for names
         UniqueConstraint('business_type', 'name', name='uq_test_case_business_name'),
+        # Stage-based uniqueness constraint for item IDs
+        UniqueConstraint('business_type', 'test_case_id', name='uq_test_case_business_item_id'),
     )
 
     # === Core identification fields (simplified) ===
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     business_type = Column(Enum(BusinessType), nullable=False, index=True)
-    test_point_id = Column(Integer, ForeignKey("test_points.id"), nullable=True, unique=True, index=True)
     test_case_id = Column(String(50), nullable=False, index=True)  # Use existing field name
     name = Column(String(200), nullable=False, index=True)
     description = Column(Text, nullable=True)
 
-    # === Status and priority (added for unified system) ===
+    # === Stage, status and priority (for unified system) ===
+    stage = Column(Enum(UnifiedTestCaseStage), default=UnifiedTestCaseStage.test_point, nullable=False, index=True)
     status = Column(Enum(UnifiedTestCaseStatus), default=UnifiedTestCaseStatus.DRAFT, nullable=False, index=True)
     priority = Column(String(20), default='medium', nullable=False)
 
@@ -178,7 +199,7 @@ class UnifiedTestCase(Base):
 
     # === Relationships ===
     project = relationship("Project", back_populates="test_cases")
-    test_point = relationship("TestPoint", back_populates="test_cases")
+    # test_point relationship removed as TestPoint table is being deprecated
     knowledge_entities = relationship("TestCaseEntity", back_populates="test_case_item", foreign_keys="TestCaseEntity.test_case_item_id", cascade="all, delete-orphan")
 
     def __repr__(self):
@@ -295,11 +316,11 @@ class TestCaseEntity(Base):
     __tablename__ = "test_case_entities"
 
     id = Column(Integer, primary_key=True, index=True)
-    # Legacy support for old test_case_items
-    test_case_item_id = Column(Integer, ForeignKey("test_case_items.id"), nullable=True, index=True)
-    # New support for unified test_cases (also references test_case_items table)
+    # Legacy support for unified_test_cases
+    test_case_item_id = Column(Integer, ForeignKey("unified_test_cases.id"), nullable=True, index=True)
+    # New support for unified test_cases (also references unified_test_cases table)
     # TODO: Add migration to create test_case_id field in database
-    # test_case_id = Column(Integer, ForeignKey("test_case_items.id"), nullable=True, index=True)
+    # test_case_id = Column(Integer, ForeignKey("unified_test_cases.id"), nullable=True, index=True)
 
     entity_id = Column(Integer, ForeignKey("knowledge_entities.id"), nullable=False, index=True)
     name = Column(String(200), nullable=False, index=True)
@@ -502,49 +523,7 @@ class PromptCombinationItem(Base):
         return f"<PromptCombinationItem(id={self.id}, combination_id={self.combination_id}, order={self.order})>"
 
 
-# TestPointStatus removed - using string field instead
-
-
-class TestPoint(Base):
-    """Test point model for two-stage test generation."""
-    __tablename__ = "test_points"
-    __table_args__ = (
-        # Composite indexes for test point management queries
-        Index('idx_test_point_project_business', 'project_id', 'business_type'),
-        Index('idx_test_point_created_business', 'created_at', 'business_type'),
-        # Business-scoped uniqueness constraint for titles
-        UniqueConstraint('business_type', 'title', name='uq_test_point_business_title'),
-    )
-
-    id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
-    business_type = Column(Enum(BusinessType), nullable=False, index=True)
-
-    # Test point information
-    test_point_id = Column(String(50), nullable=False, index=True)  # TP001, TP002...
-    title = Column(String(200), nullable=False, index=True)
-    description = Column(Text, nullable=True)
-
-    # Simplified test point content - only name and description needed
-    # Complex structured fields removed for better user experience
-    priority = Column(String(20), default='medium', nullable=False)  # high, medium, low
-
-    
-    # Generation metadata
-    generation_job_id = Column(String(36), ForeignKey("generation_jobs.id"), nullable=True, index=True)
-    llm_metadata = Column(Text, nullable=True)  # JSON string for LLM generation metadata
-
-    # Relationships
-    project = relationship("Project")
-    generation_job = relationship("GenerationJob")
-    test_cases = relationship("UnifiedTestCase", back_populates="test_point", overlaps="test_case_items")  # Reverse relationship for test cases generated from this test point
-
-    # Timestamps
-    created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
-
-    def __repr__(self):
-        return f"<TestPoint(id={self.id}, test_point_id={self.test_point_id}, title='{self.title}')>"
+# TestPoint class removed - migrated to unified architecture using UnifiedTestCase with stage='test_point'
 
 
 class TemplateVariableType(enum.Enum):

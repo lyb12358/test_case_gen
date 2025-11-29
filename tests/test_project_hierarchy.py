@@ -193,7 +193,7 @@ class TestProjectCRUD:
 
         assert isinstance(stats, dict)
         assert 'unified_test_cases' in stats  # Updated from test_case_groups
-        assert 'test_points' in stats  # Updated from test_case_items
+        assert 'test_points' in stats  # Updated from unified_test_cases
         assert 'generation_jobs' in stats
         assert 'knowledge_entities' in stats
         assert 'knowledge_relations' in stats

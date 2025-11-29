@@ -13,16 +13,17 @@ from datetime import datetime
 
 from ..database.database import DatabaseManager
 from ..database.models import (
-    TestPoint, UnifiedTestCase, GenerationJob, JobStatus,
+    UnifiedTestCase, UnifiedTestCaseStage, GenerationJob, JobStatus,
     BusinessTypeConfig, Project
 )
-from ..core.test_point_generator import TestPointGenerator
+# TestPointGenerator removed - using unified generation system
 from ..core.test_case_generator import TestCaseGenerator
 from ..utils.config import Config
 from ..models.generation import (
     GenerationStage, GenerationStatus, GenerationProgress,
     GenerationResult, GenerationResponse, TaskStatusResponse
 )
+from ..models.unified_test_case import UnifiedTestCaseStatus
 from ..exceptions.generation import (
     GenerationError, LLMError, BusinessTypeError,
     ValidationError, handle_generation_error
@@ -44,7 +45,6 @@ class UnifiedGenerationService:
         """
         self.config = config or Config()
         self.db_manager = DatabaseManager(self.config)
-        self.test_point_generator = TestPointGenerator(self.config)
         self.test_case_generator = TestCaseGenerator(self.config)
         self.active_jobs: Dict[str, Dict[str, Any]] = {}
 
@@ -124,10 +124,11 @@ class UnifiedGenerationService:
 
             
             # 生成测试点
-            test_points_data = self.test_point_generator.generate_test_points(
+            test_points_data = self.test_case_generator.generate_test_points_only(
                 business_type=business_type,
                 additional_context=additional_context,
-                project_id=project_id  # 添加缺失的project_id参数
+                save_to_db=False,
+                project_id=project_id
             )
 
             
@@ -569,11 +570,12 @@ class UnifiedGenerationService:
             return {"can_retry": True, "retry_count": 0, "max_retries": 3}
 
     def _get_test_points_from_database(self, test_point_ids: List[int]) -> List[Dict[str, Any]]:
-        """从数据库获取测试点数据。"""
+        """从数据库获取测试点数据（从统一表）。"""
         with self.db_manager.get_session() as db:
-            test_points = db.query(TestPoint).filter(
-                TestPoint.id.in_(test_point_ids),
-                TestPoint.status != TestPointStatus.DELETED
+            # 从统一表中查询测试点阶段的数据
+            test_points = db.query(UnifiedTestCase).filter(
+                UnifiedTestCase.test_point_id.in_(test_point_ids),
+                UnifiedTestCase.stage == UnifiedTestCaseStage.TEST_POINT
             ).all()
 
             if len(test_points) != len(test_point_ids):
@@ -586,11 +588,12 @@ class UnifiedGenerationService:
 
             return [
                 {
+                    "id": tp.id,
                     "test_point_id": tp.test_point_id,
-                    "title": tp.title,
+                    "title": tp.name,  # 使用name字段
                     "description": tp.description,
-                    "priority": tp.priority.value,
-                    "business_type": tp.business_type.value,
+                    "priority": tp.priority,
+                    "business_type": tp.business_type,
                     "status": tp.status.value,
                     "preconditions": tp.preconditions or [],
                 }
@@ -603,18 +606,23 @@ class UnifiedGenerationService:
         business_type: str,
         project_id: Optional[int]
     ) -> List[int]:
-        """保存测试点到数据库。"""
+        """保存测试点到统一数据库表。"""
         saved_ids = []
         with self.db_manager.get_session() as db:
             for tp_data in test_points:
-                test_point = TestPoint(
-                    test_point_id=tp_data.get('test_point_id'),
-                    title=tp_data.get('title'),
+                test_point = UnifiedTestCase(
+                    project_id=project_id,
+                    business_type=business_type,
+                    test_case_id=tp_data.get('test_point_id'),
+                    name=tp_data.get('title'),  # 使用name字段
                     description=tp_data.get('description'),
                     priority=tp_data.get('priority', 'medium'),
-                    business_type=business_type,
-                    status=TestPointStatus.DRAFT,
-                    project_id=project_id
+                    stage=UnifiedTestCaseStage.TEST_POINT,
+                    status=UnifiedTestCaseStatus.DRAFT,
+                    # 测试点阶段没有执行详情
+                    preconditions=None,
+                    steps=None,
+                    expected_result=None
                 )
                 db.add(test_point)
                 db.flush()  # 获取生成的ID

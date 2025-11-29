@@ -8,12 +8,15 @@
 
 // 核心服务导出
 export * from './api';
+// apiWrapper removed - using unified generation service
+export * from './errorHandlerService';
 export * from './configService';
 export * from './businessService';
 export * from './knowledgeGraphService';
 export * from './promptService';
 export * from './taskService';
 export * from './projectService';
+export * from './websocketService';
 
 // 统一生成服务
 export { default as unifiedGenerationService } from './unifiedGenerationService';

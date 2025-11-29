@@ -35,38 +35,40 @@ npm run test                     # 前端测试
 
 **阶段 1：测试点生成**
 ```typescript
+// API端点: POST /api/v1/test-points/generate
 const testPointResponse = await unifiedGenerationService.generateTestPoints({
   business_type: 'RCC',
   project_id: activeProject.id,
-  count: 50,
-  complexity_level: 'standard'
+  additional_context: { count: 50 },
+  save_to_database: true,
+  async_mode: true
 });
 ```
 
 **阶段 2：测试用例生成**
 ```typescript
-const testCaseResponse = await unifiedGenerationService.generateFromTestPoints({
+// API端点: POST /api/v1/generation/test-cases
+const testCaseResponse = await unifiedGenerationService.generateTestCasesFromPoints({
   business_type: 'RCC',
   test_point_ids: [1, 2, 3],
-  generation_config: {
-    complexityLevel: 'comprehensive',
-    includeNegativeCases: true
-  }
+  additional_context: { complexityLevel: 'comprehensive' },
+  save_to_database: true,
+  project_id: activeProject.id
 });
 ```
 
-### 统一服务模式
+### 完整两阶段生成模式
 ```typescript
+// API端点: POST /api/v1/unified-test-cases/generate/full-two-stage
 import unifiedGenerationService from '../services';
 
-// 所有操作通过统一服务
-const response = await unifiedGenerationService.generateTestCases({
+// 单个API调用完成两阶段生成
+const response = await unifiedGenerationService.generateFullTwoStage({
   business_type: 'RCC',
   project_id: activeProject.id,
-  generation_config: {
-    stage: 'full',
-    complexity_level: 'comprehensive',
-    include_negative_cases: true
+  additional_context: {
+    test_points_count: 50,
+    complexity_level: 'comprehensive'
   }
 });
 ```
@@ -152,28 +154,44 @@ curl "http://localhost:8000/api/v1/projects?active_only=true"
 # 获取测试用例
 curl "http://localhost:8000/api/v1/unified-test-cases?project_id=1&status=approved&page=1&size=20"
 
-# WebSocket 测试
-wscat -c ws://localhost:8000/api/v1/generation/ws/test-task-id
-
 # 健康检查
-curl "http://localhost:8000/api/v1/generation/health
+curl "http://localhost:8000/api/v1/generation/health"
 ```
 
-### 统一生成 API
+### 核心生成 API
 
+**阶段1：测试点生成**
 ```typescript
-// POST /api/v1/generation/generate
-interface GenerationRequest {
+// POST /api/v1/test-points/generate
+interface TestPointGenerationRequest {
+  business_type: string;
+  additional_context?: Record<string, any>;
+  save_to_database?: boolean;
+  project_id?: number;
+  async_mode?: boolean;
+}
+```
+
+**阶段2：测试用例生成**
+```typescript
+// POST /api/v1/generation/test-cases
+interface TestCaseGenerationRequest {
+  business_type: string;
+  test_points?: any[];           // 外部提供的测试点数据
+  test_point_ids?: number[];     // 数据库中的测试点ID
+  additional_context?: Record<string, any>;
+  save_to_database?: boolean;
+  project_id?: number;
+}
+```
+
+**完整两阶段生成**
+```typescript
+// POST /api/v1/unified-test-cases/generate/full-two-stage
+interface FullTwoStageGenerationRequest {
   business_type: string;
   project_id: number;
-  generation_config: {
-    stage: 'test_points' | 'test_cases' | 'full';
-    complexity_level: 'simple' | 'standard' | 'comprehensive';
-    include_negative_cases: boolean;
-    test_points_count?: number;
-    test_point_ids?: number[];
-    additional_context?: string;
-  };
+  additional_context?: Record<string, any>;
 }
 ```
 
@@ -213,6 +231,52 @@ Projects → Business_Types → Test_Points → Unified_Test_Cases
 Projects → Knowledge_Entities ←→ Knowledge_Relations
 Business_Types → Prompt_Combinations → Prompt_Combination_Items → Prompts
 ```
+
+### unified_test_cases 表的两阶段设计
+
+```sql
+CREATE TABLE unified_test_cases (
+  -- === 核心标识字段 ===
+  id INT PRIMARY KEY,
+  project_id INT,
+  business_type ENUM('RCC', 'RFD', 'ZAB', ...),  -- 29种业务类型
+  test_case_id VARCHAR(50),                         -- 测试用例ID字符串
+  name VARCHAR(200),
+  description TEXT,
+
+  -- === 阶段和状态管理 ===
+  stage ENUM('test_point', 'test_case') DEFAULT 'test_point',  -- 关键阶段字段
+  status ENUM('draft', 'approved', 'completed') DEFAULT 'draft',
+  priority ENUM('low', 'medium', 'high') DEFAULT 'medium',
+
+  -- === 测试用例特定字段（test_point阶段为null） ===
+  module VARCHAR(100),
+  functional_module VARCHAR(100),
+  functional_domain VARCHAR(100),
+  preconditions TEXT,        -- JSON格式
+  steps TEXT,               -- JSON格式，包含expected字段
+  remarks TEXT,
+
+  -- === 元数据 ===
+  generation_job_id VARCHAR(100),
+  entity_order FLOAT,
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+);
+```
+
+**两阶段数据含义：**
+- `stage = 'test_point'`：第一阶段，只包含基本信息（id, name, description）
+- `stage = 'test_case'`：第二阶段，包含完整的执行步骤和期望结果
+
+**字段含义：**
+- `stage`：区分数据阶段，由系统根据是否有执行步骤自动判断
+  - `test_point`：基本信息阶段（测试点）
+  - `test_case`：完整测试用例阶段（包含执行步骤）
+- `status`：工作流状态，默认为 `draft`，可通过API手动更新
+  - `draft`：草稿状态
+  - `approved`：已批准状态
+  - `completed`：完成状态
 
 ## 开发模式
 

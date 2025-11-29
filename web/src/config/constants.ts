@@ -36,7 +36,21 @@ export const API_ENDPOINTS = {
     TEST_CASES: '/api/v1/knowledge-graph/entities'
   },
 
-  // 测试用例相关
+  // 统一测试用例相关 (两阶段统一系统)
+  UNIFIED_TEST_CASES: {
+    LIST: '/api/v1/unified-test-cases',
+    DETAIL: '/api/v1/unified-test-cases',
+    CREATE: '/api/v1/unified-test-cases',
+    UPDATE: '/api/v1/unified-test-cases',
+    DELETE: '/api/v1/unified-test-cases',
+    BATCH: '/api/v1/unified-test-cases/batch',
+    STATISTICS: '/api/v1/unified-test-cases/statistics/overview',
+    GENERATE_TEST_CASES: '/api/v1/unified-test-cases/generate/test-cases',
+    GENERATE_FULL_TWO_STAGE: '/api/v1/unified-test-cases/generate/full-two-stage',
+    GENERATE_STATUS: '/api/v1/unified-test-cases/generate/status'
+  },
+
+  // 测试用例相关 (已弃用，请使用UNIFIED_TEST_CASES)
   TEST_CASES: {
     LIST: '/api/v1/test-cases',
     DETAIL: '/api/v1/test-cases',
@@ -45,7 +59,7 @@ export const API_ENDPOINTS = {
     DELETE: '/api/v1/test-cases'
   },
 
-  // 测试点相关
+  // 测试点相关 (已弃用，请使用UNIFIED_TEST_CASES)
   TEST_POINTS: {
     LIST: '/api/v1/test-points',
     DETAIL: '/api/v1/test-points',

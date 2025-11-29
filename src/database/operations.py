@@ -11,7 +11,8 @@ from sqlalchemy import delete, and_
 from .models import (
     UnifiedTestCase, GenerationJob, BusinessType, JobStatus,
     KnowledgeEntity, KnowledgeRelation, EntityType, TestCaseEntity, Project,
-    Prompt, PromptVersion, PromptCombination, PromptCombinationItem, BusinessTypeConfig
+    Prompt, PromptVersion, PromptCombination, PromptCombinationItem, BusinessTypeConfig,
+    UnifiedTestCaseStage
 )
 
 
@@ -139,7 +140,7 @@ class DatabaseOperations:
         """
         stats = {}
         for business_type in BusinessType:
-            test_case_count = self.db.query(object).filter(object.business_type == business_type).count()
+            test_case_count = self.db.query(UnifiedTestCase).filter(UnifiedTestCase.business_type == business_type).count()
             job_count = self.db.query(GenerationJob).filter(GenerationJob.business_type == business_type).count()
             stats[business_type.value] = {
                 "test_cases": test_case_count,
@@ -547,126 +548,75 @@ class DatabaseOperations:
 
     # ========== New object and UnifiedTestCase Operations ==========
 
-    def create_unified_test_case(self, test_case_data: Dict[str, Any]) -> UnifiedTestCase:
+    
+    def create_unified_test_case(self, project_id: int, test_case_data: Dict[str, Any], entity_order: Optional[float] = None) -> UnifiedTestCase:
         """
-        Create a new unified test case.
-
-        Args:
-            test_case_data (Dict[str, Any]): Test case data
-
-        Returns:
-            UnifiedTestCase: Created test case
-        """
-        test_case = UnifiedTestCase(
-            title=test_case_data.get("title", ""),
-            description=test_case_data.get("description", ""),
-            business_type=test_case_data.get("business_type"),
-            project_id=test_case_data.get("project_id"),
-            status=test_case_data.get("status", "draft"),
-            test_case_data=test_case_data.get("test_case_data", {}),
-            metadata=test_case_data.get("metadata", {})
-        )
-        self.db.add(test_case)
-        self.db.commit()
-        self.db.refresh(test_case)
-        return test_case
-
-    def create_test_case_item(self, project_id: int, test_case_data: Dict[str, Any], entity_order: Optional[float] = None, test_point_id: Optional[int] = None) -> UnifiedTestCase:
-        """
-        Create a new test case item.
+        Create a new unified test case (can be test point or test case based on content).
 
         Args:
             project_id (int): Project ID
             test_case_data (Dict[str, Any]): Test case data
             entity_order (Optional[float]): Order index
-            test_point_id (Optional[int]): Associated test point ID for two-stage generation
 
         Returns:
             UnifiedTestCase: Created test case item
         """
+        # 确定业务类型
+        business_type = test_case_data.get('business_type')
+
+        # 获取步骤数据来确定stage
+        steps = test_case_data.get('steps', [])
+        preconditions = test_case_data.get('preconditions', '')
+        expected_result = test_case_data.get('expected_result', [])
+
+        # 根据是否有执行步骤确定stage
+        # test_point: 只有基本信息，没有执行步骤
+        # test_case: 有完整的执行步骤和预期结果
+        has_steps = steps and len(steps) > 0
+        has_preconditions = preconditions and preconditions.strip()
+        has_execution_details = has_steps or has_preconditions
+        stage = UnifiedTestCaseStage.test_case if has_execution_details else UnifiedTestCaseStage.test_point
+
+        # 创建统一测试用例对象
         item = UnifiedTestCase(
             project_id=project_id,
-            test_point_id=test_point_id,
-            test_case_id=test_case_data.get('id', ''),
+            business_type=business_type,
+            test_case_id=test_case_data.get('test_case_id', ''),
             name=test_case_data.get('name', ''),
             description=test_case_data.get('description', ''),
             module=test_case_data.get('module', ''),
             functional_module=test_case_data.get('functional_module', ''),
             functional_domain=test_case_data.get('functional_domain', ''),
-            preconditions=json.dumps(test_case_data.get('preconditions', []), ensure_ascii=False),
-            steps=json.dumps(test_case_data.get('steps', []), ensure_ascii=False),
-            expected_result=json.dumps(test_case_data.get('expected_result', []), ensure_ascii=False),
+            preconditions=preconditions if preconditions and preconditions.strip() else None,
+            steps=json.dumps(steps, ensure_ascii=False),
+            expected_result=json.dumps(expected_result, ensure_ascii=False),
             remarks=test_case_data.get('remarks', ''),
-            entity_order=entity_order
+            entity_order=entity_order,
+            stage=stage
         )
         self.db.add(item)
         self.db.commit()
         self.db.refresh(item)
         return item
 
-    def create_test_case_items_batch(self, project_id: int, test_cases_list: List[Dict[str, Any]], test_point_id: Optional[int] = None) -> List[UnifiedTestCase]:
+    def create_unified_test_cases_batch(self, project_id: int, test_cases_list: List[Dict[str, Any]]) -> List[UnifiedTestCase]:
         """
-        Create multiple test case items in batch.
+        Create multiple unified test case items in batch.
 
         Args:
             project_id (int): Project ID
             test_cases_list (List[Dict[str, Any]]): List of test case data
-            test_point_id (Optional[int]): Associated test point ID for two-stage generation
 
         Returns:
             List[UnifiedTestCase]: Created test case items
         """
         items = []
         for idx, tc_data in enumerate(test_cases_list):
-            item = self.create_test_case_item(project_id, tc_data, float(idx + 1), test_point_id)
+            item = self.create_unified_test_case(project_id, tc_data, float(idx + 1))
             items.append(item)
         return items
 
-    def create_test_case_items_from_test_points(self, project_id: int, test_cases_list: List[Dict[str, Any]], test_points_mapping: Dict[str, int]) -> List[UnifiedTestCase]:
-        """
-        Create test case items from test points with proper test_point_id mapping.
-
-        Args:
-            project_id (int): Project ID
-            test_cases_list (List[Dict[str, Any]]): List of test case data
-            test_points_mapping (Dict[str, int]): Mapping from test point names/IDs to database test_point_id
-
-        Returns:
-            List[UnifiedTestCase]: Created test case items with proper test_point_id associations
-        """
-        items = []
-        for idx, tc_data in enumerate(test_cases_list):
-            # Try to find corresponding test point by name or ID
-            test_point_id = None
-
-            # Method 1: Match by test case name with test point title
-            test_case_name = tc_data.get('name', '')
-            for tp_name, tp_id in test_points_mapping.items():
-                if tp_name.lower() in test_case_name.lower() or test_case_name.lower() in tp_name.lower():
-                    test_point_id = tp_id
-                    break
-
-            # Method 2: Match by test_case_id pattern if available
-            if test_point_id is None and 'id' in tc_data:
-                tc_id = tc_data.get('id', '')
-                # Extract potential test point reference from test case ID
-                for tp_name, tp_id in test_points_mapping.items():
-                    if tp_name in tc_id or tc_id.replace('TC', 'TP') in tp_name:
-                        test_point_id = tp_id
-                        break
-
-            # Create test case item with associated test point ID
-            item = self.create_test_case_item(project_id, tc_data, float(idx + 1), test_point_id)
-            items.append(item)
-
-            # Log the association for debugging
-            if test_point_id:
-                print(f"[ASSOCIATION] Test case '{test_case_name}' associated with test_point_id {test_point_id}")
-            else:
-                print(f"[WARNING] No test point found for test case '{test_case_name}'")
-
-        return items
-
+    
     def get_unified_test_cases_by_business_type(self, business_type: BusinessType, project_id: Optional[int] = None) -> List[UnifiedTestCase]:
         """
         Get unified test cases by business type.
@@ -683,7 +633,7 @@ class DatabaseOperations:
             query = query.filter(UnifiedTestCase.project_id == project_id)
         return query.all()
 
-    def get_test_case_items_by_project_id(self, project_id: int) -> List[UnifiedTestCase]:
+    def get_unified_test_cases_by_project_id(self, project_id: int) -> List[UnifiedTestCase]:
         """
         Get test case items by project ID.
 
@@ -816,7 +766,7 @@ class DatabaseOperations:
         self.db.commit()
         return deleted_entities_count, deleted_relations_count
 
-    def update_test_case_item(self, item_id: int, test_case_data: Dict[str, Any]) -> Optional[UnifiedTestCase]:
+    def update_unified_test_case(self, item_id: int, test_case_data: Dict[str, Any]) -> Optional[UnifiedTestCase]:
         """
         Update a test case item.
 
@@ -835,7 +785,8 @@ class DatabaseOperations:
             item.module = test_case_data.get('module', item.module)
             item.functional_module = test_case_data.get('functional_module', item.functional_module)
             item.functional_domain = test_case_data.get('functional_domain', item.functional_domain)
-            item.preconditions = json.dumps(test_case_data.get('preconditions', []), ensure_ascii=False)
+            preconditions = test_case_data.get('preconditions')
+            item.preconditions = preconditions if preconditions and preconditions.strip() else None
             item.steps = json.dumps(test_case_data.get('steps', []), ensure_ascii=False)
             item.expected_result = json.dumps(test_case_data.get('expected_result', []), ensure_ascii=False)
             item.remarks = test_case_data.get('remarks', item.remarks)
@@ -843,7 +794,7 @@ class DatabaseOperations:
             self.db.refresh(item)
         return item
 
-    def delete_test_case_item(self, item_id: int) -> bool:
+    def delete_unified_test_case(self, item_id: int) -> bool:
         """
         Delete a test case item and its related entities.
 
@@ -990,10 +941,10 @@ class DatabaseOperations:
             UnifiedTestCase.project_id == project_id
         ).count()
 
-        # Test points count (replaces test case items)
-        from .models import TestPoint
-        stats['test_points'] = self.db.query(TestPoint).filter(
-            TestPoint.project_id == project_id
+        # Test points count (using UnifiedTestCase with stage='test_point')
+        stats['test_points'] = self.db.query(UnifiedTestCase).filter(
+            UnifiedTestCase.project_id == project_id,
+            UnifiedTestCase.stage == UnifiedTestCaseStage.test_point
         ).count()
 
         # Generation jobs count

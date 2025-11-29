@@ -14,15 +14,15 @@ class JSONFieldValidator:
     """Comprehensive JSON field validator for test case data."""
 
     @staticmethod
-    def validate_preconditions(v: Optional[List[str]]) -> Optional[List[str]]:
+    def validate_preconditions(v: Optional[str]) -> Optional[str]:
         """
         Validate preconditions field with comprehensive checks.
 
         Args:
-            v: List of precondition strings or None
+            v: Precondition string or None
 
         Returns:
-            Validated list of preconditions or None
+            Validated precondition string or None
 
         Raises:
             ValueError: If validation fails
@@ -30,31 +30,19 @@ class JSONFieldValidator:
         if v is None:
             return None
 
-        if not isinstance(v, list):
-            raise ValueError("前置条件必须是数组格式")
+        if not isinstance(v, str):
+            raise ValueError("前置条件必须是字符串类型")
 
-        if len(v) > 50:
-            raise ValueError("前置条件数量不能超过50个")
+        # Remove leading/trailing whitespace
+        v = v.strip()
 
-        validated_preconditions = []
-        for i, condition in enumerate(v):
-            if not isinstance(condition, str):
-                raise ValueError(f"前置条件 {i+1} 必须是字符串类型")
+        if not v:
+            return None  # Return None for empty strings
 
-            condition = condition.strip()
-            if not condition:
-                raise ValueError(f"前置条件 {i+1} 不能为空字符串")
+        if len(v) > 5000:
+            raise ValueError("前置条件长度不能超过5000字符")
 
-            if len(condition) > 500:
-                raise ValueError(f"前置条件 {i+1} 长度不能超过500字符")
-
-            # 检查是否包含基本的条件描述模式
-            if not re.search(r'[a-zA-Z\u4e00-\u9fff]', condition):
-                raise ValueError(f"前置条件 {i+1} 必须包含有效描述")
-
-            validated_preconditions.append(condition)
-
-        return validated_preconditions
+        return v
 
     @staticmethod
     def validate_steps(v: Optional[List[Dict[str, Any]]]) -> Optional[List[Dict[str, Any]]]:
@@ -120,9 +108,7 @@ class JSONFieldValidator:
             if len(action) > 2000:
                 raise ValueError(f"步骤 {i+1} 的 action 长度不能超过2000字符")
 
-            # 检查action是否包含动词描述
-            if not re.search(r'[a-zA-Z\u4e00-\u9fff]', action):
-                raise ValueError(f"步骤 {i+1} 的 action 必须包含有效描述")
+            # 简化action校验 - 只要求非空即可，允许简单字符描述
 
             # Validate expected (optional but recommended)
             expected = step.get('expected')
@@ -194,9 +180,7 @@ class JSONFieldValidator:
             if len(result) > 1000:
                 raise ValueError(f"预期结果 {i+1} 长度不能超过1000字符")
 
-            # 检查是否包含有效的结果描述
-            if not re.search(r'[a-zA-Z\u4e00-\u9fff]', result):
-                raise ValueError(f"预期结果 {i+1} 必须包含有效描述")
+            # 简化结果校验 - 只要求非空即可，允许简单字符描述
 
             validated_results.append(result)
 

@@ -18,7 +18,7 @@ from enum import Enum
 from ..database.database import DatabaseManager
 from ..database.operations import DatabaseOperations
 from ..database.models import (
-    TestPoint, UnifiedTestCase, Project, BusinessType,
+    UnifiedTestCase, Project, BusinessType,
     KnowledgeEntity, KnowledgeRelation, EntityType
 )
 
@@ -176,7 +176,7 @@ class DataConsistencyValidator:
             # Query test cases that have test_point_id but no corresponding test point
             orphaned_associations = db_ops.db.execute("""
                 SELECT tci.id, tci.name, tci.test_point_id, tci.test_case_id
-                FROM test_case_items tci
+                FROM unified_test_cases tci
                 LEFT JOIN test_points tp ON tci.test_point_id = tp.id
                 WHERE tci.test_point_id IS NOT NULL AND tp.id IS NULL
             """).fetchall()
@@ -285,7 +285,7 @@ class DataConsistencyValidator:
 
             orphaned_cases = db_ops.db.execute(f"""
                 SELECT tci.id, tci.test_case_id, tci.name, tci.project_id
-                FROM test_case_items tci
+                FROM unified_test_cases tci
                 LEFT JOIN test_case_groups tcg ON tci.project_id = tcg.id
                 {where_clause}
                 AND tcg.id IS NULL
@@ -395,7 +395,7 @@ class DataConsistencyValidator:
             completed_without_cases = db_ops.db.execute(f"""
                 SELECT tp.id, tp.test_point_id, tp.title, tp.status
                 FROM test_points tp
-                LEFT JOIN test_case_items tci ON tp.id = tci.test_point_id
+                LEFT JOIN unified_test_cases tci ON tp.id = tci.test_point_id
                 {where_clause}
                 AND tp.status = 'completed'
                 AND tci.id IS NULL
@@ -450,7 +450,7 @@ class DataConsistencyValidator:
 
             mismatched_business_types = db_ops.db.execute(f"""
                 SELECT tci.id, tci.test_case_id, tci.name, tp.business_type as tp_business, tcg.business_type as tcg_business
-                FROM test_case_items tci
+                FROM unified_test_cases tci
                 JOIN test_case_groups tcg ON tci.project_id = tcg.id
                 LEFT JOIN test_points tp ON tci.test_point_id = tp.id
                 {where_clause}
@@ -561,7 +561,7 @@ class DataConsistencyValidator:
             empty_groups = db_ops.db.execute(f"""
                 SELECT tcg.id, tcg.business_type, tcg.created_at
                 FROM test_case_groups tcg
-                LEFT JOIN test_case_items tci ON tcg.id = tci.project_id
+                LEFT JOIN unified_test_cases tci ON tcg.id = tci.project_id
                 {where_clause}
                 GROUP BY tcg.id
                 HAVING COUNT(tci.id) = 0
@@ -613,7 +613,7 @@ class DataConsistencyValidator:
 
             # Get counts
             test_point_count = db_ops.db.execute(f"SELECT COUNT(*) FROM test_points{where_clause}", params).scalar() or 0
-            test_case_count = db_ops.db.execute(f"SELECT COUNT(*) FROM test_case_items tci JOIN test_case_groups tcg ON tci.project_id = tcg.id{where_clause}", params).scalar() or 0
+            test_case_count = db_ops.db.execute(f"SELECT COUNT(*) FROM unified_test_cases tci JOIN test_case_groups tcg ON tci.project_id = tcg.id{where_clause}", params).scalar() or 0
             group_count = db_ops.db.execute(f"SELECT COUNT(*) FROM test_case_groups{where_clause}", params).scalar() or 0
 
             return {

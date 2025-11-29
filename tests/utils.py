@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 try:
     from src.database.models import (
         Project, BusinessTypeConfig, UnifiedTestCase,
-        TestPoint, GenerationJob, UnifiedTestCaseStatus
+        GenerationJob, UnifiedTestCaseStatus
     )
     MODEL_IMPORTS_AVAILABLE = True
 except ImportError as e:
@@ -36,11 +36,6 @@ except ImportError as e:
             for key, value in kwargs.items():
                 setattr(self, key, value)
 
-    class TestPoint:
-        def __init__(self, **kwargs):
-            for key, value in kwargs.items():
-                setattr(self, key, value)
-
     class GenerationJob:
         def __init__(self, **kwargs):
             for key, value in kwargs.items():
@@ -50,12 +45,6 @@ except ImportError as e:
     class UnifiedTestCaseStatus:
         DRAFT = "draft"
         APPROVED = "approved"
-        COMPLETED = "completed"
-
-    class TestPointStatus:
-        DRAFT = "draft"
-        APPROVED = "approved"
-        MODIFIED = "modified"
         COMPLETED = "completed"
 
     class BusinessType:
@@ -114,18 +103,19 @@ class _TestDataManager:
         self.db_session.commit()
         return business_type
 
-    def create_test_test_point(self, project_id: int, business_type: str, **kwargs) -> TestPoint:
-        """创建测试测试点"""
+    def create_test_test_point(self, project_id: int, business_type: str, **kwargs) -> UnifiedTestCase:
+        """创建测试测试点 (使用UnifiedTestCase表中的stage='test_point')"""
         test_point_data = {
             "name": "开启空调测试",
             "description": "测试远程开启空调功能",
             "business_type": business_type,
             "project_id": project_id,
-            "status": "draft",  # 修复：使用正确的TestPointStatus枚举值
+            "status": UnifiedTestCaseStatus.DRAFT,
             "priority": "high",
+            "stage": "test_point",
             **kwargs
         }
-        test_point = TestPoint(**test_point_data)
+        test_point = UnifiedTestCase(**test_point_data)
         self.db_session.add(test_point)
         self.db_session.commit()
         return test_point

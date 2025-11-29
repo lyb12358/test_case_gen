@@ -188,15 +188,16 @@ def sample_project_data():
 
 @pytest.fixture
 def sample_test_point_data():
-    """示例测试点数据"""
+    """示例测试点数据 (使用UnifiedTestCase表中的stage='test_point')"""
     return {
         "id": 1,
         "name": "开启空调测试",
         "description": "测试远程开启空调功能",
         "business_type": "RCC",
         "project_id": 1,
-        "status": "draft",  # 修复：使用正确的TestPointStatus枚举值
-        "priority": "high"
+        "status": "draft",  # 使用UnifiedTestCaseStatus枚举值
+        "priority": "high",
+        "stage": "test_point"  # 指定为测试点阶段
     }
 
 

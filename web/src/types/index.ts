@@ -1,10 +1,16 @@
 // Type re-exports for backward compatibility
 // Import from our type definition files
 
+// Export common types first (primary types to use)
+export * from './common';
+
 // Legacy types - use unified types instead
 export type { TestCaseItem, TaskStatusResponse, GenerateTestCaseRequest, GenerateResponse } from './testCases';
 export type { Prompt, PromptCategory, PromptVersion, PromptTemplate } from './prompts';
-export type { TestPoint, BatchTestPointOperation, BatchTestPointOperationResponse } from './testPoints';
+// testPoints types removed - using unified test case system
+
+// Export constants (runtime values) that are needed first
+export { UnifiedTestCaseStage } from './unifiedTestCase';
 
 // Unified test case types - primary types to use
 export type {
@@ -19,18 +25,11 @@ export type {
   UnifiedTestCaseGenerationRequest,
   UnifiedTestCaseGenerationResponse,
   UnifiedTestCaseFormData,
-  UnifiedTestCaseStatus,
-  UnifiedTestCaseStage,
-  ViewMode,
   UnifiedTestCaseListItem,
-  SearchFilter,
-  PaginationConfig,
   TableColumnConfig,
   BatchAction,
   ExportConfig,
   ChartData,
-  DateRange,
-  GenerationProgress,
   UnifiedTestCaseWebSocketMessage,
   FormRule
 } from './unifiedTestCase';
@@ -38,10 +37,7 @@ export type {
 // Export unified types as primary TestCase interface for compatibility
 export type UnifiedTestCase = UnifiedTestCaseResponse;
 
-// Common types - centralized here to avoid duplication
-export type BusinessType = string; // Dynamic business types
-
-// Export common enums and constants
+// Legacy JobStatus - use TaskStatus from common instead (deprecated)
 export const JOB_STATUS = {
   PENDING: 'pending',
   RUNNING: 'running',

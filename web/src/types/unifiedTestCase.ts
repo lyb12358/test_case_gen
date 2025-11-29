@@ -1,27 +1,46 @@
 // 统一测试用例相关类型定义
 
-export enum UnifiedTestCaseStatus {
-  DRAFT = "draft",
-  APPROVED = "approved",
-  COMPLETED = "completed"
-}
+import {
+  PriorityLevel,
+  TaskStatus,
+  PaginationConfig,
+  PaginationResponse,
+  BaseApiResponse,
+  SortDirection,
+  SortField
+} from './common';
 
-export enum UnifiedTestCaseStage {
-  TEST_POINT = "test_point",
-  TEST_CASE = "test_case"
-}
+// 直接定义统一的枚举以避免导入冲突
+export const UnifiedTestCaseStatus = {
+  DRAFT: 'draft',
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+  COMPLETED: 'completed'  // 添加后端COMPLETED状态
+} as const;
+
+export const UnifiedTestCaseStage = {
+  TEST_POINT: 'test_point',  // 改为小写单数，与后端一致
+  TEST_CASE: 'test_case'       // 改为小写单数，与后端一致
+} as const;
+
+// 类型定义
+export type UnifiedTestCaseStatus = 'draft' | 'approved' | 'rejected' | 'completed';
+export type UnifiedTestCaseStage = 'test_point' | 'test_case';
+
+// 类型别名
+export type TestCaseStatus = UnifiedTestCaseStatus; // 向后兼容别名
 
 export interface UnifiedTestCaseBase {
   name: string;
   description?: string;
-  priority: string;
-  status: UnifiedTestCaseStatus;
+  priority: PriorityLevel;
+  status?: UnifiedTestCaseStatus; // 改为可选，支持默认值
 }
 
 export interface UnifiedTestCaseCreate extends UnifiedTestCaseBase {
   project_id: number;
   business_type: string;
-  case_id: string;
+  test_case_id: string; // 与后端 Pydantic alias 匹配
   module?: string;
   functional_module?: string;
   functional_domain?: string;
@@ -34,18 +53,19 @@ export interface UnifiedTestCaseCreate extends UnifiedTestCaseBase {
   expected_result?: string[];
   remarks?: string;
   entity_order?: number;
-  test_point_id?: number;
 }
 
 export interface UnifiedTestCaseUpdate {
   name?: string;
   description?: string;
+  business_type?: string;
   priority?: string;
   status?: UnifiedTestCaseStatus;
+  stage?: UnifiedTestCaseStage;
+  test_case_id?: string;
   module?: string;
   functional_module?: string;
   functional_domain?: string;
-  test_point_id?: number;
   preconditions?: string[];
   steps?: Array<{
     step_number: number;
@@ -62,7 +82,7 @@ export interface UnifiedTestCaseResponse extends UnifiedTestCaseBase {
   project_id: number;
   business_type: string;
   case_id: string;
-  test_case_id: string;
+  test_case_id: string; // 后端alias字段，与case_id相同
   stage: UnifiedTestCaseStage;
   module?: string;
   functional_module?: string;
@@ -77,38 +97,22 @@ export interface UnifiedTestCaseResponse extends UnifiedTestCaseBase {
   remarks?: string;
   generation_job_id?: string;
   entity_order?: number;
-  test_point_id?: number;
-  testPoint?: {
-    id: number;
-    test_point_id: string;
-    title: string;
-  };
   created_at: string;
   updated_at: string;
 }
 
-export interface UnifiedTestCaseFilter {
+export interface UnifiedTestCaseFilter extends PaginationConfig {
   project_id?: number;
   business_type?: string;
   status?: UnifiedTestCaseStatus;
   stage?: UnifiedTestCaseStage;
-  priority?: string;
+  priority?: PriorityLevel;
   keyword?: string;
-  test_point_ids?: number[];
-  test_point_id?: number;
-  page: number;
-  size: number;
-  sort_by: string;
-  sort_order: 'asc' | 'desc';
+  sort_by?: SortField;
+  sort_order?: SortDirection;
 }
 
-export interface UnifiedTestCaseListResponse {
-  items: UnifiedTestCaseResponse[];
-  total: number;
-  page: number;
-  size: number;
-  pages: number;
-}
+export interface UnifiedTestCaseListResponse extends PaginationResponse<UnifiedTestCaseResponse> {}
 
 export interface UnifiedTestCaseStatistics {
   total_count: number;
@@ -121,7 +125,7 @@ export interface UnifiedTestCaseStatistics {
 }
 
 export interface UnifiedTestCaseBatchOperation {
-  test_case_ids: number[];
+  case_ids: number[];
   operation: 'delete' | 'update_status' | 'update_priority';
   status?: UnifiedTestCaseStatus;
   priority?: string;
@@ -131,7 +135,7 @@ export interface UnifiedTestCaseBatchResponse {
   success_count: number;
   failed_count: number;
   failed_items: Array<{
-    test_case_id: number;
+    case_id: number;
     error: string;
   }>;
 }
@@ -142,7 +146,6 @@ export interface UnifiedTestCaseGenerationRequest {
   count?: number;
   complexity_level?: 'basic' | 'standard' | 'comprehensive';
   include_negative_cases?: boolean;
-  test_point_ids?: number[];
   additional_context?: Record<string, any>;
 }
 
@@ -151,7 +154,7 @@ export interface UnifiedTestCaseGenerationResponse {
   status: string;
   test_points_generated: number;
   test_cases_generated: number;
-  test_case_items?: UnifiedTestCaseResponse[];
+  test_cases?: UnifiedTestCaseResponse[]; // 修复：改为与当前数据库一致
   generation_time?: number;
   message: string;
 }
@@ -169,7 +172,6 @@ export interface UnifiedTestCaseFormData extends Omit<UnifiedTestCaseCreate, 'pr
   module?: string;
   functional_module?: string;
   functional_domain?: string;
-  test_point_id?: number;
 
   // 执行步骤
   preconditions?: string[];
@@ -206,14 +208,6 @@ export interface SearchFilter {
   date_range?: [string, string];
 }
 
-// 分页配置
-export interface PaginationConfig {
-  current: number;
-  pageSize: number;
-  total: number;
-  showSizeChanger?: boolean;
-  showQuickJumper?: boolean;
-}
 
 // 表格列配置
 export interface TableColumnConfig {

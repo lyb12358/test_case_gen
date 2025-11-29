@@ -1,7 +1,12 @@
 # -*- coding: utf-8 -*-
 """
 Unified test case Pydantic models for API request/response serialization.
-Supports both test point and test case stages in one model.
+
+Represents both test points and test cases as the same entity at different stages:
+- test_point: Initial stage with basic information (test_case_id + name + description)
+- test_case: Complete stage with execution steps and details
+
+They share the same id and test_case_id, differentiated only by the 'stage' field.
 """
 
 from datetime import datetime
@@ -28,7 +33,7 @@ class UnifiedTestCaseStage(str, Enum):
 class UnifiedTestCaseBase(BaseModel):
     """Base unified test case model with common fields."""
     name: str = Field(..., min_length=1, max_length=200, description="测试用例名称")
-    description: Optional[str] = Field(None, max_length=2000, description="测试用例描述")
+    description: str = Field(..., min_length=1, max_length=2000, description="测试用例描述")
     priority: str = Field("medium", pattern="^(low|medium|high)$", description="优先级")
     status: UnifiedTestCaseStatus = Field(UnifiedTestCaseStatus.DRAFT, description="状态")
 
@@ -38,8 +43,7 @@ class UnifiedTestCaseCreate(UnifiedTestCaseBase):
     """Unified test case creation model."""
     project_id: int = Field(..., gt=0, description="项目ID")
     business_type: str = Field(..., min_length=1, max_length=10, description="业务类型")
-    case_id: str = Field(..., min_length=1, max_length=50, alias="test_case_id", description="测试用例ID")
-    test_point_id: Optional[int] = Field(None, gt=0, description="关联测试点ID（用于字段继承）")
+    test_case_id: str = Field(..., min_length=1, max_length=50, description="测试用例ID")
 
     # Test case specific fields (optional for test point stage)
     module: Optional[str] = Field(None, max_length=100, description="功能模块")
@@ -47,34 +51,28 @@ class UnifiedTestCaseCreate(UnifiedTestCaseBase):
     functional_domain: Optional[str] = Field(None, max_length=100, description="功能域")
 
     # Execution details (JSON format, optional for test point stage)
-    preconditions: Optional[List[str]] = Field(None, description="前置条件")
+    preconditions: Optional[str] = Field(None, max_length=5000, description="前置条件")
     steps: Optional[List[Dict[str, Any]]] = Field(None, description="执行步骤")
-    expected_result: Optional[List[str]] = Field(None, description="预期结果")
+    # Note: expected_result is removed - use expected field in steps instead
     remarks: Optional[str] = Field(None, max_length=2000, description="备注")
 
     # Metadata
     entity_order: Optional[float] = Field(None, description="排序顺序")
 
-    @field_validator('preconditions')
-    @classmethod
-    def validate_preconditions(cls, v):
-        return JSONFieldValidator.validate_preconditions(v)
-
+    
     @field_validator('steps')
     @classmethod
     def validate_steps(cls, v):
         return JSONFieldValidator.validate_steps(v)
 
-    @field_validator('expected_result')
-    @classmethod
-    def validate_expected_result(cls, v):
-        return JSONFieldValidator.validate_expected_result(v)
+    # expected_result field validation removed - field is removed from model
 
 
 class UnifiedTestCaseUpdate(BaseModel):
     """Unified test case update model."""
     name: Optional[str] = Field(None, min_length=1, max_length=200, description="测试用例名称")
     description: Optional[str] = Field(None, max_length=2000, description="测试用例描述")
+    business_type: Optional[str] = Field(None, min_length=1, max_length=20, description="业务类型")
     priority: Optional[str] = Field(None, pattern="^(low|medium|high)$", description="优先级")
     status: Optional[UnifiedTestCaseStatus] = Field(None, description="状态")
 
@@ -84,28 +82,21 @@ class UnifiedTestCaseUpdate(BaseModel):
     functional_domain: Optional[str] = Field(None, max_length=100, description="功能域")
 
     # Execution details
-    preconditions: Optional[List[str]] = Field(None, description="前置条件")
+    preconditions: Optional[str] = Field(None, max_length=5000, description="前置条件")
     steps: Optional[List[Dict[str, Any]]] = Field(None, description="执行步骤")
-    expected_result: Optional[List[str]] = Field(None, description="预期结果")
+    # Note: expected_result is removed - use expected field in steps instead
     remarks: Optional[str] = Field(None, max_length=2000, description="备注")
 
     # Metadata
     entity_order: Optional[float] = Field(None, description="排序顺序")
 
-    @field_validator('preconditions')
-    @classmethod
-    def validate_preconditions(cls, v):
-        return JSONFieldValidator.validate_preconditions(v)
-
+    
     @field_validator('steps')
     @classmethod
     def validate_steps(cls, v):
         return JSONFieldValidator.validate_steps(v)
 
-    @field_validator('expected_result')
-    @classmethod
-    def validate_expected_result(cls, v):
-        return JSONFieldValidator.validate_expected_result(v)
+    # expected_result field validation removed - field is removed from model
 
 
 # Response models
@@ -114,7 +105,8 @@ class UnifiedTestCaseResponse(UnifiedTestCaseBase):
     id: int = Field(..., description="测试用例ID")
     project_id: int = Field(..., description="项目ID")
     business_type: str = Field(..., description="业务类型")
-    case_id: str = Field(..., description="测试用例ID")
+    case_id: str = Field(..., alias="test_case_id", description="测试用例ID")
+    test_case_id: str = Field(..., description="测试用例ID（与case_id相同，用于前端兼容）")
 
     # Stage information
     stage: UnifiedTestCaseStage = Field(..., description="当前阶段")
@@ -125,9 +117,9 @@ class UnifiedTestCaseResponse(UnifiedTestCaseBase):
     functional_domain: Optional[str] = Field(None, description="功能域")
 
     # Execution details
-    preconditions: Optional[List[str]] = Field(None, description="前置条件")
+    preconditions: Optional[str] = Field(None, max_length=5000, description="前置条件")
     steps: Optional[List[Dict[str, Any]]] = Field(None, description="执行步骤")
-    expected_result: Optional[List[str]] = Field(None, description="预期结果")
+    # Note: expected_result is removed - use expected field in steps instead
     remarks: Optional[str] = Field(None, description="备注")
 
     # Metadata
@@ -136,7 +128,7 @@ class UnifiedTestCaseResponse(UnifiedTestCaseBase):
     created_at: datetime = Field(..., description="创建时间")
     updated_at: datetime = Field(..., description="更新时间")
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
 class UnifiedTestCaseListResponse(BaseModel):
@@ -156,7 +148,6 @@ class UnifiedTestCaseFilter(BaseModel):
     stage: Optional[UnifiedTestCaseStage] = Field(None, description="阶段")
     priority: Optional[str] = Field(None, pattern="^(low|medium|high)$", description="优先级")
     keyword: Optional[str] = Field(None, description="关键词搜索")
-    test_point_ids: Optional[List[int]] = Field(None, description="测试点ID列表")
 
     # Pagination
     page: int = Field(1, ge=1, description="页码")
@@ -201,7 +192,7 @@ class UnifiedTestCaseGenerationRequest(BaseModel):
     business_type: str = Field(..., description="业务类型")
 
     # Existing data for enhancement modes
-    test_point_ids: Optional[List[int]] = Field(None, description="现有测试点ID列表（用于从测试点生成模式）")
+    test_case_ids: Optional[List[int]] = Field(None, description="现有测试用例ID列表（用于增强模式）")
 
     # Additional context
     additional_context: Optional[Dict[str, Any]] = Field(None, description="额外上下文")
@@ -218,7 +209,7 @@ class UnifiedTestCaseGenerationResponse(BaseModel):
     status: str = Field(..., description="任务状态")
     test_points_generated: int = Field(..., description="生成的测试点数量")
     test_cases_generated: int = Field(..., description="生成的测试用例数量")
-    test_case_items: Optional[List[UnifiedTestCaseResponse]] = Field(None, description="生成的测试用例列表")
+    unified_test_cases: Optional[List[UnifiedTestCaseResponse]] = Field(None, description="生成的测试用例列表")
     generation_time: Optional[float] = Field(None, description="生成耗时（秒）")
     message: str = Field(..., description="状态消息")
 

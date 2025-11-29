@@ -122,7 +122,7 @@ class NameValidationService:
                 # Check for exact matches
                 exact_query = text("""
                     SELECT id, name, test_case_id
-                    FROM test_case_items tci
+                    FROM unified_test_cases tci
                     JOIN projects tcg ON tci.project_id = tcg.id
                     WHERE tcg.business_type = :business_type
                     AND tci.name = :name
@@ -146,7 +146,7 @@ class NameValidationService:
                 similar_query = text("""
                     SELECT id, name, test_case_id,
                            LOWER(tci.name) as lower_name
-                    FROM test_case_items tci
+                    FROM unified_test_cases tci
                     JOIN projects tcg ON tci.project_id = tcg.id
                     WHERE tcg.business_type = :business_type
                     AND LOWER(tci.name) = LOWER(:name)
@@ -225,7 +225,7 @@ class NameValidationService:
                     # Get test case suggestions
                     tc_query = text("""
                         SELECT id, name, test_case_id
-                        FROM test_case_items tci
+                        FROM unified_test_cases tci
                         JOIN projects tcg ON tci.project_id = tcg.id
                         WHERE tcg.business_type = :business_type
                         AND LOWER(tci.name) LIKE LOWER(:partial_name)

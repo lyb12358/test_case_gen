@@ -125,7 +125,6 @@ class DatabaseManager:
                 "checked_in": pool.checkedin(),
                 "checked_out": pool.checkedout(),
                 "overflow": pool.overflow(),
-                "invalid": pool.invalid(),
                 "pool_connections": {
                     "current_size": pool.size(),
                     "max_overflow": pool._max_overflow,

@@ -16,18 +16,18 @@ from pydantic import BaseModel
 
 from ..database.models import (
     UnifiedTestCase, Project,
-    BusinessType, GenerationJob, UnifiedTestCaseStatus
+    BusinessType, GenerationJob, UnifiedTestCaseStatus, UnifiedTestCaseStage as DatabaseUnifiedTestCaseStage
 )
 from ..models.unified_test_case import (
     UnifiedTestCaseCreate, UnifiedTestCaseUpdate, UnifiedTestCaseResponse,
     UnifiedTestCaseListResponse, UnifiedTestCaseFilter, UnifiedTestCaseStatistics,
     UnifiedTestCaseBatchOperation, UnifiedTestCaseBatchResponse,
     UnifiedTestCaseGenerationRequest, UnifiedTestCaseGenerationResponse,
-    UnifiedTestCaseStage, UnifiedTestCaseDeleteResponse
+    UnifiedTestCaseStage as SchemaUnifiedTestCaseStage, UnifiedTestCaseDeleteResponse
 )
 
 from .dependencies import get_db
-from ..core.test_point_generator import TestPointGenerator
+# TestPointGenerator removed - using unified generation system
 from ..core.test_case_generator import TestCaseGenerator
 from ..services.sync_transaction_manager import SyncTransactionManager
 from ..utils.config import Config
@@ -82,18 +82,15 @@ async def get_unified_test_cases_impl(
                 )
             )
 
-        # 按测试点ID过滤
-        if filter_params.test_point_ids:
-            query = query.filter(UnifiedTestCase.test_point_id.in_(filter_params.test_point_ids))
-
+  
         # 按阶段过滤
-        if filter_params.stage == UnifiedTestCaseStage.TEST_POINT:
+        if filter_params.stage == SchemaUnifiedTestCaseStage.TEST_POINT:
             query = query.filter(
-                UnifiedTestCase.steps.is_(None)
+                UnifiedTestCase.stage == DatabaseUnifiedTestCaseStage.test_point
             )
-        elif filter_params.stage == UnifiedTestCaseStage.TEST_CASE:
+        elif filter_params.stage == SchemaUnifiedTestCaseStage.TEST_CASE:
             query = query.filter(
-                UnifiedTestCase.steps.isnot(None)
+                UnifiedTestCase.stage == DatabaseUnifiedTestCaseStage.test_case
             )
 
         # 获取总数
@@ -113,10 +110,11 @@ async def get_unified_test_cases_impl(
         # 转换为响应模型
         test_case_responses = []
         for test_case in test_cases:
+            # Convert database stage enum to schema stage enum
             stage = (
-                UnifiedTestCaseStage.TEST_POINT
+                SchemaUnifiedTestCaseStage.TEST_POINT
                 if test_case.is_test_point_stage()
-                else UnifiedTestCaseStage.TEST_CASE
+                else SchemaUnifiedTestCaseStage.TEST_CASE
             )
 
             response_data = UnifiedTestCaseResponse(
@@ -124,6 +122,7 @@ async def get_unified_test_cases_impl(
                 project_id=test_case.project_id,
                 business_type=_get_business_type_value(test_case.business_type),
                 case_id=test_case.test_case_id,
+                test_case_id=test_case.test_case_id,
                 name=test_case.name,
                 description=test_case.description,
                 priority=test_case.priority,
@@ -134,8 +133,7 @@ async def get_unified_test_cases_impl(
                 functional_domain=test_case.functional_domain,
                 preconditions=_parse_json_field(test_case.preconditions),
                 steps=_parse_steps_field(test_case.steps),
-                expected_result=_parse_json_field(test_case.expected_result),
-                remarks=test_case.remarks,
+                                remarks=test_case.remarks,
                 generation_job_id=test_case.generation_job_id,
                 entity_order=test_case.entity_order,
                 created_at=test_case.created_at,
@@ -166,10 +164,9 @@ async def get_unified_test_cases(
     project_id: Optional[int] = Query(None, description="项目ID"),
     business_type: Optional[str] = Query(None, description="业务类型"),
     status: Optional[UnifiedTestCaseStatus] = Query(None, description="状态"),
-    stage: Optional[UnifiedTestCaseStage] = Query(None, description="阶段"),
+    stage: Optional[SchemaUnifiedTestCaseStage] = Query(None, description="阶段"),
     priority: Optional[str] = Query(None, pattern="^(low|medium|high)$", description="优先级"),
     keyword: Optional[str] = Query(None, description="关键词搜索"),
-    test_point_ids: Optional[List[int]] = Query(None, description="测试点ID列表"),
     sort_by: str = Query("created_at", description="排序字段"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="排序方向"),
     db: Session = Depends(get_db)
@@ -187,7 +184,6 @@ async def get_unified_test_cases(
         stage=stage,
         priority=priority,
         keyword=keyword,
-        test_point_ids=test_point_ids,
         sort_by=sort_by,
         sort_order=sort_order
     )
@@ -208,16 +204,18 @@ async def get_unified_test_case(
         if not test_case:
             raise HTTPException(status_code=404, detail="测试用例不存在")
 
+        # Convert database stage enum to schema stage enum
         stage = (
-            UnifiedTestCaseStage.TEST_POINT
+            SchemaUnifiedTestCaseStage.TEST_POINT
             if test_case.is_test_point_stage()
-            else UnifiedTestCaseStage.TEST_CASE
+            else SchemaUnifiedTestCaseStage.TEST_CASE
         )
 
         return UnifiedTestCaseResponse(
             id=test_case.id,
             project_id=test_case.project_id,
             business_type=_get_business_type_value(test_case.business_type),
+            test_case_id=test_case.test_case_id,
             case_id=test_case.test_case_id,
             name=test_case.name,
             description=test_case.description,
@@ -229,8 +227,7 @@ async def get_unified_test_case(
             functional_domain=test_case.functional_domain,
             preconditions=_parse_json_field(test_case.preconditions),
             steps=_parse_json_field(test_case.steps),
-            expected_result=_parse_json_field(test_case.expected_result),
-            remarks=test_case.remarks,
+                        remarks=test_case.remarks,
             generation_job_id=test_case.generation_job_id,
             entity_order=test_case.entity_order,
             created_at=test_case.created_at,
@@ -256,12 +253,12 @@ async def create_unified_test_case(
         if not project:
             raise HTTPException(status_code=400, detail="项目不存在")
 
-        # 检查case_id在项目内的唯一性
+        # 检查test_case_id在项目内的唯一性
         existing_case = db.query(UnifiedTestCase).filter(
             and_(
                 UnifiedTestCase.project_id == test_case_data.project_id,
                 UnifiedTestCase.business_type == test_case_data.business_type,
-                UnifiedTestCase.test_case_id == test_case_data.case_id
+                UnifiedTestCase.test_case_id == test_case_data.test_case_id
             )
         ).first()
 
@@ -280,37 +277,34 @@ async def create_unified_test_case(
                 detail=f"Test case name '{test_case_data.name}' already exists in business type '{test_case_data.business_type}'"
             )
 
-        # 如果有test_point_id，需要从测试点继承字段
-        inherited_fields = {}
-        if hasattr(test_case_data, 'test_point_id') and test_case_data.test_point_id:
-            from ..database.models import TestPoint
-            test_point = db.query(TestPoint).filter(TestPoint.id == test_case_data.test_point_id).first()
-            if test_point:
-                logger.info(f"继承测试点字段: test_point_id={test_case_data.test_point_id}")
-                inherited_fields = {
-                    'business_type': test_point.business_type,
-                    'priority': test_point.priority
-                }
-                # 也可以继承名称和描述，但这可能导致冲突，根据业务需求决定
-                # name=test_point.title,
-                # description=test_point.description
+        # 根据是否有执行步骤确定stage
+        has_steps = test_case_data.steps and len(test_case_data.steps) > 0
+        has_preconditions = test_case_data.preconditions and len(test_case_data.preconditions) > 0
+        stage = DatabaseUnifiedTestCaseStage.test_case if (has_steps or has_preconditions) else DatabaseUnifiedTestCaseStage.test_point
 
-        # 创建统一测试用例，继承字段优先使用继承值，前端提供的值作为覆盖
+        # Convert business_type string to BusinessType enum
+        try:
+            business_type_enum = BusinessType(test_case_data.business_type)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid business_type '{test_case_data.business_type}'. Must be one of: {[bt.value for bt in BusinessType]}"
+            )
+
         db_test_case = UnifiedTestCase(
             project_id=test_case_data.project_id,
-            business_type=inherited_fields.get('business_type', test_case_data.business_type),
-            test_case_id=test_case_data.case_id,
-            test_point_id=getattr(test_case_data, 'test_point_id', None),
+            business_type=business_type_enum,
+            test_case_id=test_case_data.test_case_id,
             name=test_case_data.name,
             description=test_case_data.description,
-            priority=inherited_fields.get('priority', test_case_data.priority),
+            priority=test_case_data.priority,
             status=test_case_data.status.value if test_case_data.status else UnifiedTestCaseStatus.DRAFT,
+            stage=stage,
             module=test_case_data.module,
             functional_module=test_case_data.functional_module,
             functional_domain=test_case_data.functional_domain,
-            preconditions=_serialize_json_field(test_case_data.preconditions),
-            steps=_serialize_json_field(test_case_data.steps),
-            expected_result=_serialize_json_field(test_case_data.expected_result),
+            preconditions=test_case_data.preconditions if test_case_data.preconditions and test_case_data.preconditions.strip() else None,
+            steps=json.dumps(test_case_data.steps, ensure_ascii=False) if test_case_data.steps else None,
             remarks=test_case_data.remarks,
             entity_order=test_case_data.entity_order,
             created_at=datetime.now(),
@@ -321,10 +315,11 @@ async def create_unified_test_case(
         db.commit()
         db.refresh(db_test_case)
 
+        # Convert database stage enum to schema stage enum
         stage = (
-            UnifiedTestCaseStage.TEST_POINT
+            SchemaUnifiedTestCaseStage.TEST_POINT
             if db_test_case.is_test_point_stage()
-            else UnifiedTestCaseStage.TEST_CASE
+            else SchemaUnifiedTestCaseStage.TEST_CASE
         )
 
         return UnifiedTestCaseResponse(
@@ -332,6 +327,7 @@ async def create_unified_test_case(
             project_id=db_test_case.project_id,
             business_type=_get_business_type_value(db_test_case.business_type),
             case_id=db_test_case.test_case_id,
+            test_case_id=db_test_case.test_case_id,
             name=db_test_case.name,
             description=db_test_case.description,
             priority=db_test_case.priority,
@@ -342,7 +338,6 @@ async def create_unified_test_case(
             functional_domain=db_test_case.functional_domain,
             preconditions=_parse_json_field(db_test_case.preconditions),
             steps=_parse_json_field(db_test_case.steps),
-            expected_result=_parse_json_field(db_test_case.expected_result),
             remarks=db_test_case.remarks,
             generation_job_id=db_test_case.generation_job_id,
             entity_order=db_test_case.entity_order,
@@ -377,8 +372,22 @@ async def update_unified_test_case(
         if 'status' in update_data:
             update_data['status'] = update_data['status'].value
 
+        # 添加缺失的business_type枚举转换
+        if 'business_type' in update_data:
+            try:
+                logger.info(f"Converting business_type from string '{update_data['business_type']}' to enum")
+                business_type_enum = BusinessType(update_data['business_type'])
+                update_data['business_type'] = business_type_enum
+                logger.info(f"Successfully converted business_type to enum: {business_type_enum}")
+            except ValueError as e:
+                logger.error(f"Failed to convert business_type '{update_data['business_type']}' to enum: {str(e)}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid business_type '{update_data['business_type']}'. Must be one of: {[bt.value for bt in BusinessType]}"
+                )
+
         # 处理JSON字段
-        json_fields = ['preconditions', 'steps', 'expected_result']
+        json_fields = ['preconditions', 'steps']
         for field in json_fields:
             if field in update_data:
                 update_data[field] = _serialize_json_field(update_data[field])
@@ -392,15 +401,20 @@ async def update_unified_test_case(
         if 'name' in update_data and update_data['name'] != test_case.name:
             # Check for business-scoped name uniqueness before updating
             sync_manager = SyncTransactionManager(db)
+            # 优先使用更新后的新业务类型（确保转换为字符串用于验证）
+            new_business_type = update_data.get('business_type', test_case.business_type)
+            # 如果是枚举类型，转换为字符串值
+            if hasattr(new_business_type, 'value'):
+                new_business_type = new_business_type.value
             if not sync_manager.validate_business_uniqueness(
-                business_type=test_case.business_type,
+                business_type=new_business_type,
                 name=update_data['name'],
                 entity_type='test_case',
                 exclude_id=test_case.id
             ):
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Test case name '{update_data['name']}' already exists in business type '{test_case.business_type}'"
+                    detail=f"Test case name '{update_data['name']}' already exists in business type '{new_business_type}'"
                 )
 
             name_updated = True
@@ -411,34 +425,31 @@ async def update_unified_test_case(
         for field, value in update_data.items():
             setattr(test_case, field, value)
 
-        # Sync name to test point if name was updated, within the same transaction
-        if name_updated and test_case.test_point_id:
-            sync_manager = SyncTransactionManager(db)
-            logger.info(f"Initiating name sync from test case {test_case_id} to test point {test_case.test_point_id}")
-            sync_success = sync_manager.sync_names_within_transaction(
-                source_type='test_case',
-                source_id=test_case_id,
-                new_name=new_name
+        # 添加数据库操作的错误处理
+        try:
+            db.commit()
+            logger.info(f"Successfully updated test case {test_case_id} with data: {update_data}")
+            db.refresh(test_case)
+        except Exception as db_error:
+            db.rollback()
+            logger.error(f"Database error when updating test case {test_case_id}: {str(db_error)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"数据库更新失败: {str(db_error)}"
             )
-            if sync_success:
-                logger.info(f"Successfully synced name from test case {test_case_id} to test point {test_case.test_point_id}")
-            else:
-                logger.warning(f"Name sync failed for test case {test_case_id} to test point {test_case.test_point_id}, but test case update proceeded")
 
-        db.commit()
-
-        db.refresh(test_case)
-
+        # Convert database stage enum to schema stage enum
         stage = (
-            UnifiedTestCaseStage.TEST_POINT
+            SchemaUnifiedTestCaseStage.TEST_POINT
             if test_case.is_test_point_stage()
-            else UnifiedTestCaseStage.TEST_CASE
+            else SchemaUnifiedTestCaseStage.TEST_CASE
         )
 
         return UnifiedTestCaseResponse(
             id=test_case.id,
             project_id=test_case.project_id,
             business_type=_get_business_type_value(test_case.business_type),
+            test_case_id=test_case.test_case_id,
             case_id=test_case.test_case_id,
             name=test_case.name,
             description=test_case.description,
@@ -450,8 +461,7 @@ async def update_unified_test_case(
             functional_domain=test_case.functional_domain,
             preconditions=_parse_json_field(test_case.preconditions),
             steps=_parse_json_field(test_case.steps),
-            expected_result=_parse_json_field(test_case.expected_result),
-            remarks=test_case.remarks,
+                        remarks=test_case.remarks,
             generation_job_id=test_case.generation_job_id,
             entity_order=test_case.entity_order,
             created_at=test_case.created_at,
@@ -524,7 +534,6 @@ async def delete_unified_test_case(
                 # Option 1: Convert test case back to test point by removing execution details
                 test_case.steps = None
                 test_case.preconditions = None
-                test_case.expected_result = None
                 test_case.module = None
                 test_case.functional_module = None
                 test_case.functional_domain = None
@@ -832,7 +841,7 @@ async def generate_test_cases_unified(
             "status": JobStatus.PENDING.value,
             "test_points_generated": 0,
             "test_cases_generated": 0,  # Will be updated when job completes
-            "test_case_items": None,  # Will be populated when job completes
+            "unified_test_cases": None,  # Will be populated when job completes
             "generation_time": None,
             "message": f"测试用例生成任务已创建: {task_id}"
         }
@@ -899,7 +908,7 @@ async def generate_full_two_stage_unified(
             "status": JobStatus.PENDING.value,
             "test_points_generated": 0,  # Will be updated when job completes
             "test_cases_generated": 0,  # Will be updated when job completes
-            "test_case_items": None,  # Will be populated when job completes
+            "unified_test_cases": None,  # Will be populated when job completes
             "generation_time": None,
             "message": f"完整两阶段测试生成任务已创建: {task_id}"
         }
@@ -949,13 +958,14 @@ async def _generate_test_points_background_unified(
 ):
     """Background task for generating test points in unified system."""
     try:
-        from ..core.test_point_generator import TestPointGenerator
-        from ..database.models import GenerationJob, JobStatus, object
+        # TestPointGenerator removed - using unified generation system
+        from ..database.models import GenerationJob, JobStatus, UnifiedTestCase
         from datetime import datetime
         import json
 
         config = Config()
-        generator = TestPointGenerator(config)
+        from ..services.generation_service import UnifiedGenerationService
+        generator_service = UnifiedGenerationService(config)
 
         # Update job status to running
         with config.db_manager.get_session() as db:
@@ -967,9 +977,10 @@ async def _generate_test_points_background_unified(
                 db.commit()
 
         # Generate test points
-        test_points_data = generator.generate_test_points(
+        test_points_data = generator_service.test_case_generator.generate_test_points_only(
             business_type=business_type,
-            additional_context=additional_context
+            additional_context=additional_context,
+            save_to_db=False
         )
 
         if not test_points_data:
@@ -999,7 +1010,7 @@ async def _generate_test_points_background_unified(
                 test_point = UnifiedTestCase(
                     project_id=project_id,
                     business_type=business_type,
-                    case_id=point_data.get('test_point_id', f'TP{str(i+1).zfill(3)}'),
+                    test_case_id=point_data.get('test_point_id', f'TP{str(i+1).zfill(3)}'),
                     name=point_data.get('title', f'测试点 {i+1}'),
                     description=point_data.get('description', ''),
                     status='draft',
@@ -1007,7 +1018,6 @@ async def _generate_test_points_background_unified(
                     # Test points don't have execution details
                     preconditions=None,
                     steps=None,
-                    expected_result=None,
                     entity_order=float(i + 1),
                     generation_job_id=task_id
                 )
@@ -1116,7 +1126,6 @@ async def _generate_test_cases_background_unified(
                     # Convert test point to test case by adding execution details
                     test_point.steps = json.dumps(case_data.get('steps', []), ensure_ascii=False)
                     test_point.preconditions = json.dumps(case_data.get('preconditions', []), ensure_ascii=False)
-                    test_point.expected_result = json.dumps(case_data.get('expected_result', []), ensure_ascii=False)
                     test_point.module = case_data.get('module', '')
                     test_point.functional_module = case_data.get('functional_module', '')
                     test_point.functional_domain = case_data.get('functional_domain', '')

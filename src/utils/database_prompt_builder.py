@@ -289,14 +289,14 @@ class DatabasePromptBuilder:
 
                 # Validate test case configuration
                 if test_case_combination_id:
-                    test_case_items = db.query(PromptCombinationItem).filter(
+                    unified_test_cases = db.query(PromptCombinationItem).filter(
                         PromptCombinationItem.combination_id == test_case_combination_id
                     ).all()
 
                     validation_result["test_case_config"] = {
                         "combination_id": test_case_combination_id,
-                        "items_count": len(test_case_items),
-                        "has_items": len(test_case_items) > 0
+                        "items_count": len(unified_test_cases),
+                        "has_items": len(unified_test_cases) > 0
                     }
                 else:
                     validation_result["valid"] = False
