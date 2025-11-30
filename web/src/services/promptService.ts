@@ -61,7 +61,7 @@ export const promptService = {
     type?: PromptType;
     business_type?: BusinessType;
     status?: PromptStatus;
-    generation_stage?: GenerationStage;
+    generation_stage?: string;
     category_id?: number;
     search?: string;
     project_id?: number;

@@ -4,15 +4,29 @@
 
 import type { BusinessType } from './index';
 
+// Re-export BusinessType for use in other modules
+export type { BusinessType };
+
 // Basic interfaces
 export interface Prompt {
   id: number;
   name: string;
   content: string;
-  type: string;
+  type: PromptType;
   business_type?: string;
-  status: string;
+  status: PromptStatus;
+  generation_stage?: string;
   project_id: number;
+  author?: string;
+  version: string;
+  tags?: string[];
+  variables?: string[];
+  extra_metadata?: Record<string, any>;
+  category_id?: number;
+  category?: {
+    name: string;
+  };
+  file_path?: string;
   created_at: string;
   updated_at: string;
 }
@@ -99,6 +113,11 @@ export interface PromptCreate {
   status?: PromptStatus;
   generation_stage?: GenerationStage;
   description?: string;
+  author?: string;
+  version?: string;
+  tags?: string[];
+  variables?: string[];
+  extra_metadata?: Record<string, any>;
 }
 
 export interface PromptUpdate {
@@ -110,13 +129,18 @@ export interface PromptUpdate {
   status?: PromptStatus;
   generation_stage?: GenerationStage;
   description?: string;
+  author?: string;
+  version?: string;
+  tags?: string[];
+  variables?: string[];
+  extra_metadata?: Record<string, any>;
 }
 
 // Response types
 export interface PromptListResponse {
-  prompts: Prompt[];
+  items: Prompt[];
   total: number;
-  page: number;
+  pages: number;
   size: number;
 }
 
@@ -304,6 +328,7 @@ export interface PromptPreviewResponse {
 
 export interface PromptValidationResponse {
   valid: boolean;
+  is_valid?: boolean;  // Backward compatibility property
   errors?: string[];
   warnings?: string[];
   suggestions?: string[];
@@ -311,6 +336,9 @@ export interface PromptValidationResponse {
 
 export interface PromptStatistics {
   total_prompts: number;
+  active_prompts: number;
+  draft_prompts: number;
+  archived_prompts: number;
   prompts_by_type: Record<PromptType, number>;
   prompts_by_status: Record<PromptStatus, number>;
   prompts_by_business_type: Record<BusinessType, number>;

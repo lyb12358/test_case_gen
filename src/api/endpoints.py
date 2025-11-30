@@ -42,7 +42,9 @@ from .business_endpoints import router as business_router
 # test_point_endpoints removed - using unified_test_case_endpoints for both test points and test cases
 from .generation_endpoints import router as generation_router
 from .unified_test_case_endpoints import router as unified_test_case_router
+from .unified_generation_endpoints import router as unified_generation_router
 from ..middleware.error_handler import setup_error_handler
+from ..middleware.validation import setup_validation
 from ..websocket.endpoints import router as websocket_router
 
 
@@ -337,6 +339,9 @@ app.add_middleware(RequestIDMiddleware)
 
 # Setup error handling middleware
 setup_error_handler(app)
+
+# Setup validation middleware (max 10MB request size)
+setup_validation(app, max_request_size=10*1024*1024)
 
 # Configuration
 config = Config()
@@ -1121,42 +1126,6 @@ async def delete_test_cases_by_business_type(
         "deleted_knowledge_relations_count": deleted_knowledge_relations_count
     }
 
-
-# DEPRECATED: This endpoint has been moved to business_endpoints.py and config_endpoints.py
-# to avoid route conflicts. Use /api/v1/business/business-types or /api/v1/config/business-types instead.
-# @main_router.get("/business-types", response_model=BusinessTypeResponse, tags=["business-types"])
-# async def get_business_types(
-    # DEPRECATED: Get list of supported business types from database, filtered by project.
-    # This functionality has been moved to business_endpoints.py and config_endpoints.py
-    #
-    # Args:
-    #     project_id (Optional[int]): Project ID to filter business types by project
-    #     db (Session): Database session
-    #
-    # Returns:
-    #     BusinessTypeResponse: List of supported business types for the specified project
-    # """
-    # # Validate project ID if provided
-    # project = validate_project_id(project_id, db, use_default=False)
-    #
-    # try:
-    #     # Get business types configured for this project
-    #     if project_id:
-    #         business_type_configs = db.query(BusinessTypeConfig).filter(
-    #             BusinessTypeConfig.project_id == project_id,
-    #             BusinessTypeConfig.is_active == True
-    #         ).order_by(BusinessTypeConfig.code).all()
-    #     else:
-    #         # Return all active business types if no project specified
-    #         business_type_configs = db.query(BusinessTypeConfig).filter(
-    #             BusinessTypeConfig.is_active == True
-    #         ).order_by(BusinessTypeConfig.code).all()
-    #
-    #     business_types = [config.code for config in business_type_configs]
-    #     return BusinessTypeResponse(business_types=business_types)
-    #
-    # except Exception as e:
-    #     raise HTTPException(status_code=500, detail=f"Failed to get business types: {str(e)}")
 
 
 
@@ -2558,6 +2527,7 @@ app.include_router(business_router)
 # test_point_router removed - using unified_test_case_router
 app.include_router(unified_test_case_router)
 app.include_router(generation_router)
+app.include_router(unified_generation_router)
 app.include_router(websocket_router)
 
 # Include main router LAST - after all decorators have been executed

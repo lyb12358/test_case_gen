@@ -31,7 +31,9 @@ import {
   ExportOutlined,
   ExperimentOutlined,
   FileTextOutlined,
-  ThunderboltOutlined
+  ThunderboltOutlined,
+  InfoCircleOutlined,
+  WarningOutlined
 } from '@ant-design/icons';
 
 import type { ColumnsType } from 'antd/es/table';
@@ -47,7 +49,8 @@ import {
   UnifiedTestCaseResponse,
   UnifiedTestCaseStatus,
   UnifiedTestCaseCreate,
-  UnifiedTestCaseUpdate
+  UnifiedTestCaseUpdate,
+  UnifiedTestCaseFormData
 } from '../../types/unifiedTestCase';
 import { debounce } from '../../utils/debounce';
 import type { components } from '../../types/api';
@@ -63,20 +66,6 @@ const { TabPane } = Tabs;
 type StageFilter = 'all' | 'test_point' | 'test_case';
 type CreationMode = 'test_point' | 'convert' | 'test_case';
 
-interface UnifiedTestCaseFormData {
-  name: string;
-  business_type: string;
-  priority: string;
-  description?: string;
-  preconditions?: string[];
-  steps?: Array<{
-    id: number;
-    step_number: number;
-    action: string;
-    expected: string;
-  }>;
-  expected_result?: string[];
-}
 
 const UnifiedTestCaseManager: React.FC = () => {
   const [form] = Form.useForm();
@@ -107,6 +96,7 @@ const UnifiedTestCaseManager: React.FC = () => {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [viewModalVisible, setViewModalVisible] = useState(false);
   const [convertModalVisible, setConvertModalVisible] = useState(false);
+  const [aiGenerationModalVisible, setAiGenerationModalVisible] = useState(false);
   const [selectedTestCase, setSelectedTestCase] = useState<UnifiedTestCaseResponse | null>(null);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [searchText, setSearchText] = useState('');
@@ -114,6 +104,12 @@ const UnifiedTestCaseManager: React.FC = () => {
   const [pageSize, setPageSize] = useState(20);
   const [stageFilter, setStageFilter] = useState<StageFilter>('all');
   const [creationMode, setCreationMode] = useState<CreationMode>('test_point');
+
+  // AI生成状态
+  const [aiForm] = Form.useForm();
+  const [generationMode, setGenerationMode] = useState<'test_points_only' | 'test_cases_only'>('test_points_only');
+  const [selectedBusinessType, setSelectedBusinessType] = useState<string>('');
+  const [additionalContext, setAdditionalContext] = useState<string>('');
 
   // 简化的状态重置函数
   const resetFormAndState = useCallback(() => {
@@ -221,7 +217,7 @@ const UnifiedTestCaseManager: React.FC = () => {
 
   // 删除测试用例
   const deleteMutation = useMutation({
-    mutationFn: unifiedGenerationService.deleteUnifiedTestCase.bind(unifiedGenerationService),
+    mutationFn: (id: number) => unifiedGenerationService.deleteUnifiedTestCase(id),
     onSuccess: () => {
       message.success('删除成功');
       setSelectedRowKeys([]);
@@ -230,6 +226,38 @@ const UnifiedTestCaseManager: React.FC = () => {
     onError: (error: any) => {
       console.error('删除失败:', error);
       message.error(`删除失败: ${error.message || '未知错误'}`);
+    }
+  });
+
+  // AI生成mutation
+  const aiGenerationMutation = useMutation({
+    mutationFn: async (params: {
+      business_type: string;
+      generation_mode: 'test_points_only' | 'test_cases_only';
+      test_point_ids?: number[];
+      additional_context?: string;
+    }) => {
+      const requestData = {
+        business_type: params.business_type,
+        project_id: currentProject.id,
+        generation_mode: params.generation_mode,
+        test_point_ids: params.test_point_ids,
+        additional_context: params.additional_context
+      };
+
+      return unifiedGenerationService.generateUnified(requestData);
+    },
+    onSuccess: (response) => {
+      message.success('AI生成任务已创建');
+      setAiGenerationModalVisible(false);
+      aiForm.resetFields();
+      setSelectedBusinessType('');
+      setAdditionalContext('');
+      queryClient.invalidateQueries({ queryKey: ['unifiedTestCases'] });
+    },
+    onError: (error: any) => {
+      console.error('AI生成失败:', error);
+      message.error(`AI生成失败: ${error.response?.data?.detail || error.message || '未知错误'}`);
     }
   });
 
@@ -267,6 +295,10 @@ const UnifiedTestCaseManager: React.FC = () => {
           };
         }),
         // expected_result 字段已移除 - 使用steps中的expected字段
+        remarks: formData.remarks,
+        module: formData.module,
+        functional_module: formData.functional_module,
+        functional_domain: formData.functional_domain
       })
     };
   };
@@ -306,6 +338,30 @@ const UnifiedTestCaseManager: React.FC = () => {
       // expected_result 字段已移除 - 使用steps中的expected字段
     };
   };
+
+  // AI生成处理函数
+  const handleAIGeneration = useCallback((values: any) => {
+    if (!selectedBusinessType) {
+      message.error('请选择业务类型');
+      return;
+    }
+
+    const testPointIds = generationMode === 'test_cases_only'
+      ? selectedRowKeys.map(key => Number(key)).filter(id => !isNaN(id))
+      : undefined;
+
+    if (generationMode === 'test_cases_only' && (!testPointIds || testPointIds.length === 0)) {
+      message.error('生成测试用例需要选择对应的测试点');
+      return;
+    }
+
+    aiGenerationMutation.mutate({
+      business_type: selectedBusinessType,
+      generation_mode: generationMode,
+      test_point_ids: testPointIds,
+      additional_context: values.additional_context
+    });
+  }, [selectedBusinessType, generationMode, selectedRowKeys, aiGenerationMutation, message]);
 
   // 提交表单
   const handleSubmit = useCallback((isEdit: boolean = false) => {
@@ -609,8 +665,7 @@ const UnifiedTestCaseManager: React.FC = () => {
       layout="vertical"
       initialValues={{
         priority: 'medium',
-        steps: [{ id: 1, step_number: 1, action: '', expected: '' }],
-        expected_result: []
+        steps: [{ id: 1, step_number: 1, action: '', expected: '' }]
       }}
     >
       <Row gutter={16}>
@@ -782,6 +837,18 @@ const UnifiedTestCaseManager: React.FC = () => {
                     创建测试用例
                   </Button>
                 </Button.Group>
+
+                {/* AI生成按钮组 */}
+                <Button.Group>
+                  <Button
+                    type="primary"
+                    icon={<ThunderboltOutlined />}
+                    onClick={() => setAiGenerationModalVisible(true)}
+                    style={{ background: '#52c41a', borderColor: '#52c41a' }}
+                  >
+                    AI生成
+                  </Button>
+                </Button.Group>
               </Space>
             </Col>
           </Row>
@@ -918,7 +985,7 @@ const UnifiedTestCaseManager: React.FC = () => {
               <Col span={12}>
                 <div style={{ marginBottom: 16 }}>
                   <Text strong>ID：</Text>
-                  <Tag color="blue">{selectedTestCase.case_id}</Tag>
+                  <Tag color="blue">{selectedTestCase.test_case_id}</Tag>
                 </div>
               </Col>
               <Col span={12}>
@@ -1009,17 +1076,142 @@ const UnifiedTestCaseManager: React.FC = () => {
                     )) || '无'}
                   </div>
                 </div>
-
-                <div style={{ marginBottom: 16 }}>
-                  <Text strong>预期结果：</Text>
-                  <div style={{ marginTop: 8 }}>
-                    {selectedTestCase.expected_result?.join(', ') || '无'}
-                  </div>
-                </div>
               </>
             )}
           </div>
         )}
+      </Modal>
+
+      {/* AI生成模态框 */}
+      <Modal
+        title="AI智能生成"
+        open={aiGenerationModalVisible}
+        onCancel={() => {
+          setAiGenerationModalVisible(false);
+          aiForm.resetFields();
+          setSelectedBusinessType('');
+          setAdditionalContext('');
+        }}
+        footer={[
+          <Button key="cancel" onClick={() => {
+            setAiGenerationModalVisible(false);
+            aiForm.resetFields();
+            setSelectedBusinessType('');
+            setAdditionalContext('');
+          }}>
+            取消
+          </Button>,
+          <Button
+            key="generate"
+            type="primary"
+            onClick={() => aiForm.submit()}
+            loading={aiGenerationMutation.isPending}
+            style={{ background: '#52c41a', borderColor: '#52c41a' }}
+          >
+            {aiGenerationMutation.isPending ? '生成中...' : '开始生成'}
+          </Button>
+        ]}
+        width={800}
+        destroyOnHidden
+      >
+        <Form
+          form={aiForm}
+          layout="vertical"
+          onFinish={handleAIGeneration}
+          initialValues={{
+            additional_context: ''
+          }}
+        >
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                label="生成模式"
+                name="generation_mode"
+                rules={[{ required: true, message: '请选择生成模式' }]}
+              >
+                <Select
+                  value={generationMode}
+                  onChange={(value) => {
+                    setGenerationMode(value);
+                    if (value === 'test_cases_only') {
+                      message.info('测试用例生成需要先选择对应的测试点');
+                    }
+                  }}
+                  placeholder="请选择生成模式"
+                >
+                  <Select.Option value="test_points_only">
+                    <Space>
+                      <ExperimentOutlined />
+                      生成测试点
+                    </Space>
+                  </Select.Option>
+                  <Select.Option value="test_cases_only">
+                    <Space>
+                      <FileTextOutlined />
+                      生成测试用例
+                    </Space>
+                  </Select.Option>
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                label="业务类型"
+                name="business_type"
+                rules={[{ required: true, message: '请选择业务类型' }]}
+              >
+                <Select
+                  value={selectedBusinessType}
+                  onChange={setSelectedBusinessType}
+                  placeholder="请选择业务类型"
+                >
+                  {businessTypes?.items?.map((type: any) => (
+                    <Select.Option key={type.code} value={type.code}>
+                      [{type.code}] {type.name}
+                    </Select.Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+          </Row>
+
+          {generationMode === 'test_cases_only' && (
+            <div style={{ marginBottom: 16 }}>
+              <Text type="secondary">
+                <InfoCircleOutlined /> 测试用例生成模式：将基于选中的测试点生成对应的测试用例，请在表格中先选择测试点
+              </Text>
+            </div>
+          )}
+
+          {generationMode === 'test_cases_only' && selectedRowKeys.length === 0 && (
+            <div style={{ marginBottom: 16, padding: 12, backgroundColor: '#fff7e6', border: '1px solid #ffd591', borderRadius: 4 }}>
+              <Text type="warning">
+                <WarningOutlined /> 请先在表格中选择要生成测试用例的测试点
+              </Text>
+            </div>
+          )}
+
+          {generationMode === 'test_points_only' && (
+            <div style={{ marginBottom: 16 }}>
+              <Text type="secondary">
+                <InfoCircleOutlined /> 测试点生成模式：将根据选定的业务类型生成新的测试点
+              </Text>
+            </div>
+          )}
+
+          <Form.Item
+            label="额外上下文（可选）"
+            name="additional_context"
+            help="提供额外的上下文信息，帮助AI更好地生成内容"
+          >
+            <Input.TextArea
+              rows={4}
+              placeholder="请输入额外的上下文信息（可选）"
+              value={additionalContext}
+              onChange={(e) => setAdditionalContext(e.target.value)}
+            />
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   );

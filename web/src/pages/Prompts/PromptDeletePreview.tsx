@@ -28,6 +28,11 @@ import {
 
 const { Title, Text, Paragraph } = Typography;
 
+// Type guard function to distinguish between batch and single delete data
+const isBatchDeletePreviewData = (data: DeletePreviewData | BatchDeletePreviewData): data is BatchDeletePreviewData => {
+  return 'prompts' in data && 'combined_dependencies' in data;
+};
+
 interface DeletePreviewData {
   prompt_id: number;
   prompt: {
@@ -100,7 +105,7 @@ const PromptDeletePreview: React.FC<PromptDeletePreviewProps> = ({
   data,
   isBatch = false
 }) => {
-  if (!data || (!isBatch && !data.prompt)) {
+  if (!data || (!isBatch && !isBatchDeletePreviewData(data) && !data.prompt)) {
     return null;
   }
 
@@ -326,8 +331,9 @@ const PromptDeletePreview: React.FC<PromptDeletePreviewProps> = ({
     </Space>
   );
 
-  const singleData = data as DeletePreviewData;
-  const batchData = data as BatchDeletePreviewData;
+  // Use type guards instead of unsafe type assertions
+  const isSingleDelete = !isBatch && !isBatchDeletePreviewData(data);
+  const isBatchDelete = isBatch || isBatchDeletePreviewData(data);
 
   return (
     <Modal
@@ -345,7 +351,7 @@ const PromptDeletePreview: React.FC<PromptDeletePreviewProps> = ({
       cancelText="取消"
       okButtonProps={{
         danger: true,
-        disabled: !data.can_delete && !isBatch,
+        disabled: (isSingleDelete ? !(data as DeletePreviewData).can_delete : isBatchDelete ? !(data as BatchDeletePreviewData).can_delete_all : false),
         loading: loading
       }}
       cancelButtonProps={{
@@ -362,10 +368,10 @@ const PromptDeletePreview: React.FC<PromptDeletePreviewProps> = ({
       ) : (
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
           {/* 阻止删除的原因 */}
-          {!data.can_delete && data.block_reason && (
+          {isSingleDelete && !(data as DeletePreviewData).can_delete && (data as DeletePreviewData).block_reason && (
             <Alert
               message="无法删除"
-              description={data.block_reason}
+              description={(data as DeletePreviewData).block_reason}
               type="error"
               showIcon
               icon={<ExclamationCircleOutlined />}
@@ -373,12 +379,12 @@ const PromptDeletePreview: React.FC<PromptDeletePreviewProps> = ({
           )}
 
           {/* 确认删除的警告 */}
-          {data.can_delete && (
+          {isSingleDelete && (data as DeletePreviewData).can_delete && (
             <Alert
               message="删除操作不可恢复"
               description={
-                isBatch
-                  ? `即将删除 ${batchData.prompts.length} 个提示词及其所有版本历史`
+                isBatchDelete
+                  ? `即将删除 ${(data as BatchDeletePreviewData).prompts.length} 个提示词及其所有版本历史`
                   : '将删除此提示词及其所有版本历史，此操作不可恢复'
               }
               type="warning"
@@ -391,13 +397,13 @@ const PromptDeletePreview: React.FC<PromptDeletePreviewProps> = ({
 
           {/* 内容渲染 */}
           {isBatch ? (
-            renderBatchPreview(batchData)
+            renderBatchPreview(data as BatchDeletePreviewData)
           ) : (
             <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-              {singleData.prompt && renderPromptInfo(singleData.prompt)}
-              {renderVersions(singleData.versions)}
-              {renderCombinations(singleData.combinations)}
-              {renderBusinessConfigs(singleData.business_configs)}
+              {(data as DeletePreviewData).prompt && renderPromptInfo((data as DeletePreviewData).prompt)}
+              {renderVersions((data as DeletePreviewData).versions)}
+              {renderCombinations((data as DeletePreviewData).combinations)}
+              {renderBusinessConfigs((data as DeletePreviewData).business_configs)}
             </Space>
           )}
 
@@ -407,7 +413,7 @@ const PromptDeletePreview: React.FC<PromptDeletePreviewProps> = ({
             <Col span={6}>
               <div style={{ textAlign: 'center' }}>
                 <Title level={4} style={{ margin: 0, color: '#1890ff' }}>
-                  {isBatch ? batchData.prompts.length : 1}
+                  {isBatchDelete ? (data as BatchDeletePreviewData).prompts.length : 1}
                 </Title>
                 <Text type="secondary">提示词</Text>
               </div>
@@ -415,9 +421,9 @@ const PromptDeletePreview: React.FC<PromptDeletePreviewProps> = ({
             <Col span={6}>
               <div style={{ textAlign: 'center' }}>
                 <Title level={4} style={{ margin: 0, color: '#52c41a' }}>
-                  {isBatch
-                    ? batchData.prompts.reduce((sum, p) => sum + p.versions.length, 0)
-                    : singleData.versions.length
+                  {isBatchDelete
+                    ? (data as BatchDeletePreviewData).prompts.reduce((sum, p) => sum + p.versions.length, 0)
+                    : (data as DeletePreviewData).versions.length
                   }
                 </Title>
                 <Text type="secondary">版本历史</Text>
@@ -426,9 +432,9 @@ const PromptDeletePreview: React.FC<PromptDeletePreviewProps> = ({
             <Col span={6}>
               <div style={{ textAlign: 'center' }}>
                 <Title level={4} style={{ margin: 0, color: '#fa8c16' }}>
-                  {isBatch
-                    ? data.combined_dependencies.combinations.length
-                    : singleData.combinations.length
+                  {isBatchDelete
+                    ? (data as BatchDeletePreviewData).combined_dependencies.combinations.length
+                    : (data as DeletePreviewData).combinations.length
                   }
                 </Title>
                 <Text type="secondary">提示词组合</Text>
@@ -437,9 +443,9 @@ const PromptDeletePreview: React.FC<PromptDeletePreviewProps> = ({
             <Col span={6}>
               <div style={{ textAlign: 'center' }}>
                 <Title level={4} style={{ margin: 0, color: '#ff4d4f' }}>
-                  {isBatch
-                    ? data.combined_dependencies.business_configs.length
-                    : singleData.business_configs.length
+                  {isBatchDelete
+                    ? (data as BatchDeletePreviewData).combined_dependencies.business_configs.length
+                    : (data as DeletePreviewData).business_configs.length
                   }
                 </Title>
                 <Text type="secondary">业务配置</Text>

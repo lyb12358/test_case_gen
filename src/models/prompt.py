@@ -119,6 +119,7 @@ class PromptUpdate(BasePromptModel):
     type: Optional[str] = Field(default=None, description="Prompt type")
     business_type: Optional[str] = Field(default=None, description="Associated business type")
     status: Optional[str] = Field(default=None, description="Prompt status")
+    generation_stage: Optional[str] = Field(default=None, description="Generation stage")
 
     # Metadata
     author: Optional[str] = Field(default=None, description="Author name", max_length=100)
@@ -149,6 +150,28 @@ class PromptUpdate(BasePromptModel):
     def validate_prompt_status(cls, v):
         if v is not None and not config_service.validate_prompt_status(v):
             raise ValueError(f"Invalid prompt status: {v}")
+        return v
+
+    @field_validator('generation_stage')
+    @classmethod
+    def validate_generation_stage(cls, v):
+        # 处理边界情况：空字符串或 None 自动转换为 'general'
+        if v is None or v == "":
+            return 'general'
+
+        # 确保值是字符串格式
+        if not isinstance(v, str):
+            return 'general'
+
+        # 去除前后空格
+        v = v.strip()
+        if v == "":
+            return 'general'
+
+        # 验证是否为有效的生成阶段
+        if not config_service.validate_generation_stage(v):
+            raise ValueError(f"Invalid generation stage: {v}")
+
         return v
 
 

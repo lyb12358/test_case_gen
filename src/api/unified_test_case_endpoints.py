@@ -762,14 +762,16 @@ async def get_unified_test_case_statistics(
 
 
 
-@router.post("/generate/test-cases", response_model=UnifiedTestCaseGenerationResponse)
-async def generate_test_cases_unified(
+@router.post("/generate", response_model=UnifiedTestCaseGenerationResponse)
+async def generate_unified(
     request: UnifiedTestCaseGenerationRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
-    Generate test cases from test points in unified system (Stage 2).
+    Unified generation endpoint supporting both test points and test cases generation.
+    - test_points_only: Generate test points for a business type
+    - test_cases_only: Generate test cases from existing test points
     """
     try:
         from datetime import datetime
@@ -792,18 +794,20 @@ async def generate_test_cases_unified(
         if not project:
             raise HTTPException(status_code=400, detail="项目不存在")
 
-        # Check if test points exist when test_point_ids is provided
-        if request.test_point_ids:
-            if len(request.test_point_ids) == 0:
+        # Validate generation mode and parameters
+        if request.generation_mode == "test_cases_only":
+            if not request.test_point_ids or len(request.test_point_ids) == 0:
                 raise HTTPException(
                     status_code=400,
-                    detail="提供的test_point_ids不能为空"
+                    detail="test_cases_only模式需要提供test_point_ids"
                 )
 
+            # Check if test points exist
             test_points = db.query(UnifiedTestCase).filter(
                 UnifiedTestCase.id.in_(request.test_point_ids),
                 UnifiedTestCase.business_type == request.business_type.upper(),
-                UnifiedTestCase.project_id == request.project_id
+                UnifiedTestCase.project_id == request.project_id,
+                UnifiedTestCase.steps.is_(None)  # Only test points
             ).all()
 
             if not test_points:
@@ -826,15 +830,26 @@ async def generate_test_cases_unified(
         db.add(job)
         db.commit()
 
-        # Start background task for test case generation
-        background_tasks.add_task(
-            _generate_test_cases_background_unified,
-            task_id=task_id,
-            business_type=request.business_type.upper(),
-            project_id=request.project_id,
-            test_point_ids=request.test_point_ids,
-            additional_context=request.additional_context
-        )
+        # Start background task based on generation mode
+        if request.generation_mode == "test_points_only":
+            background_tasks.add_task(
+                _generate_test_points_background_unified,
+                task_id=task_id,
+                business_type=request.business_type.upper(),
+                project_id=request.project_id,
+                additional_context=request.additional_context
+            )
+            message = f"测试点生成任务已创建: {task_id}"
+        else:  # test_cases_only
+            background_tasks.add_task(
+                _generate_test_cases_background_unified,
+                task_id=task_id,
+                business_type=request.business_type.upper(),
+                project_id=request.project_id,
+                test_point_ids=request.test_point_ids,
+                additional_context=request.additional_context
+            )
+            message = f"测试用例生成任务已创建: {task_id}"
 
         return {
             "generation_job_id": task_id,
@@ -843,78 +858,13 @@ async def generate_test_cases_unified(
             "test_cases_generated": 0,  # Will be updated when job completes
             "unified_test_cases": None,  # Will be populated when job completes
             "generation_time": None,
-            "message": f"测试用例生成任务已创建: {task_id}"
+            "message": message
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"创建测试用例生成任务失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"创建生成任务失败: {str(e)}")
 
 
-@router.post("/generate/full-two-stage", response_model=UnifiedTestCaseGenerationResponse)
-async def generate_full_two_stage_unified(
-    request: UnifiedTestCaseGenerationRequest,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
-):
-    """
-    Generate test points and test cases in one unified workflow.
-    """
-    try:
-        from datetime import datetime
-        from ..database.models import GenerationJob, JobStatus, BusinessTypeConfig
-
-        # Validate business type
-        business_config = db.query(BusinessTypeConfig).filter(
-            BusinessTypeConfig.code == request.business_type.upper(),
-            BusinessTypeConfig.is_active == True
-        ).first()
-
-        if not business_config:
-            raise HTTPException(
-                status_code=400,
-                detail=f"业务类型 '{request.business_type}' 不存在或未激活"
-            )
-
-        # Validate project exists
-        project = db.query(Project).filter(Project.id == request.project_id).first()
-        if not project:
-            raise HTTPException(status_code=400, detail="项目不存在")
-
-        # Generate task ID
-        task_id = str(uuid.uuid4())
-
-        # Create generation job
-        job = GenerationJob(
-            id=task_id,
-            business_type=request.business_type.upper(),
-            status=JobStatus.PENDING,
-            project_id=request.project_id,
-            created_at=datetime.now()
-        )
-        db.add(job)
-        db.commit()
-
-        # Start background task for full two-stage generation
-        background_tasks.add_task(
-            _generate_full_two_stage_background_unified,
-            task_id=task_id,
-            business_type=request.business_type.upper(),
-            project_id=request.project_id,
-            additional_context=request.additional_context
-        )
-
-        return {
-            "generation_job_id": task_id,
-            "status": JobStatus.PENDING.value,
-            "test_points_generated": 0,  # Will be updated when job completes
-            "test_cases_generated": 0,  # Will be updated when job completes
-            "unified_test_cases": None,  # Will be populated when job completes
-            "generation_time": None,
-            "message": f"完整两阶段测试生成任务已创建: {task_id}"
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"创建完整生成任务失败: {str(e)}")
 
 
 @router.get("/generate/status/{task_id}", response_model=Dict[str, Any])
@@ -954,7 +904,7 @@ async def _generate_test_points_background_unified(
     task_id: str,
     business_type: str,
     project_id: int,
-    additional_context: Optional[Dict[str, Any]] = None
+    additional_context: Optional[str] = None
 ):
     """Background task for generating test points in unified system."""
     try:
@@ -979,7 +929,7 @@ async def _generate_test_points_background_unified(
         # Generate test points
         test_points_data = generator_service.test_case_generator.generate_test_points_only(
             business_type=business_type,
-            additional_context=additional_context,
+            additional_context={"user_input": additional_context} if additional_context else {},
             save_to_db=False
         )
 
@@ -1057,7 +1007,7 @@ async def _generate_test_cases_background_unified(
     business_type: str,
     project_id: int,
     test_point_ids: Optional[List[int]],
-    additional_context: Optional[Dict[str, Any]] = None
+    additional_context: Optional[str] = None
 ):
     """Background task for generating test cases from test points in unified system."""
     try:
@@ -1108,7 +1058,7 @@ async def _generate_test_cases_background_unified(
         test_cases_data = generator.generate_test_cases_from_points(
             business_type=business_type,
             test_points_data=test_points_data,
-            additional_context=additional_context or {}
+            additional_context={"user_input": additional_context} if additional_context else {}
         )
 
         if not test_cases_data:
@@ -1159,69 +1109,6 @@ async def _generate_test_cases_background_unified(
             pass
 
 
-async def _generate_full_two_stage_background_unified(
-    task_id: str,
-    business_type: str,
-    project_id: int,
-    additional_context: Optional[Dict[str, Any]] = None
-):
-    """Background task for complete two-stage generation in unified system."""
-    try:
-        from datetime import datetime
-        import json
-
-        # Stage 1: Generate test points
-        await _generate_test_points_background_unified(
-            task_id, business_type, project_id, additional_context
-        )
-
-        # Get the generated test point IDs
-        config = Config()
-        with config.db_manager.get_session() as db:
-            from ..database.models import GenerationJob
-            job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
-            result_data = json.loads(job.result_data or '{}')
-
-            # Get test points from the group
-            test_points = db.query(UnifiedTestCase).filter(
-                UnifiedTestCase.project_id == project_id,
-                UnifiedTestCase.business_type == business_type,
-                UnifiedTestCase.steps.is_(None)  # Test points only
-            ).all()
-
-            test_point_ids = [tp.id for tp in test_points]
-
-        # Stage 2: Generate test cases from test points
-        await _generate_test_cases_background_unified(
-            task_id, business_type, project_id, test_point_ids, additional_context
-        )
-
-        # Update final completion status
-        with config.db_manager.get_session() as db:
-            job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
-            if job:
-                from ..database.models import JobStatus
-                job.status = JobStatus.COMPLETED
-                job.completed_at = datetime.now()
-                job.result_data = json.dumps({
-                    "test_points_generated": len(test_point_ids),
-                    "message": "完整两阶段生成完成"
-                }, ensure_ascii=False)
-                db.commit()
-
-    except Exception as e:
-        # Update job with error
-        try:
-            config = Config()
-            with config.db_manager.get_session() as db:
-                from ..database.models import GenerationJob, JobStatus
-                job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
-                if job:
-                    job.status = JobStatus.FAILED
-                    job.error_message = str(e)[:2000]
-                    db.commit()
-        except:
-            pass
 
 
 # 辅助函数

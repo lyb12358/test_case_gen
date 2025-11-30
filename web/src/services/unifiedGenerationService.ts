@@ -26,6 +26,7 @@ import {
   UnifiedTestCaseStage,
   UnifiedTestCaseStatus
 } from '../types/unifiedTestCase';
+import { BusinessType, PriorityLevel } from '../types/common';
 
 class UnifiedGenerationService {
   private readonly basePath = '/api/v1';
@@ -98,13 +99,13 @@ class UnifiedGenerationService {
   async getTestPoints(params?: {
     page?: number;
     size?: number;
-    business_type?: BusinessType;
+    business_type?: string;
     project_id?: number;
     // status field removed - test points no longer have status
-    priority?: Priority;
+    priority?: PriorityLevel;
     keyword?: string;
     test_point_ids?: number[];
-  }): Promise<TestPointListResponse> {
+  }): Promise<any> {
     try {
       // 参数验证和标准化
       const validatedParams = this.validateAndNormalizeTestPointParams(params || {});
@@ -124,7 +125,7 @@ class UnifiedGenerationService {
   /**
    * 转换测试点响应数据格式
    */
-  private transformTestPointResponse(data: any): TestPointListResponse {
+  private transformTestPointResponse(data: any): components['schemas']['TestPointListResponse'] {
     // 统一端点返回的数据格式已经兼容，只需要做小的调整
     const items = (data.items || []).map((item: any) => ({
       ...item,
@@ -150,7 +151,7 @@ class UnifiedGenerationService {
   /**
    * 根据ID获取测试点
    */
-  async getTestPointById(id: number, projectId?: number): Promise<TestPoint> {
+  async getTestPointById(id: number, projectId?: number): Promise<any> {
     const params = projectId ? { project_id: projectId } : {};
     // 使用统一测试用例端点，通过stage筛选获取测试点
     const paramsWithStage = { ...params, stage: 'test_point' };
@@ -194,7 +195,7 @@ class UnifiedGenerationService {
   /**
    * 批量操作测试点
    */
-  async batchTestPointOperation(operation: BatchTestPointOperation): Promise<BatchTestPointOperationResponse> {
+  async batchTestPointOperation(operation: any): Promise<any> {
     const response = await apiClient.post('/api/v1/test-points/batch', operation);
     return response.data;
   }
@@ -202,7 +203,7 @@ class UnifiedGenerationService {
   /**
    * 根据业务类型获取测试点
    */
-  async getTestPointsByBusinessType(businessType: string, projectId?: number): Promise<TestPointListResponse> {
+  async getTestPointsByBusinessType(businessType: string, projectId?: number): Promise<any> {
     const params = projectId ? { project_id: projectId } : {};
     const response = await apiClient.get(`/api/v1/test-points/by-business/${businessType}`, { params });
     return response.data;
@@ -211,7 +212,7 @@ class UnifiedGenerationService {
   /**
    * 获取测试点统计信息
    */
-  async getTestPointStatistics(projectId?: number): Promise<TestPointStatistics> {
+  async getTestPointStatistics(projectId?: number): Promise<any> {
     try {
       const params = projectId ? { project_id: projectId } : {};
       const response = await apiClient.get('/api/v1/test-points/stats/overview', { params });
@@ -351,7 +352,7 @@ class UnifiedGenerationService {
 
   /**
    * 从测试点生成测试用例（第二阶段）
-   * 使用标准化的生成API端点
+   * 优化版本，内部使用简化的API
    */
   async generateTestCasesFromPoints(
     businessType: string,
@@ -362,24 +363,39 @@ class UnifiedGenerationService {
       projectId?: number;
     }
   ): Promise<any> {
-    const request = {
-      business_type: businessType,
-      test_points: testPoints,
-      additional_context: options?.additionalContext || {},
-      save_to_database: options?.saveToDatabase ?? true,
-      project_id: options?.projectId
-    };
+    // 提取测试点ID
+    const testPointIds = testPoints.map(tp => tp.id || tp.test_point_id).filter(Boolean);
 
-    const response = await apiClient.post('/api/v1/generation/test-cases', request);
-    return response.data;
+    // 转换additional_context为字符串格式
+    let additionalContextString = '';
+    if (options?.additionalContext) {
+      if (typeof options.additionalContext === 'string') {
+        additionalContextString = options.additionalContext;
+      } else {
+        additionalContextString = JSON.stringify(options.additionalContext);
+      }
+    }
+
+    return this.generateUnified({
+      business_type: businessType,
+      project_id: options?.projectId || 0,
+      generation_mode: 'test_cases_only',
+      test_point_ids: testPointIds,
+      additional_context: additionalContextString
+    });
   }
 
   /**
-   * 批量生成测试点和测试用例
+   * 批量生成（优化版本，使用简化的API）
    */
-  async batchGenerate(request: any): Promise<any> {
-    const response = await apiClient.post('/api/v1/generation/batch', request);
-    return response.data;
+  async batchGenerate(request: {
+    business_type: string;
+    project_id: number;
+    generation_mode: 'test_points_only' | 'test_cases_only';
+    test_point_ids?: number[];
+    additional_context?: string;
+  }): Promise<any> {
+    return this.generateUnified(request);
   }
 
   /**
@@ -512,7 +528,7 @@ class UnifiedGenerationService {
   /**
    * 同步单个名称
    */
-  async syncName(request: NameSyncRequest): Promise<NameSyncResult> {
+  async syncName(request: any): Promise<any> {
     const response = await apiClient.post(`/api/v1/test-points/${request.testPointId}/sync-test-case-names`, request);
     return response.data;
   }
@@ -520,7 +536,7 @@ class UnifiedGenerationService {
   /**
    * 批量同步名称
    */
-  async batchSyncNames(request: BatchNameSyncRequest): Promise<NameSyncResult[]> {
+  async batchSyncNames(request: any): Promise<any[]> {
     const response = await apiClient.post('/api/v1/test-points/batch-sync-test-case-names', request);
     return response.data;
   }
@@ -529,7 +545,7 @@ class UnifiedGenerationService {
    * 获取名称同步预览
    * 分析当前项目中测试点和测试用例的名称不一致情况
    */
-  async getNameSyncPreview(projectId?: number, businessType?: string): Promise<NameSyncPreview[]> {
+  async getNameSyncPreview(projectId?: number, businessType?: string): Promise<any[]> {
     try {
       const params: any = {};
       if (projectId) params.project_id = projectId;
@@ -547,7 +563,7 @@ class UnifiedGenerationService {
   /**
    * 验证名称
    */
-  async validateName(request: NameValidationRequest): Promise<NameValidationResponse> {
+  async validateName(request: any): Promise<any> {
     const response = await apiClient.post('/api/v1/test-points/validate-name', request);
     return response.data;
   }
@@ -556,9 +572,7 @@ class UnifiedGenerationService {
 
   /**
    * Generate test points using the unified endpoint.
-   *
-   * This replaces the old sync-generate endpoint and provides a clean,
-   * consistent interface for test point generation.
+   * 优化版本，内部使用简化的API
    */
   async generateTestPoints(
     businessType: string,
@@ -569,17 +583,22 @@ class UnifiedGenerationService {
       asyncMode?: boolean;
     }
   ): Promise<any> {
-    const request = {
-      business_type: businessType,
-      additional_context: options?.additionalContext || {},
-      save_to_database: options?.saveToDatabase ?? false,
-      project_id: options?.projectId,
-      async_mode: options?.asyncMode ?? false
-    };
+    // 转换additional_context为字符串格式
+    let additionalContextString = '';
+    if (options?.additionalContext) {
+      if (typeof options.additionalContext === 'string') {
+        additionalContextString = options.additionalContext;
+      } else {
+        additionalContextString = JSON.stringify(options.additionalContext);
+      }
+    }
 
-    // Use the new unified generate endpoint
-    const response = await apiClient.post('/api/v1/test-points/generate', request);
-    return response.data;
+    return this.generateUnified({
+      business_type: businessType,
+      project_id: options?.projectId || 0,
+      generation_mode: 'test_points_only',
+      additional_context: additionalContextString
+    });
   }
 
   
@@ -587,45 +606,70 @@ class UnifiedGenerationService {
   // ========== 补充的缺失方法 ==========
 
   /**
-   * 批量生成测试点
+   * 批量生成测试点（优化版本，使用简化的API）
    */
   async batchGenerateTestPoints(businessTypes: string[], options: {
     projectId?: number;
+    additionalContext?: string;
   }): Promise<any> {
-    const request = {
-      business_types: businessTypes,
-      project_id: options?.projectId
-    };
+    // 为每个业务类型生成测试点
+    const promises = businessTypes.map(businessType =>
+      this.generateUnified({
+        business_type: businessType,
+        project_id: options?.projectId || 0,
+        generation_mode: 'test_points_only',
+        additional_context: options?.additionalContext
+      })
+    );
 
-    const response = await apiClient.post('/api/v1/generation/batch', request);
-    return response.data;
+    return Promise.all(promises);
   }
 
   /**
-   * 批量生成测试用例
+   * 批量生成测试用例（优化版本，使用简化的API）
    */
   async batchGenerateTestCases(businessTypes: string[], options: {
     projectId?: number;
+    additionalContext?: string;
   }): Promise<any> {
-    const request = {
-      business_types: businessTypes,
-      project_id: options?.projectId
-    };
+    // 为每个业务类型生成测试用例
+    const promises = businessTypes.map(businessType =>
+      this.generateUnified({
+        business_type: businessType,
+        project_id: options?.projectId || 0,
+        generation_mode: 'test_cases_only',
+        additional_context: options?.additionalContext
+      })
+    );
 
-    const response = await apiClient.post('/api/v1/generation/batch', request);
+    return Promise.all(promises);
+  }
+
+  /**
+   * 统一的AI生成方法（简化的新版本）
+   * 支持test_points_only和test_cases_only两种模式
+   */
+  async generateUnified(request: {
+    business_type: string;
+    project_id: number;
+    generation_mode: 'test_points_only' | 'test_cases_only';
+    test_point_ids?: number[];
+    additional_context?: string;
+  }): Promise<any> {
+    const response = await apiClient.post('/api/v1/unified-test-cases/generate', request);
     return response.data;
   }
 
   /**
-   * 完整的两阶段生成
+   * 完整的两阶段生成（已废弃，端点已移除）
+   * 请使用generateUnified方法分别进行两阶段生成
    */
   async generateFullTwoStage(request: {
     business_type: string;
     project_id: number;
     additional_context?: Record<string, any>;
   }): Promise<any> {
-    const response = await apiClient.post('/api/v1/unified-test-cases/generate/full-two-stage', request);
-    return response.data;
+    throw new Error('generateFullTwoStage方法已废弃，请使用generateUnified方法。端点 /api/v1/unified-test-cases/generate/full-two-stage 已被移除。');
   }
 
   // ========== 变量预览功能 ==========
@@ -675,7 +719,7 @@ class UnifiedGenerationService {
   /**
    * 获取测试点（别名方法，保持向后兼容）
    */
-  async getTestPoint(id: number): Promise<TestPoint> {
+  async getTestPoint(id: number): Promise<any> {
     return this.getTestPointById(id);
   }
 
@@ -703,10 +747,10 @@ class UnifiedGenerationService {
   private validateAndNormalizeTestPointParams(params: {
     page?: number;
     size?: number;
-    business_type?: BusinessType;
+    business_type?: string;
     project_id?: number;
     // status field removed - test points no longer have status
-    priority?: Priority;
+    priority?: PriorityLevel;
     keyword?: string;
     test_point_ids?: number[];
   }): any {

@@ -6,6 +6,7 @@ Provides API endpoints for accessing dynamic configuration data
 including business types, prompt types, and prompt statuses.
 """
 
+import logging
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import Dict, List, Any, Optional
@@ -14,6 +15,8 @@ from ..services.config_service import config_service
 from ..utils.template_variable_resolver import TemplateVariableResolver
 from ..database.database import DatabaseManager
 from ..utils.config import Config
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/config", tags=["configuration"])
 
@@ -375,36 +378,63 @@ async def get_template_variables(
         Template variables with metadata
     """
     try:
+        logger.info(f"🔍 Getting template variables - business_type: {business_type}, include_examples: {include_examples}")
+
         # Initialize template variable resolver
         db_manager = DatabaseManager(Config())
         resolver = TemplateVariableResolver(db_manager)
+        logger.info("✅ TemplateVariableResolver initialized successfully")
 
         # Get available variables from database
         db_variables = resolver.get_available_variables(business_type)
+        logger.info(f"✅ Retrieved {len(db_variables)} variables from database")
 
-        # Define built-in variables with examples
-        builtin_variables = _get_builtin_variables(include_examples)
+        # Define the 3 core working variables
+        core_variables = [
+            {
+                "name": "{{user_input}}",
+                "type": "user_input",
+                "business_type": None,
+                "description": "用户在API调用时提供的额外上下文信息（来自additional_context参数）",
+                "default_value": None,
+                "example": "用户输入：生成50个风险管理相关的测试点"
+            },
+            {
+                "name": "{{test_points}}",
+                "type": "reference_data",
+                "business_type": None,
+                "description": "参考测试点数据，根据生成阶段智能包装：测试点生成时添加防重复警告，测试用例生成时添加一一对应要求",
+                "default_value": None,
+                "example": "参考测试点：\n{\n  \"warning\": \"目前已有这些测试点，不要跟这些测试点内容重复。\",\n  \"test_points\": [...]\n}"
+            },
+            {
+                "name": "{{test_cases}}",
+                "type": "reference_data",
+                "business_type": None,
+                "description": "参考测试用例数据，仅在测试用例生成阶段可用，添加防重复警告",
+                "default_value": None,
+                "example": "参考测试用例：\n{\n  \"warning\": \"目前已有这些测试用例，不要跟这些测试用例内容重复。\",\n  \"test_cases\": [...]\n}"
+            }
+        ]
 
-        # Combine database variables and built-in variables
+        logger.info(f"✅ Retrieved {len(core_variables)} core template variables")
+
+        # Process core variables
         all_variables = []
+        for var in core_variables:
+            try:
+                variable_item = TemplateVariableItem(
+                    name=var['name'],
+                    type=var['type'],
+                    business_type=var.get('business_type'),
+                    description=var.get('description'),
+                    default_value=var.get('default_value')
+                )
+                all_variables.append(variable_item)
+            except Exception as var_error:
+                logger.warning(f"⚠️ Failed to process core variable {var}: {var_error}")
 
-        # Add database variables
-        for var in db_variables:
-            variable_item = TemplateVariableItem(
-                name=var['name'],
-                type=var['type'],
-                business_type=var.get('business_type'),
-                description=var.get('description'),
-                default_value=var.get('default_value')
-            )
-            all_variables.append(variable_item)
-
-        # Add built-in variables
-        for var in builtin_variables:
-            # Skip if business_type filter is specified and variable doesn't match
-            if business_type and var.get('business_type') and var['business_type'] != business_type:
-                continue
-            all_variables.append(TemplateVariableItem(**var))
+        logger.info(f"✅ Successfully processed total of {len(all_variables)} template variables")
 
         return TemplateVariablesResponse(
             variables=all_variables,
@@ -413,98 +443,8 @@ async def get_template_variables(
         )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取模板变量失败: {str(e)}")
+        logger.error(f"❌ Error in get_template_variables: {e}")
+        logger.exception("Full traceback:")
+        raise HTTPException(status_code=500, detail=f"获取模板变量时发生错误: {str(e)}")
 
 
-def _get_builtin_variables(include_examples: bool = True) -> List[Dict[str, Any]]:
-    """
-    Get built-in template variables with metadata.
-
-    Args:
-        include_examples: Whether to include usage examples
-
-    Returns:
-        List of built-in template variables
-    """
-    variables = [
-        {
-            "name": "{{project_name}}",
-            "type": "project",
-            "description": "当前项目的名称",
-            "example": "项目名称：{{project_name}}" if include_examples else None
-        },
-        {
-            "name": "{{project_description}}",
-            "type": "project",
-            "description": "当前项目的描述信息",
-            "example": "项目描述：{{project_description}}" if include_examples else None
-        },
-        {
-            "name": "{{project_id}}",
-            "type": "project",
-            "description": "当前项目的ID",
-            "example": "项目ID：{{project_id}}" if include_examples else None
-        },
-        {
-            "name": "{{business_type}}",
-            "type": "business",
-            "description": "业务类型代码（如RCC、RFD等）",
-            "example": "业务类型：{{business_type}} (远程净化控制)" if include_examples else None
-        },
-        {
-            "name": "{{business_name}}",
-            "type": "business",
-            "description": "业务类型的中文名称",
-            "example": "业务名称：{{business_name}}" if include_examples else None
-        },
-        {
-            "name": "{{business_description}}",
-            "type": "business",
-            "description": "业务类型的详细描述",
-            "example": "业务描述：{{business_description}}" if include_examples else None
-        },
-        {
-            "name": "{{recent_test_points}}",
-            "type": "history_test_points",
-            "description": "最近的测试点列表（JSON格式，最多5条）",
-            "example": "历史测试点：\n{{recent_test_points}}" if include_examples else None
-        },
-        {
-            "name": "{{related_test_cases}}",
-            "type": "history_test_cases",
-            "description": "相关的测试用例列表（JSON格式，最多3条）",
-            "example": "相关测试用例：\n{{related_test_cases}}" if include_examples else None
-        },
-        {
-            "name": "{{common_test_patterns}}",
-            "type": "history_test_cases",
-            "description": "常见的测试模式（从历史用例中提取）",
-            "example": "常见测试模式：\n{{common_test_patterns}}" if include_examples else None
-        },
-        {
-            "name": "{{SYSTEM_BACKGROUND}}",
-            "type": "system",
-            "description": "系统背景信息",
-            "example": "系统背景：\n{{SYSTEM_BACKGROUND}}" if include_examples else None
-        },
-        {
-            "name": "{{BUSINESS_DESCRIPTION}}",
-            "type": "system",
-            "description": "业务描述信息",
-            "example": "业务描述：\n{{BUSINESS_DESCRIPTION}}" if include_examples else None
-        },
-        {
-            "name": "{{ERROR_CODES}}",
-            "type": "system",
-            "description": "相关错误码信息",
-            "example": "错误码：\n{{ERROR_CODES}}" if include_examples else None
-        },
-        {
-            "name": "{{INTERFACE_INFO}}",
-            "type": "system",
-            "description": "接口信息",
-            "example": "接口信息：\n{{INTERFACE_INFO}}" if include_examples else None
-        }
-    ]
-
-    return variables

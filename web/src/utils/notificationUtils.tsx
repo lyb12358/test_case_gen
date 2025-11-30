@@ -11,10 +11,10 @@ import {
   CloseCircleOutlined,
   WarningOutlined,
   ReloadOutlined,
-  ContactSupportOutlined
+  ContactsOutlined
 } from '@ant-design/icons';
 import React from 'react';
-import { UnifiedErrorResponse } from '../types';
+// import { UnifiedErrorResponse } from '../types';
 
 // 通知类型定义
 export type NotificationType = 'success' | 'error' | 'warning' | 'info';
@@ -33,7 +33,7 @@ export interface NotificationConfig {
 
 export interface ErrorDisplayConfig {
   title?: string;
-  error: Error | string | UnifiedErrorResponse;
+  error: Error | string | any;
   context?: string;
   showDetails?: boolean;
   showRetry?: boolean;
@@ -218,7 +218,7 @@ export const showDetailedError = (config: ErrorDisplayConfig) => {
       <Button
         key="contact"
         size="small"
-        icon={<ContactSupportOutlined />}
+        icon={<ContactsOutlined />}
         onClick={() => {
           Modal.info({
             title: '联系技术支持',

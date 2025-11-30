@@ -5,6 +5,7 @@ API endpoints for prompt management system.
 
 import json
 import re
+import logging
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
@@ -23,6 +24,9 @@ from ..database.models import (
     PromptType, PromptStatus, BusinessType, Project, GenerationStage
 )
 from ..database.operations import DatabaseOperations
+
+# 设置日志
+logger = logging.getLogger(__name__)
 
 from ..models.prompt import (
     Prompt as PromptSchema,
@@ -409,8 +413,23 @@ async def update_prompt(
 
     # Update fields
     update_data = prompt_update.dict(exclude_unset=True)
+
+    # 🔍 增强日志：记录更新前的数据状态
+    logger.info(f"🔍 PROMPT UPDATE START - ID: {prompt_id}")
+    logger.info(f"   Before update - generation_stage: {prompt.generation_stage}")
+    logger.info(f"   Update data: {update_data}")
+
     for field, value in update_data.items():
-        if field in ["tags", "variables", "extra_metadata"] and value is not None:
+        if field == "generation_stage":
+            # 特殊处理 generation_stage 字段，避免数据库默认值机制冲突
+            logger.info(f"   Updating generation_stage: {prompt.generation_stage} -> {value}")
+            if value is None or value == "":
+                setattr(prompt, field, 'general')
+                logger.info(f"   Set to default 'general' (value was None/empty)")
+            else:
+                setattr(prompt, field, value)
+                logger.info(f"   Set to provided value: {value}")
+        elif field in ["tags", "variables", "extra_metadata"] and value is not None:
             # Convert lists to JSON
             setattr(prompt, field, json.dumps(value, ensure_ascii=False))
         else:
@@ -419,7 +438,9 @@ async def update_prompt(
     # Update timestamp
     prompt.updated_at = datetime.now()
 
+    logger.info(f"   Before commit - generation_stage: {prompt.generation_stage}")
     db.commit()
+    logger.info(f"   After commit - generation_stage: {prompt.generation_stage}")
 
     # Create version history if content changed
     if "content" in update_data and old_content != prompt.content:
@@ -444,8 +465,17 @@ async def update_prompt(
         db.add(version)
         db.commit()
 
+    # 🔍 关键监控点：检查refresh前的数据状态
+    logger.info(f"   Before db.refresh - generation_stage: {prompt.generation_stage}")
+
     db.refresh(prompt)
-    return await get_prompt(prompt_id, prompt.project_id, db)
+    logger.info(f"   After db.refresh - generation_stage: {prompt.generation_stage}")
+
+    # 🔍 最终返回数据监控
+    result = await get_prompt(prompt_id, prompt.project_id, db)
+    logger.info(f"   Final get_prompt result - generation_stage: {result.generation_stage}")
+
+    return result
 
 
 @router.get("/{prompt_id}/delete-preview")

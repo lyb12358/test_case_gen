@@ -57,19 +57,26 @@ const testCaseResponse = await unifiedGenerationService.generateTestCasesFromPoi
 });
 ```
 
-### 完整两阶段生成模式
+### 统一生成模式（推荐）
 ```typescript
-// API端点: POST /api/v1/unified-test-cases/generate/full-two-stage
+// API端点: POST /api/v1/unified-test-cases/generate
 import unifiedGenerationService from '../services';
 
-// 单个API调用完成两阶段生成
-const response = await unifiedGenerationService.generateFullTwoStage({
+// 阶段1：生成测试点
+const testPointsResponse = await unifiedGenerationService.generateUnified({
   business_type: 'RCC',
   project_id: activeProject.id,
-  additional_context: {
-    test_points_count: 50,
-    complexity_level: 'comprehensive'
-  }
+  generation_mode: 'test_points_only',
+  additional_context: '生成50个风险管理相关的测试点'
+});
+
+// 阶段2：基于测试点生成测试用例
+const testCasesResponse = await unifiedGenerationService.generateUnified({
+  business_type: 'RCC',
+  project_id: activeProject.id,
+  generation_mode: 'test_cases_only',
+  test_point_ids: testPointsResponse.data.unified_test_cases.map(tp => tp.id),
+  additional_context: '生成详细的测试用例步骤，包含完整的输入、执行和期望结果'
 });
 ```
 

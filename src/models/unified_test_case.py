@@ -191,16 +191,14 @@ class UnifiedTestCaseGenerationRequest(BaseModel):
     project_id: int = Field(..., gt=0, description="项目ID")
     business_type: str = Field(..., description="业务类型")
 
-    # Existing data for enhancement modes
-    test_case_ids: Optional[List[int]] = Field(None, description="现有测试用例ID列表（用于增强模式）")
+    # Generation mode: test_points_only or test_cases_only
+    generation_mode: str = Field(..., pattern="^(test_points_only|test_cases_only)$", description="生成模式")
 
-    # Additional context
-    additional_context: Optional[Dict[str, Any]] = Field(None, description="额外上下文")
+    # Test point IDs (required for test_cases_only mode)
+    test_point_ids: Optional[List[int]] = Field(None, description="测试点ID列表（仅用于test_cases_only模式）")
 
-    @field_validator('additional_context')
-    @classmethod
-    def validate_additional_context(cls, v):
-        return JSONFieldValidator.validate_additional_context(v)
+    # Additional context as simple string
+    additional_context: Optional[str] = Field(None, max_length=2000, description="额外上下文")
 
 
 class UnifiedTestCaseGenerationResponse(BaseModel):

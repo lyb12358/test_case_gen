@@ -21,7 +21,8 @@ import {
   Statistic,
   Empty,
   Spin,
-  Checkbox
+  Checkbox,
+  Alert
 } from 'antd';
 import {
   PlusOutlined,
@@ -40,6 +41,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ColumnsType } from 'antd/es/table';
 
 import {
+  Prompt,
   PromptSummary,
   PromptType,
   PromptStatus,
@@ -81,6 +83,12 @@ const PromptList: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<PromptStatus | undefined>();
   const [generationStageFilters, setGenerationStageFilters] = useState<GenerationStage[]>([]);
   const [businessTypeFilter, setBusinessTypeFilter] = useState<BusinessType | undefined>();
+
+  // Handle generation stage filter change with type safety
+  const handleGenerationStageChange = useCallback((checkedValues: string[]) => {
+    // Type assertion is safe here because checkbox options use valid GenerationStage values
+    setGenerationStageFilters(checkedValues as GenerationStage[]);
+  }, []);
   const [selectedRowKeys, setSelectedRowKeys] = useState<number[]>([]);
 
   // Delete preview state
@@ -160,7 +168,7 @@ const PromptList: React.FC = () => {
       search: searchText || undefined,
       type: typeFilter,
       status: statusFilter,
-      generation_stage: generationStageFilters.length > 0 ? generationStageFilters : undefined,
+      generation_stage: generationStageFilters.length > 0 ? generationStageFilters.join(',') : undefined,
       business_type: businessTypeFilter,
       project_id: currentProject?.id
     }),
@@ -377,7 +385,7 @@ const PromptList: React.FC = () => {
   };
 
   // Table columns
-  const columns: ColumnsType<PromptSummary> = [
+  const columns: ColumnsType<Prompt> = [
     {
       title: '名称',
       dataIndex: 'name',
@@ -386,7 +394,7 @@ const PromptList: React.FC = () => {
       ellipsis: {
         showTitle: false,
       },
-      render: (text: string, record: PromptSummary) => (
+      render: (text: string, record: Prompt) => (
         <Tooltip placement="topLeft" title={text}>
           <Button
             type="link"
@@ -487,7 +495,7 @@ const PromptList: React.FC = () => {
           <span>{new Date(date).toLocaleDateString()}</span>
         </Tooltip>
       ),
-      sorter: (a: PromptSummary, b: PromptSummary) =>
+      sorter: (a: Prompt, b: Prompt) =>
         new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime(),
     },
     {
@@ -495,7 +503,7 @@ const PromptList: React.FC = () => {
       key: 'actions',
       width: 200,
       fixed: 'right',
-      render: (_, record: PromptSummary) => (
+      render: (_, record: Prompt) => (
         <Space size="small">
           <Tooltip title="查看">
             <Button
@@ -689,11 +697,11 @@ const PromptList: React.FC = () => {
 
               <Checkbox.Group
                 options={[
-                  { label: '测试点生成', value: 'two_stage_test_point' },
-                  { label: '测试用例生成', value: 'two_stage_test_case' }
+                  { label: '测试点生成', value: 'test_point' },
+                  { label: '测试用例生成', value: 'test_case' }
                 ]}
                 value={generationStageFilters}
-                onChange={setGenerationStageFilters}
+                onChange={handleGenerationStageChange}
               />
 
               <Select

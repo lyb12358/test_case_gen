@@ -34,6 +34,7 @@ class TemplateVariableResolver:
                          generation_stage: Optional[str] = None) -> Dict[str, Any]:
         """
         Resolve template variables for a given business type based on endpoint parameters and generation stage.
+        Implements intelligent variable replacement with anti-duplication and correspondence logic.
 
         Args:
             business_type: The business type to resolve variables for
@@ -42,7 +43,7 @@ class TemplateVariableResolver:
             generation_stage: Generation stage ('test_point' or 'test_case') (optional)
 
         Returns:
-            Dictionary of resolved template variables with 3 core variables
+            Dictionary of resolved template variables with intelligent processing
         """
         variables = {}
 
@@ -51,20 +52,49 @@ class TemplateVariableResolver:
         user_input = self._extract_user_input(additional_context)
         variables['user_input'] = user_input
 
-        # 2. test_points - based on endpoint parameters
+        # 2. test_points - based on endpoint parameters with intelligent processing
         test_points_data = self._get_test_points_from_endpoint(business_type, project_id, endpoint_params)
-        variables['test_points'] = json.dumps(test_points_data, ensure_ascii=False, indent=2)
+        if test_points_data:
+            # Apply intelligent processing based on generation stage
+            if generation_stage == 'test_point':
+                # For test point generation: add anti-duplication warning
+                test_points_with_warning = {
+                    "warning": "目前已有这些测试点，不要跟这些测试点内容重复。",
+                    "test_points": test_points_data
+                }
+                variables['test_points'] = json.dumps(test_points_with_warning, ensure_ascii=False, indent=2)
+            elif generation_stage == 'test_case':
+                # For test case generation: add correspondence requirement
+                test_points_with_correspondence = {
+                    "instruction": "按照如下的测试点数据扩充内容，生成用例，务必一一对应。",
+                    "test_points": test_points_data
+                }
+                variables['test_points'] = json.dumps(test_points_with_correspondence, ensure_ascii=False, indent=2)
+            else:
+                variables['test_points'] = json.dumps(test_points_data, ensure_ascii=False, indent=2)
+        else:
+            variables['test_points'] = ""
 
-        # 3. test_cases - from database based on business_type, project_id and generation stage
+        # 3. test_cases - from database with intelligent processing (only for test_case generation stage)
         test_cases_data = self._get_test_cases_from_database(business_type, project_id, generation_stage)
-        variables['test_cases'] = json.dumps(test_cases_data, ensure_ascii=False, indent=2)
+        if test_cases_data and generation_stage == 'test_case':
+            # For test case generation: add anti-duplication warning
+            test_cases_with_warning = {
+                "warning": "目前已有这些测试用例，不要跟这些测试用例内容重复。",
+                "test_cases": test_cases_data
+            }
+            variables['test_cases'] = json.dumps(test_cases_with_warning, ensure_ascii=False, indent=2)
+        else:
+            # For test_point generation or no data: return empty
+            variables['test_cases'] = ""
 
-        logger.debug(f"Resolved 3 variables for business_type: {business_type}, project_id: {project_id}")
+        logger.debug(f"Resolved variables with intelligent processing for business_type: {business_type}, generation_stage: {generation_stage}")
         return variables
 
     def _extract_user_input(self, additional_context: Optional[Dict[str, Any]]) -> str:
         """
         Extract user input from additional_context.
+        Supports both dict format (old) and string format (new).
 
         Args:
             additional_context: Additional context from endpoint
@@ -75,15 +105,22 @@ class TemplateVariableResolver:
         if not additional_context:
             return ""
 
-        # Try to get user_input directly
-        if 'user_input' in additional_context:
-            return str(additional_context['user_input'])
+        # If additional_context is already a string (new format), return as-is
+        if isinstance(additional_context, str):
+            return additional_context
 
-        # Fall back to converting the entire context to string for simplicity
-        try:
-            return json.dumps(additional_context, ensure_ascii=False)
-        except (TypeError, ValueError):
-            return str(additional_context) if additional_context else ""
+        # If it's a dict (old format), try to get user_input directly
+        if isinstance(additional_context, dict):
+            if 'user_input' in additional_context:
+                return str(additional_context['user_input'])
+
+            # Fall back to converting the entire context to string for simplicity
+            try:
+                return json.dumps(additional_context, ensure_ascii=False)
+            except (TypeError, ValueError):
+                return str(additional_context)
+
+        return str(additional_context) if additional_context else ""
 
     def _get_test_points_from_endpoint(self, business_type: str, project_id: Optional[int],
                                      endpoint_params: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -305,6 +342,52 @@ class TemplateVariableResolver:
             logger.error(f"Failed to get business test points for {business_type}, project {project_id}: {e}")
             return []
 
+    def get_available_variables(self, business_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Get available template variables from database with metadata.
 
+        Args:
+            business_type: Optional business type filter
+
+        Returns:
+            List of template variable dictionaries with metadata
+        """
+        try:
+            logger.info(f"Getting available template variables for business_type: {business_type}")
+
+            # 返回实际工作的3个核心变量
+            core_variables = [
+                {
+                    "name": "{{user_input}}",
+                    "type": "user_input",
+                    "business_type": None,
+                    "description": "用户在API调用时提供的额外上下文信息（来自additional_context参数）",
+                    "default_value": None,
+                    "example": "用户输入：生成50个风险管理相关的测试点"
+                },
+                {
+                    "name": "{{test_points}}",
+                    "type": "reference_data",
+                    "business_type": None,
+                    "description": "参考测试点数据，根据生成阶段智能包装：测试点生成时添加防重复警告，测试用例生成时添加一一对应要求",
+                    "default_value": None,
+                    "example": "参考测试点：包含JSON格式的测试点数组，带有智能包装说明"
+                },
+                {
+                    "name": "{{test_cases}}",
+                    "type": "reference_data",
+                    "business_type": None,
+                    "description": "参考测试用例数据，仅在测试用例生成阶段可用，添加防重复警告",
+                    "default_value": None,
+                    "example": "参考测试用例：包含JSON格式的测试用例数组，仅在测试用例生成时使用"
+                }
+            ]
+
+            logger.info(f"✅ Retrieved {len(core_variables)} core template variables")
+            return core_variables
+
+        except Exception as e:
+            logger.error(f"Error getting available template variables: {e}")
+            return []
       
 

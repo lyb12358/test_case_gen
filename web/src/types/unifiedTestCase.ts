@@ -160,7 +160,7 @@ export interface UnifiedTestCaseGenerationResponse {
 }
 
 // 表单相关类型
-export interface UnifiedTestCaseFormData extends Omit<UnifiedTestCaseCreate, 'project_id' | 'business_type'> {
+export interface UnifiedTestCaseFormData extends Omit<UnifiedTestCaseCreate, 'project_id'> {
   // 基础信息
   name: string;
   description: string;

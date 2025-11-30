@@ -91,14 +91,32 @@ const PromptEditor: React.FC = () => {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [hasStartedEditing, setHasStartedEditing] = useState(false);
-  const [isAutoSave, setIsAutoSave] = useState(true);
+  const [isAutoSave, setIsAutoSave] = useState(false); // 禁用自动保存
   const [isMonacoLoading, setIsMonacoLoading] = useState(true);
   const [monacoError, setMonacoError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isManualSave, setIsManualSave] = useState(false);
+
+  // 新增状态管理 - 用于解决表单同步问题
+  const [isSaving, setIsSaving] = useState(false); // 替代isStatusChanging，更清晰的语义
+  const [lastSaveTimestamp, setLastSaveTimestamp] = useState<number | null>(null);
+  const [formSyncStatus, setFormSyncStatus] = useState<'synced' | 'syncing' | 'error'>('synced');
+  const [lastSyncedGenerationStage, setLastSyncedGenerationStage] = useState<string | null>(null);
   const [editorRef, setEditorRef] = useState<any>(null);  // Monaco editor reference
   const [activeTab, setActiveTab] = useState('editor');    // Active tab state
   const [isStatusChanging, setIsStatusChanging] = useState(false); // Status change indicator
+
+  // Data consistency check states
+  const [lastOptimisticUpdate, setLastOptimisticUpdate] = useState<{
+    generation_stage?: string;
+    timestamp: number;
+  } | null>(null);
+  const [dataInconsistencyDetected, setDataInconsistencyDetected] = useState(false);
+  const [inconsistencyDetails, setInconsistencyDetails] = useState<{
+    field: string;
+    expectedValue: any;
+    actualValue: any;
+  } | null>(null);
 
   // Dynamic configuration state
   const [configOptions, setConfigOptions] = useState<{
@@ -169,34 +187,138 @@ const PromptEditor: React.FC = () => {
   const updatePromptMutation = useMutation({
     mutationFn: (data: { id: number; prompt: PromptUpdate }) =>
       promptService.prompt.updatePrompt(data.id, data.prompt),
-    onMutate: () => {
-      setIsStatusChanging(true);
+    onMutate: async (newData) => {
+      setIsSaving(true);
+      setIsStatusChanging(true); // 保持兼容性
+      setFormSyncStatus('syncing');
+      // 记录更新的generation_stage用于日志跟踪
+      console.log('PromptEditor: Starting update with generation_stage:', newData.prompt.generation_stage);
     },
-    onSuccess: () => {
+    onSuccess: (data, variables, context) => {
       setHasUnsavedChanges(false);
+      const saveTimestamp = Date.now();
+      setLastSaveTimestamp(saveTimestamp);
+
+      console.log('PromptEditor: Update successful, server response generation_stage:', data.generation_stage);
+      console.log('PromptEditor: Form generation_stage before update:', form.getFieldValue('generation_stage'));
+
+      // 重要：使用服务器返回的实际数据更新缓存
+      // 这确保我们使用最新的服务器数据，而不是乐观更新的数据
+      queryClient.setQueryData(['prompt', variables.id], data);
+
+      // 🚨 修复缓存竞态条件：不立即invalidateQueries，避免覆盖正确的数据
+      // queryClient.invalidateQueries({ queryKey: ['prompts'] }); // 移除：会导致缓存被旧数据覆盖
+
+      // 延迟更新列表缓存，确保当前编辑的prompt数据不被覆盖
+      setTimeout(() => {
+        console.log('🔄 PromptEditor: Delayed cache invalidation for prompts list');
+        queryClient.invalidateQueries({ queryKey: ['prompts'] });
+      }, 2000); // 2秒后更新列表，确保表单数据稳定
+
+      // 强制表单同步 - 使用服务器返回的最新数据
+      try {
+        const formValues = {
+          name: data.name,
+          type: data.type,
+          business_type: data.business_type,
+          status: data.status,
+          generation_stage: data.generation_stage, // 使用服务器返回的确切值
+          author: data.author,
+          tags: data.tags || []
+        };
+
+        console.log('PromptEditor: Force updating form with server data:', formValues);
+
+        // 立即强制更新表单
+        form.setFieldsValue(formValues);
+
+        // 记录最后同步的generation_stage
+        setLastSyncedGenerationStage(data.generation_stage);
+        setFormSyncStatus('synced');
+
+        // 验证表单是否立即正确更新
+        const currentFormValue = form.getFieldValue('generation_stage');
+
+        if (currentFormValue === data.generation_stage) {
+          console.log('✅ PromptEditor: Form sync successful - generation_stage:', currentFormValue);
+        } else {
+          console.error('❌ PromptEditor: Form sync failed!', {
+            expected: data.generation_stage,
+            actual: currentFormValue,
+            serverData: data
+          });
+          setFormSyncStatus('error');
+
+          // 尝试再次同步
+          setTimeout(() => {
+            console.log('🔄 PromptEditor: Retrying form sync...');
+            form.setFieldsValue({ generation_stage: data.generation_stage });
+
+            const retryValue = form.getFieldValue('generation_stage');
+            if (retryValue === data.generation_stage) {
+              console.log('✅ PromptEditor: Retry sync successful');
+              setFormSyncStatus('synced');
+            } else {
+              console.error('❌ PromptEditor: Retry sync also failed');
+              message.error('数据同步失败，请刷新页面确认');
+            }
+          }, 100);
+        }
+      } catch (error) {
+        console.error('PromptEditor: Error updating form with server data:', error);
+        setFormSyncStatus('error');
+        message.error('表单同步失败，请刷新页面');
+      }
 
       // 只有手动保存才显示通知和按钮状态变化
       if (isManualSave) {
-        message.success('提示词保存成功，正在更新统计数据...');
+        message.success('提示词保存成功，数据已同步');
         setSaveSuccess(true);
         // 2秒后重置成功状态
         setTimeout(() => setSaveSuccess(false), 2000);
       }
 
-      console.log('PromptEditor: Update successful');
+      // 立即设置状态变化标志为false，避免延迟导致的竞态条件
+      setIsSaving(false);
+      setIsStatusChanging(false); // 保持兼容性
+      console.log('PromptEditor: Status changing flag cleared immediately');
+      console.log('PromptEditor: Save operation completed, form sync status:', formSyncStatus);
 
-      queryClient.invalidateQueries({ queryKey: ['prompt', id] });
-      queryClient.invalidateQueries({ queryKey: ['prompts'] });
-      queryClient.invalidateQueries({ queryKey: ['prompt-stats'] });
-
-      setTimeout(() => {
-        setIsStatusChanging(false);
-        message.success('数据同步完成');
-      }, 1000);
+      // Form update is now immediate, no need for counter management
     },
-    onError: (error: any) => {
-      setIsStatusChanging(false);
-      message.error(`保存失败: ${error.response?.data?.detail || error.message}`);
+    onError: (error, variables) => {
+      setIsSaving(false);
+      setIsStatusChanging(false); // 保持兼容性
+      setFormSyncStatus('error');
+
+      // Enhanced error handling with specific focus on generation stage issues
+      let errorMessage = '保存失败';
+      const errorObj = error as any;
+
+      if (errorObj?.response?.data?.detail) {
+        errorMessage = errorObj.response.data.detail;
+      } else if (errorObj?.response?.data?.message) {
+        errorMessage = errorObj.response.data.message;
+      } else if (errorObj?.message) {
+        errorMessage = errorObj.message;
+      }
+
+      // Specific handling for generation stage field persistence issues
+      if (variables.prompt?.generation_stage &&
+          (errorMessage.includes('generation_stage') ||
+           errorMessage.includes('validation') ||
+           errorMessage.includes('invalid'))) {
+        errorMessage = `生成阶段字段更新失败: ${errorMessage}`;
+        console.error('PromptEditor: Generation stage field update failed:', {
+          attemptedValue: variables.prompt.generation_stage,
+          error: errorMessage,
+          fullError: error
+        });
+      }
+
+      message.error(errorMessage);
+      console.error('PromptEditor: Update failed:', error);
+      console.error('PromptEditor: Failed update variables:', variables);
     },
     onSettled: () => {
       // mutation完成后的清理工作
@@ -298,12 +420,23 @@ const PromptEditor: React.FC = () => {
     }
 
     form.validateFields().then((values) => {
+      // 确保 generation_stage 有有效值，处理所有边界情况
+      let generationStage = values.generation_stage;
+      if (!generationStage || generationStage.trim() === '') {
+        generationStage = 'general';
+      } else {
+        generationStage = generationStage.trim();
+      }
+
+      console.log('PromptEditor: Submitting generation_stage:', generationStage);
+
       const promptData: PromptCreate | PromptUpdate = {
         name: values.name,
         content,
         type: values.type,
         business_type: values.business_type,
         status: values.status,
+        generation_stage: generationStage,
         author: values.author,
         tags: values.tags,
         variables: detectedVariables,
@@ -324,9 +457,25 @@ const PromptEditor: React.FC = () => {
         return;
       }
 
+      // 详细的保存前日志记录
+      console.log('PromptEditor: Preparing to save prompt with the following data:');
+      console.log('- ID:', numericId);
+      console.log('- Name:', values.name);
+      console.log('- Type:', values.type);
+      console.log('- Business Type:', values.business_type);
+      console.log('- Status:', values.status);
+      console.log('- Generation Stage (original):', values.generation_stage);
+      console.log('- Generation Stage (processed):', generationStage);
+      console.log('- Author:', values.author);
+      console.log('- Tags:', values.tags);
+      console.log('- Is New:', isNew);
+      console.log('- Show Message:', showMessage);
+
       if (isNew) {
+        console.log('PromptEditor: Creating new prompt...');
         createPromptMutation.mutate(promptData as PromptCreate);
       } else {
+        console.log('PromptEditor: Updating existing prompt:', numericId);
         updatePromptMutation.mutate({
           id: numericId,
           prompt: promptData
@@ -435,46 +584,115 @@ const PromptEditor: React.FC = () => {
   }, [currentProject]);
 
   // Update form when prompt data is loaded
+  // 分离的初始化useEffect - 仅处理初始数据加载
   useEffect(() => {
-    if (prompt && !isMonacoLoading) {
-      console.log('PromptEditor: Updating form with prompt data');
+    if (prompt && !isMonacoLoading && !hasStartedEditing) {
+      console.log('PromptEditor: Initial load - setting up form with data:', {
+        promptId: prompt.id,
+        generation_stage: prompt.generation_stage
+      });
+
       setContent(prompt.content);
 
-      // 延迟一点设置表单值，确保组件完全初始化
-      setTimeout(() => {
-        try {
-          form.setFieldsValue({
-            name: prompt.name,
-            type: prompt.type,
-            business_type: prompt.business_type,
-            status: prompt.status,
-            author: prompt.author,
-            tags: prompt.tags || []
-          });
-          console.log('PromptEditor: Form updated successfully');
-        } catch (error) {
-          console.error('PromptEditor: Error updating form', error);
-        }
-      }, 100);
-    }
-  }, [prompt, form, isMonacoLoading]);
+      try {
+        const formValues = {
+          name: prompt.name,
+          type: prompt.type,
+          business_type: prompt.business_type,
+          status: prompt.status,
+          generation_stage: prompt.generation_stage,
+          author: prompt.author,
+          tags: prompt.tags || []
+        };
 
-  // Auto-save effect
+        console.log('PromptEditor: Initializing form with prompt data:', formValues);
+        form.setFieldsValue(formValues);
+
+        // 记录初始同步状态
+        setLastSyncedGenerationStage(prompt.generation_stage);
+        setFormSyncStatus('synced');
+
+        console.log('PromptEditor: Form initialized successfully');
+      } catch (error) {
+        console.error('PromptEditor: Error initializing form', error);
+        setFormSyncStatus('error');
+      }
+    }
+  }, [prompt, isMonacoLoading, hasStartedEditing]); // 简化的依赖项
+
+  // 专门处理保存后数据同步的useEffect - 避免与初始化冲突
   useEffect(() => {
-    // 添加ID验证，防止自动保存时使用无效ID
+    // 只有在最近有保存操作且不是正在保存时才处理
+    if (lastSaveTimestamp && !isSaving && prompt) {
+      console.log('PromptEditor: Post-save sync check', {
+        lastSaveTimestamp,
+        promptGenerationStage: prompt.generation_stage,
+        lastSyncedGenerationStage,
+        formSyncStatus
+      });
+
+      // 如果检测到数据不一致，且有最新保存时间戳，可能需要同步
+      const currentFormValue = form.getFieldValue('generation_stage');
+
+      if (currentFormValue !== prompt.generation_stage &&
+          prompt.generation_stage === lastSyncedGenerationStage) {
+
+        console.warn('PromptEditor: Detected form-data mismatch after save, attempting fix', {
+          formValue: currentFormValue,
+          dataValue: prompt.generation_stage,
+          lastSynced: lastSyncedGenerationStage
+        });
+
+        // 重新同步表单
+        setTimeout(() => {
+          form.setFieldsValue({ generation_stage: prompt.generation_stage });
+          console.log('PromptEditor: Form re-synced after save');
+        }, 50);
+      }
+    }
+  }, [prompt, lastSaveTimestamp, isSaving, lastSyncedGenerationStage, formSyncStatus]);
+
+  // 自动保存功能已禁用 - 用户反馈生成阶段字段会立即恢复
+  // 如需要重新启用，请修改 isAutoSave 初始值并取消注释以下代码
+  /*
+  useEffect(() => {
     const numericId = Number(id);
     const hasValidId = !isNaN(numericId) && isFinite(numericId);
 
     if (hasUnsavedChanges && isAutoSave && !isNew && hasValidId) {
       const timer = setTimeout(() => {
         console.log('PromptEditor: Triggering auto-save', { id, numericId });
-        // 自动保存时不显示消息，避免干扰用户
         handleSave(false);
-      }, 2000); // 2 seconds after last change
+      }, 2000);
 
       return () => clearTimeout(timer);
     }
   }, [content, hasUnsavedChanges, isAutoSave, isNew, id, handleSave]);
+  */
+
+  // Simplified Debug: Monitor only essential state changes
+  useEffect(() => {
+    console.log('🔍 PromptEditor: State monitor', {
+      isSaving,
+      formSyncStatus,
+      promptId: prompt?.id,
+      promptGenerationStage: prompt?.generation_stage
+    });
+  }, [isSaving, formSyncStatus, prompt?.id, prompt?.generation_stage]);
+
+  // 简化后的状态管理：核心问题已在缓存层面修复，无需复杂的双重检查
+  // 如果后续需要调试，可以重新启用以下代码：
+  /*
+  useEffect(() => {
+    if (!isSaving && prompt && form && lastSaveTimestamp) {
+      // 简化的一致性检查逻辑
+      const currentFormValue = form.getFieldValue('generation_stage');
+      if (currentFormValue !== prompt.generation_stage) {
+        console.warn('🔧 PromptEditor: Form-data inconsistency detected, but main cache issue is fixed');
+      }
+    }
+  }, [isSaving, prompt, form, lastSaveTimestamp]);
+  */
 
   // Extract variables from content
   useEffect(() => {
@@ -527,7 +745,7 @@ const PromptEditor: React.FC = () => {
                 {children}
               </h2>
             ),
-            code: ({ inline, children, ...props }) => {
+            code: ({ inline, children, ...props }: { inline?: boolean; children?: React.ReactNode; [key: string]: any }) => {
               if (inline) {
                 return (
                   <code style={{
@@ -702,6 +920,42 @@ const PromptEditor: React.FC = () => {
           </Row>
         </div>
 
+        {/* Data Inconsistency Alert */}
+        {dataInconsistencyDetected && inconsistencyDetails && (
+          <Alert
+            type="warning"
+            showIcon
+            closable
+            onClose={() => {
+              setDataInconsistencyDetected(false);
+              setInconsistencyDetails(null);
+            }}
+            style={{ marginBottom: 16 }}
+            message="数据一致性警告"
+            description={
+              <div>
+                <p>检测到数据不一致问题：</p>
+                <p>
+                  字段：{inconsistencyDetails.field}<br />
+                  预期值：{inconsistencyDetails.expectedValue}<br />
+                  服务器返回值：{inconsistencyDetails.actualValue}
+                </p>
+                <Space>
+                  <Button size="small" type="primary" onClick={() => refetch()}>
+                    重新获取数据
+                  </Button>
+                  <Button size="small" onClick={() => {
+                    setDataInconsistencyDetected(false);
+                    setInconsistencyDetails(null);
+                  }}>
+                    忽略
+                  </Button>
+                </Space>
+              </div>
+            }
+          />
+        )}
+
         {/* Form */}
         <Form
           form={form}
@@ -709,6 +963,7 @@ const PromptEditor: React.FC = () => {
           initialValues={{
             type: 'business_description',
             status: 'draft',
+            generation_stage: 'general',
             tags: []
           }}
         >
@@ -760,8 +1015,55 @@ const PromptEditor: React.FC = () => {
                 name="generation_stage"
                 label="生成阶段"
                 tooltip="选择此提示词适用于哪个生成阶段"
+                rules={[
+                  {
+                    required: true,
+                    message: '请选择生成阶段'
+                  },
+                  {
+                    validator: (_, value) => {
+                      if (!value || value.trim() === '') {
+                        return Promise.reject(new Error('生成阶段不能为空'));
+                      }
+                      // 验证值是否在有效选项中
+                      const isValidStage = configOptions.generationStages.some(
+                        option => option.value === value
+                      );
+                      if (!isValidStage) {
+                        return Promise.reject(new Error('无效的生成阶段值'));
+                      }
+                      return Promise.resolve();
+                    }
+                  }
+                ]}
+                help={dataInconsistencyDetected ? '⚠️ 检测到数据不一致，请检查或重新获取数据' : undefined}
+                validateStatus={dataInconsistencyDetected ? 'warning' : undefined}
               >
-                <Select placeholder="选择生成阶段">
+                <Select
+                  placeholder="选择生成阶段"
+                  onChange={(value) => {
+                    console.log('PromptEditor: Generation stage changed to:', value);
+                    setHasUnsavedChanges(true);
+                    setHasStartedEditing(true);
+
+                    // 清除数据不一致状态（用户手动修改）
+                    if (dataInconsistencyDetected) {
+                      setDataInconsistencyDetected(false);
+                      setInconsistencyDetails(null);
+                      message.info('已清除数据不一致状态');
+                    }
+                  }}
+                  onBlur={() => {
+                    // 验证当前值
+                    const currentValue = form.getFieldValue('generation_stage');
+                    if (!currentValue || currentValue.trim() === '') {
+                      form.setFieldsValue({
+                        generation_stage: 'general'
+                      });
+                      message.warning('生成阶段已自动设置为默认值：通用');
+                    }
+                  }}
+                >
                   {configOptions.generationStages.map(({value, label}) => (
                     <Option key={value} value={value}>
                       {label}
