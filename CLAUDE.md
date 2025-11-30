@@ -31,35 +31,11 @@ npm run test                     # 前端测试
 
 ## 核心架构
 
-### 两阶段生成流程
+### 统一生成模式（唯一推荐方式）
 
-**阶段 1：测试点生成**
-```typescript
-// API端点: POST /api/v1/test-points/generate
-const testPointResponse = await unifiedGenerationService.generateTestPoints({
-  business_type: 'RCC',
-  project_id: activeProject.id,
-  additional_context: { count: 50 },
-  save_to_database: true,
-  async_mode: true
-});
-```
+**核心端点：POST /api/v1/unified-test-cases/generate**
 
-**阶段 2：测试用例生成**
 ```typescript
-// API端点: POST /api/v1/generation/test-cases
-const testCaseResponse = await unifiedGenerationService.generateTestCasesFromPoints({
-  business_type: 'RCC',
-  test_point_ids: [1, 2, 3],
-  additional_context: { complexityLevel: 'comprehensive' },
-  save_to_database: true,
-  project_id: activeProject.id
-});
-```
-
-### 统一生成模式（推荐）
-```typescript
-// API端点: POST /api/v1/unified-test-cases/generate
 import unifiedGenerationService from '../services';
 
 // 阶段1：生成测试点
@@ -79,6 +55,8 @@ const testCasesResponse = await unifiedGenerationService.generateUnified({
   additional_context: '生成详细的测试用例步骤，包含完整的输入、执行和期望结果'
 });
 ```
+
+**说明：** 系统已完成端点清理，现在只有这一个统一的AI生成端点。所有历史遗留的分散端点已被移除，请使用上述统一模式进行两阶段生成。
 
 ### 动态业务类型管理
 ```typescript
@@ -165,42 +143,28 @@ curl "http://localhost:8000/api/v1/unified-test-cases?project_id=1&status=approv
 curl "http://localhost:8000/api/v1/generation/health"
 ```
 
-### 核心生成 API
+### 核心生成 API（统一端点）
 
-**阶段1：测试点生成**
+**唯一AI生成端点**
 ```typescript
-// POST /api/v1/test-points/generate
-interface TestPointGenerationRequest {
-  business_type: string;
-  additional_context?: Record<string, any>;
-  save_to_database?: boolean;
-  project_id?: number;
-  async_mode?: boolean;
-}
-```
-
-**阶段2：测试用例生成**
-```typescript
-// POST /api/v1/generation/test-cases
-interface TestCaseGenerationRequest {
-  business_type: string;
-  test_points?: any[];           // 外部提供的测试点数据
-  test_point_ids?: number[];     // 数据库中的测试点ID
-  additional_context?: Record<string, any>;
-  save_to_database?: boolean;
-  project_id?: number;
-}
-```
-
-**完整两阶段生成**
-```typescript
-// POST /api/v1/unified-test-cases/generate/full-two-stage
-interface FullTwoStageGenerationRequest {
+// POST /api/v1/unified-test-cases/generate
+interface UnifiedGenerationRequest {
   business_type: string;
   project_id: number;
+  generation_mode: 'test_points_only' | 'test_cases_only';
+  test_point_ids?: number[];      // 仅test_cases_only模式需要
   additional_context?: Record<string, any>;
+  save_to_database?: boolean;
 }
 ```
+
+**请求参数说明：**
+- `generation_mode`: 生成模式
+  - `'test_points_only'`: 只生成测试点
+  - `'test_cases_only'`: 基于已有测试点生成测试用例
+- `test_point_ids`: 测试点ID数组，仅在`test_cases_only`模式下需要
+- `additional_context`: 额外的生成上下文
+- `save_to_database`: 是否保存到数据库（默认true）
 
 ## 数据库架构
 
@@ -289,14 +253,22 @@ CREATE TABLE unified_test_cases (
 
 ### 统一 API 调用模式
 ```typescript
-// 使用服务层统一调用
-const response = await unifiedGenerationService.generateTestCases(request);
+// 使用唯一的服务层调用
+const response = await unifiedGenerationService.generateUnified({
+  business_type: 'RCC',
+  project_id: activeProject.id,
+  generation_mode: 'test_points_only', // 或 'test_cases_only'
+  additional_context: '生成详细的测试内容'
+});
 
 // React Query 状态管理
 const { data, isLoading, error } = useQuery({
-  queryKey: ['test-cases', params],
+  queryKey: ['unified-test-cases', params],
   queryFn: () => unifiedGenerationService.getTestCases(params)
 });
+
+// ⚠️ 重要提示：所有历史遗留的分散端点已完全移除
+// 现在只有 /api/v1/unified-test-cases/generate 这一个AI生成端点
 ```
 
 ### 错误处理模式

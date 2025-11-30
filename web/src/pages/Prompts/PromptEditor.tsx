@@ -381,6 +381,7 @@ const PromptEditor: React.FC = () => {
     }
   }, [editorRef]);
 
+  
   // Handle save
   const handleSave = useCallback((showMessage = true) => {
     console.log('PromptEditor: handleSave called', {
@@ -898,6 +899,7 @@ const PromptEditor: React.FC = () => {
                   </Button>
                 </Tooltip>
 
+                
                 <Button
                   icon={<SaveOutlined />}
                   type={saveSuccess ? "default" : "primary"}

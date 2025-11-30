@@ -110,6 +110,7 @@ export interface UnifiedTestCaseFilter extends PaginationConfig {
   keyword?: string;
   sort_by?: SortField;
   sort_order?: SortDirection;
+  test_point_ids?: number[];
 }
 
 export interface UnifiedTestCaseListResponse extends PaginationResponse<UnifiedTestCaseResponse> {}
@@ -125,7 +126,7 @@ export interface UnifiedTestCaseStatistics {
 }
 
 export interface UnifiedTestCaseBatchOperation {
-  case_ids: number[];
+  test_case_ids: number[];
   operation: 'delete' | 'update_status' | 'update_priority';
   status?: UnifiedTestCaseStatus;
   priority?: string;

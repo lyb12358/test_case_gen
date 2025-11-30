@@ -166,12 +166,8 @@ class UnifiedGenerationService {
     // 确保创建的是测试点阶段的条目
     const testPointData = {
       ...testPoint,
-      stage: 'test_point',
-      // 将 case_id 映射为 test_case_id，以匹配后端 Pydantic alias
-      test_case_id: testPoint.case_id
+      stage: 'test_point'
     };
-    // 删除内部字段 case_id，避免发送多余字段
-    delete (testPointData as any).case_id;
 
     const response = await apiClient.post('/api/v1/unified-test-cases', testPointData);
     return response.data;
@@ -446,20 +442,18 @@ class UnifiedGenerationService {
   }) {
     // 使用标准WebSocket服务（增强版已删除）
     const wsService = createTaskWebSocketService(taskId, {
-      autoReconnect: options?.autoReconnect ?? true,
-      enableHeartbeat: true,
-      enableMessageQueue: true
+      autoReconnect: options?.autoReconnect ?? true
     });
 
       // 设置事件处理器
       if (options?.onConnect) {
-        wsService.onConnectionStateChange((connected) => {
+        wsService.onConnectionStatusChange((connected) => {
           if (connected) options.onConnect!();
         });
       }
 
       if (options?.onDisconnect) {
-        wsService.onConnectionStateChange((connected) => {
+        wsService.onConnectionStatusChange((connected) => {
           if (!connected) options.onDisconnect!();
         });
       }
@@ -660,18 +654,7 @@ class UnifiedGenerationService {
     return response.data;
   }
 
-  /**
-   * 完整的两阶段生成（已废弃，端点已移除）
-   * 请使用generateUnified方法分别进行两阶段生成
-   */
-  async generateFullTwoStage(request: {
-    business_type: string;
-    project_id: number;
-    additional_context?: Record<string, any>;
-  }): Promise<any> {
-    throw new Error('generateFullTwoStage方法已废弃，请使用generateUnified方法。端点 /api/v1/unified-test-cases/generate/full-two-stage 已被移除。');
-  }
-
+  
   // ========== 变量预览功能 ==========
 
   /**
@@ -888,6 +871,7 @@ class UnifiedGenerationService {
     const colorMap: Record<UnifiedTestCaseStatus, string> = {
       [UnifiedTestCaseStatus.DRAFT]: 'default',
       [UnifiedTestCaseStatus.APPROVED]: 'processing',
+      [UnifiedTestCaseStatus.REJECTED]: 'error',
       [UnifiedTestCaseStatus.COMPLETED]: 'success'
     };
     return colorMap[status] || 'default';
@@ -900,6 +884,7 @@ class UnifiedGenerationService {
     const labelMap: Record<UnifiedTestCaseStatus, string> = {
       [UnifiedTestCaseStatus.DRAFT]: '草稿',
       [UnifiedTestCaseStatus.APPROVED]: '已批准',
+      [UnifiedTestCaseStatus.REJECTED]: '已拒绝',
       [UnifiedTestCaseStatus.COMPLETED]: '已完成'
     };
     return labelMap[status] || status;

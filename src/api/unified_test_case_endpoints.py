@@ -926,12 +926,16 @@ async def _generate_test_points_background_unified(
                 job.step_description = "开始生成测试点..."
                 db.commit()
 
-        # Generate test points
-        test_points_data = generator_service.test_case_generator.generate_test_points_only(
+        # Generate test points using unified generation service
+        generation_result = generator_service.generate_test_points(
             business_type=business_type,
             additional_context={"user_input": additional_context} if additional_context else {},
-            save_to_db=False
+            save_to_database=False,
+            project_id=project_id
         )
+
+        # Extract test points data from generation response
+        test_points_data = generation_result.data if generation_result.success else None
 
         if not test_points_data:
             raise RuntimeError("测试点生成失败")
