@@ -53,7 +53,7 @@ class UnifiedTestCaseCreate(UnifiedTestCaseBase):
     # Execution details (JSON format, optional for test point stage)
     preconditions: Optional[str] = Field(None, max_length=5000, description="前置条件")
     steps: Optional[List[Dict[str, Any]]] = Field(None, description="执行步骤")
-    # Note: expected_result is removed - use expected field in steps instead
+    expected_result: Optional[str] = Field(None, max_length=5000, description="期望结果（JSON字符串格式）")
     remarks: Optional[str] = Field(None, max_length=2000, description="备注")
 
     # Metadata
@@ -75,6 +75,7 @@ class UnifiedTestCaseUpdate(BaseModel):
     business_type: Optional[str] = Field(None, min_length=1, max_length=20, description="业务类型")
     priority: Optional[str] = Field(None, pattern="^(low|medium|high)$", description="优先级")
     status: Optional[UnifiedTestCaseStatus] = Field(None, description="状态")
+    stage: Optional[UnifiedTestCaseStage] = Field(None, description="阶段")
 
     # Test case specific fields
     module: Optional[str] = Field(None, max_length=100, description="功能模块")
@@ -84,7 +85,7 @@ class UnifiedTestCaseUpdate(BaseModel):
     # Execution details
     preconditions: Optional[str] = Field(None, max_length=5000, description="前置条件")
     steps: Optional[List[Dict[str, Any]]] = Field(None, description="执行步骤")
-    # Note: expected_result is removed - use expected field in steps instead
+    expected_result: Optional[str] = Field(None, max_length=5000, description="期望结果（JSON字符串格式）")
     remarks: Optional[str] = Field(None, max_length=2000, description="备注")
 
     # Metadata
@@ -119,7 +120,7 @@ class UnifiedTestCaseResponse(UnifiedTestCaseBase):
     # Execution details
     preconditions: Optional[str] = Field(None, max_length=5000, description="前置条件")
     steps: Optional[List[Dict[str, Any]]] = Field(None, description="执行步骤")
-    # Note: expected_result is removed - use expected field in steps instead
+    expected_result: Optional[str] = Field(None, max_length=5000, description="期望结果（JSON字符串格式）")
     remarks: Optional[str] = Field(None, description="备注")
 
     # Metadata

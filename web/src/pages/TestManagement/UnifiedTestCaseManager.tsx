@@ -18,7 +18,8 @@ import {
   Tabs,
   Badge,
   Tooltip,
-  Switch
+  Switch,
+  Alert
 } from 'antd';
 import {
   PlusOutlined,
@@ -111,6 +112,12 @@ const UnifiedTestCaseManager: React.FC = () => {
   const [selectedBusinessType, setSelectedBusinessType] = useState<string>('');
   const [additionalContext, setAdditionalContext] = useState<string>('');
 
+  // 弹窗内测试点选择状态
+  const [modalTestPoints, setModalTestPoints] = useState<any[]>([]);
+  const [selectedTestPointIds, setSelectedTestPointIds] = useState<number[]>([]);
+  const [loadingTestPoints, setLoadingTestPoints] = useState(false);
+  const [testPointSearchText, setTestPointSearchText] = useState('');
+
   // 简化的状态重置函数
   const resetFormAndState = useCallback(() => {
     form.resetFields();
@@ -120,14 +127,14 @@ const UnifiedTestCaseManager: React.FC = () => {
 
   // 获取数据 - 根据stage过滤
   const { data: testCases, isLoading, error, refetch } = useQuery({
-    queryKey: ['unifiedTestCases', currentProject?.id, stageFilter, currentPage, pageSize, searchText],
+    queryKey: ['unifiedTestCases', currentProject?.id, stageFilter, currentPage, pageSize, searchText, 'id_desc'],
     queryFn: () => unifiedGenerationService.getUnifiedTestCases({
       project_id: currentProject.id,
       stage: stageFilter === 'all' ? undefined : stageFilter,
       page: currentPage,
       size: pageSize,
       keyword: searchText,
-      sort_by: 'created_at',
+      sort_by: 'id',
       sort_order: 'desc'
     }),
     enabled: !!currentProject?.id
@@ -141,12 +148,14 @@ const UnifiedTestCaseManager: React.FC = () => {
 
   // 获取测试点数据（用于转换）
   const { data: testPoints } = useQuery({
-    queryKey: ['testPoints', currentProject?.id],
+    queryKey: ['testPoints', currentProject?.id, 'id_desc'],
     queryFn: () => unifiedGenerationService.getUnifiedTestCases({
       project_id: currentProject.id,
       stage: 'test_point',
       page: 1,
-      size: 100
+      size: 100,
+      sort_by: 'id',
+      sort_order: 'desc'
     }),
     enabled: !!currentProject?.id && creationMode === 'convert'
   });
@@ -305,14 +314,19 @@ const UnifiedTestCaseManager: React.FC = () => {
 
   const convertFormDataToConvert = (formData: UnifiedTestCaseFormData): UnifiedTestCaseUpdate => {
     return {
-      stage: 'test_case',
+      stage: 'test_case', // 明确设置stage为test_case
       test_case_id: `TC_${formData.business_type}_${Date.now()}`,
-      preconditions: formData.preconditions || undefined,
+      // 将preconditions数组转换为字符串，用换行符连接
+      preconditions: formData.preconditions
+        ? (Array.isArray(formData.preconditions)
+            ? formData.preconditions.join('\n')
+            : formData.preconditions)
+        : undefined,
       steps: (formData.steps || []).map((step, index) => {
         const { step_number, action, expected } = step;
         return {
           step_number: step_number || index + 1,
-          action: action || '',
+          action: action || '', // 保持action字段，即使为空也通过验证
           expected: expected || ''
         };
       }),
@@ -339,6 +353,46 @@ const UnifiedTestCaseManager: React.FC = () => {
     };
   };
 
+  // 业务类型变化时自动加载测试点
+  const handleBusinessTypeChange = useCallback(async (businessType: string) => {
+    setSelectedBusinessType(businessType);
+
+    if (generationMode === 'test_cases_only') {
+      setLoadingTestPoints(true);
+      setSelectedTestPointIds([]); // 清空之前的选择
+      setTestPointSearchText(''); // 清空搜索文本
+
+      try {
+        const response = await unifiedGenerationService.getTestPoints({
+          business_type: businessType,
+          project_id: currentProject.id,
+          stage: 'test_point'
+        });
+        setModalTestPoints(response.items || []);
+      } catch (error) {
+        message.error('加载测试点失败');
+        setModalTestPoints([]);
+      } finally {
+        setLoadingTestPoints(false);
+      }
+    }
+  }, [generationMode, currentProject.id, message]);
+
+  // 生成模式变化时的处理
+  const handleGenerationModeChange = useCallback((mode: 'test_points_only' | 'test_cases_only') => {
+    setGenerationMode(mode);
+
+    if (mode === 'test_points_only') {
+      // 切换到生成测试点模式时，清空测试点相关状态
+      setModalTestPoints([]);
+      setSelectedTestPointIds([]);
+      setTestPointSearchText('');
+    } else if (mode === 'test_cases_only' && selectedBusinessType) {
+      // 切换到生成测试用例模式时，如果已选择业务类型，则加载测试点
+      handleBusinessTypeChange(selectedBusinessType);
+    }
+  }, [selectedBusinessType, handleBusinessTypeChange]);
+
   // AI生成处理函数
   const handleAIGeneration = useCallback((values: any) => {
     if (!selectedBusinessType) {
@@ -347,25 +401,92 @@ const UnifiedTestCaseManager: React.FC = () => {
     }
 
     const testPointIds = generationMode === 'test_cases_only'
-      ? selectedRowKeys.map(key => Number(key)).filter(id => !isNaN(id))
+      ? selectedTestPointIds
       : undefined;
 
     if (generationMode === 'test_cases_only' && (!testPointIds || testPointIds.length === 0)) {
-      message.error('生成测试用例需要选择对应的测试点');
+      message.error('请选择至少一个测试点来生成测试用例');
       return;
     }
 
-    aiGenerationMutation.mutate({
-      business_type: selectedBusinessType,
-      generation_mode: generationMode,
-      test_point_ids: testPointIds,
-      additional_context: values.additional_context
-    });
-  }, [selectedBusinessType, generationMode, selectedRowKeys, aiGenerationMutation, message]);
+    // 验证选中的测试点是否有效
+    if (generationMode === 'test_cases_only' && testPointIds) {
+      const validTestPointIds = modalTestPoints
+        .filter(tp => testPointIds.includes(tp.id))
+        .map(tp => tp.id);
+
+      if (validTestPointIds.length !== testPointIds.length) {
+        const invalidIds = testPointIds.filter(id => !validTestPointIds.includes(id));
+        console.warn('发现无效的测试点ID:', invalidIds);
+        message.warning(`检测到${invalidIds.length}个无效的测试点，将只处理有效的${validTestPointIds.length}个测试点`);
+      }
+
+      if (validTestPointIds.length === 0) {
+        message.error('没有找到有效的测试点，请重新选择');
+        return;
+      }
+
+      // 使用验证后的测试点ID列表
+      aiGenerationMutation.mutate({
+        business_type: selectedBusinessType,
+        generation_mode: generationMode,
+        test_point_ids: validTestPointIds,
+        additional_context: values.additional_context
+      });
+    } else {
+      // 测试点生成模式或其他模式
+      aiGenerationMutation.mutate({
+        business_type: selectedBusinessType,
+        generation_mode: generationMode,
+        test_point_ids: testPointIds,
+        additional_context: values.additional_context
+      });
+    }
+  }, [selectedBusinessType, generationMode, selectedTestPointIds, modalTestPoints, aiGenerationMutation, message]);
 
   // 提交表单
   const handleSubmit = useCallback((isEdit: boolean = false) => {
     form.validateFields().then((values) => {
+      // 在测试用例模式（创建或转换）下验证steps
+      if (creationMode === 'test_case' || creationMode === 'convert') {
+        const steps = values.steps || [];
+
+        // 验证至少有一个步骤
+        if (steps.length === 0) {
+          message.error('测试用例必须包含至少一个执行步骤');
+          return;
+        }
+
+        // 验证每个步骤的action和expected不能为空
+        for (let i = 0; i < steps.length; i++) {
+          const step = steps[i];
+          const action = step.action?.trim();
+          const expected = step.expected?.trim();
+
+          // 验证action字段
+          if (!action) {
+            message.error(`步骤 ${i + 1} 的操作描述不能为空`);
+            return;
+          }
+
+          if (action.length > 2000) {
+            message.error(`步骤 ${i + 1} 的操作描述长度不能超过2000个字符`);
+            return;
+          }
+
+          // 验证expected字段
+          if (!expected) {
+            message.error(`步骤 ${i + 1} 的期望结果不能为空`);
+            return;
+          }
+
+          if (expected.length > 2000) {
+            message.error(`步骤 ${i + 1} 的期望结果长度不能超过2000个字符`);
+            return;
+          }
+        }
+      }
+
       // Clean steps data to remove id fields before any processing
       const cleanedSteps = (values.steps || []).map((step: any) => {
         const { id, step_number, action, expected } = step;
@@ -1091,6 +1212,11 @@ const UnifiedTestCaseManager: React.FC = () => {
           aiForm.resetFields();
           setSelectedBusinessType('');
           setAdditionalContext('');
+          // 清空测试点相关状态
+          setModalTestPoints([]);
+          setSelectedTestPointIds([]);
+          setTestPointSearchText('');
+          setLoadingTestPoints(false);
         }}
         footer={[
           <Button key="cancel" onClick={() => {
@@ -1098,6 +1224,11 @@ const UnifiedTestCaseManager: React.FC = () => {
             aiForm.resetFields();
             setSelectedBusinessType('');
             setAdditionalContext('');
+            // 清空测试点相关状态
+            setModalTestPoints([]);
+            setSelectedTestPointIds([]);
+            setTestPointSearchText('');
+            setLoadingTestPoints(false);
           }}>
             取消
           </Button>,
@@ -1131,12 +1262,7 @@ const UnifiedTestCaseManager: React.FC = () => {
               >
                 <Select
                   value={generationMode}
-                  onChange={(value) => {
-                    setGenerationMode(value);
-                    if (value === 'test_cases_only') {
-                      message.info('测试用例生成需要先选择对应的测试点');
-                    }
-                  }}
+                  onChange={handleGenerationModeChange}
                   placeholder="请选择生成模式"
                 >
                   <Select.Option value="test_points_only">
@@ -1162,7 +1288,7 @@ const UnifiedTestCaseManager: React.FC = () => {
               >
                 <Select
                   value={selectedBusinessType}
-                  onChange={setSelectedBusinessType}
+                  onChange={handleBusinessTypeChange}
                   placeholder="请选择业务类型"
                 >
                   {businessTypes?.items?.map((type: any) => (
@@ -1176,19 +1302,100 @@ const UnifiedTestCaseManager: React.FC = () => {
           </Row>
 
           {generationMode === 'test_cases_only' && (
-            <div style={{ marginBottom: 16 }}>
-              <Text type="secondary">
-                <InfoCircleOutlined /> 测试用例生成模式：将基于选中的测试点生成对应的测试用例，请在表格中先选择测试点
-              </Text>
-            </div>
+            <Form.Item label="选择测试点" required>
+              <div style={{ border: '1px solid #d9d9d9', borderRadius: 6, padding: 12 }}>
+                <div style={{ marginBottom: 8 }}>
+                  <Search
+                    placeholder="搜索测试点名称或描述..."
+                    allowClear
+                    value={testPointSearchText}
+                    onChange={(e) => setTestPointSearchText(e.target.value)}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+
+                <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+                  <Table
+                    size="small"
+                    rowSelection={{
+                      selectedRowKeys: selectedTestPointIds,
+                      onChange: (selectedKeys) => setSelectedTestPointIds(selectedKeys as number[]),
+                      type: 'checkbox'
+                    }}
+                    columns={[
+                      {
+                        title: '测试点',
+                        dataIndex: 'test_case_id',
+                        width: 150,
+                        render: (text: string) => (
+                          <Tooltip title={text} placement="topLeft">
+                            <div style={{
+                              maxWidth: 120,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}>
+                              {text}
+                            </div>
+                          </Tooltip>
+                        )
+                      },
+                      {
+                        title: '测试点名称',
+                        dataIndex: 'name',
+                        ellipsis: true,
+                        width: 200
+                      },
+                      {
+                        title: '描述',
+                        dataIndex: 'description',
+                        ellipsis: true,
+                        width: 'auto'
+                      }
+                    ]}
+                    dataSource={modalTestPoints.filter(tp =>
+                      tp.name.toLowerCase().includes(testPointSearchText.toLowerCase()) ||
+                      (tp.description && tp.description.toLowerCase().includes(testPointSearchText.toLowerCase()))
+                    )}
+                    pagination={false}
+                    loading={loadingTestPoints}
+                    rowKey="id"
+                    scroll={{ y: 200 }}
+                  />
+                </div>
+
+                <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text type="secondary">
+                    已选择 {selectedTestPointIds.length} 个测试点
+                  </Text>
+                  <Space>
+                    <Button
+                      size="small"
+                      onClick={() => setSelectedTestPointIds([])}
+                      disabled={selectedTestPointIds.length === 0}
+                    >
+                      清空选择
+                    </Button>
+                    <Button
+                      size="small"
+                      onClick={() => setSelectedTestPointIds(modalTestPoints.map(tp => tp.id))}
+                      disabled={modalTestPoints.length === 0}
+                    >
+                      全选
+                    </Button>
+                  </Space>
+                </div>
+              </div>
+            </Form.Item>
           )}
 
-          {generationMode === 'test_cases_only' && selectedRowKeys.length === 0 && (
-            <div style={{ marginBottom: 16, padding: 12, backgroundColor: '#fff7e6', border: '1px solid #ffd591', borderRadius: 4 }}>
-              <Text type="warning">
-                <WarningOutlined /> 请先在表格中选择要生成测试用例的测试点
-              </Text>
-            </div>
+          {generationMode === 'test_cases_only' && selectedTestPointIds.length === 0 && (
+            <Alert
+              message="请选择至少一个测试点来生成测试用例"
+              type="warning"
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
           )}
 
           {generationMode === 'test_points_only' && (

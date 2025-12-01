@@ -50,6 +50,19 @@ interface InlinePromptBuilderProps {
   stage: 'test_point' | 'test_case';
   projectId: number;
   existingCombinationId?: number;
+  tempCombinationData?: {
+    name: string;
+    description?: string;
+    items: Array<{
+      prompt_id: number;
+      order: number;
+      variable_name?: string;
+      is_required: boolean;
+      prompt_name?: string;
+      prompt_type?: string;
+      prompt_content?: string;
+    }>;
+  };
   onSuccess: (combinationData: {
     name: string;
     description?: string;
@@ -106,7 +119,8 @@ const DraggablePromptItem: React.FC<DraggablePromptItemProps> = ({
   const ref = React.useRef<HTMLDivElement>(null);
   const { expandedItems, toggleExpanded } = useExpandedState();
   const isExpanded = expandedItems.has(item.id);
-  const isLongContent = item.prompt_content.length > 150;
+
+  const isLongContent = (item.prompt_content || '').length > 150;
 
   const [{ isDragging }, drag] = useDrag({
     type: 'prompt-item',
@@ -171,7 +185,7 @@ const DraggablePromptItem: React.FC<DraggablePromptItemProps> = ({
               style={{ color: '#ff4d4f' }}
             />
           </Tooltip>,
-          ...(isLongContent && [
+          ...(isLongContent ? [
             <Tooltip title={isExpanded ? "收起内容" : "展开内容"}>
               <Button
                 key="expand"
@@ -182,7 +196,7 @@ const DraggablePromptItem: React.FC<DraggablePromptItemProps> = ({
                 style={{ color: '#1890ff' }}
               />
             </Tooltip>
-          ])
+          ] : [])
         ]}
         style={{
           marginBottom: '6px',
@@ -253,10 +267,10 @@ const DraggablePromptItem: React.FC<DraggablePromptItemProps> = ({
                 wordBreak: 'break-word'
               }}
             >
-              {isExpanded ? item.prompt_content : (
+              {isExpanded ? (item.prompt_content || '暂无内容') : (
                 <>
-                  {item.prompt_content.substring(0, 150)}
-                  {item.prompt_content.length > 150 && '...'}
+                  {(item.prompt_content || '暂无内容').substring(0, 150)}
+                  {(item.prompt_content || '').length > 150 && '...'}
                 </>
               )}
             </div>
@@ -274,6 +288,7 @@ const InlinePromptBuilder: React.FC<InlinePromptBuilderProps> = ({
   stage,
   projectId,
   existingCombinationId,
+  tempCombinationData,
   onSuccess,
   onCancel
 }) => {
@@ -307,20 +322,23 @@ const InlinePromptBuilder: React.FC<InlinePromptBuilderProps> = ({
     queryKey: ['promptCombination', existingCombinationId],
     queryFn: () => businessService.getPromptCombination(existingCombinationId!),
     staleTime: 5 * 60 * 1000,
-    enabled: visible && !!existingCombinationId
+    enabled: visible && !!existingCombinationId && !tempCombinationData // 如果有临时数据，不请求API
   });
 
   // 初始化表单和组合名称
   useEffect(() => {
     if (visible) {
-      if (existingCombination && existingCombinationId) {
-        // 编辑模式：加载现有组合数据
-        setCombinationName(existingCombination.name || '');
-        setCombinationDescription(existingCombination.description || '');
+      // 优先使用临时数据，否则使用API数据
+      const sourceData = tempCombinationData || existingCombination;
+
+      if (sourceData && (tempCombinationData || existingCombinationId)) {
+        // 编辑模式：加载组合数据
+        setCombinationName(sourceData.name || '');
+        setCombinationDescription(sourceData.description || '');
 
         // 转换组合项目为选中项格式
-        if (existingCombination.items) {
-          const transformedItems = existingCombination.items.map(item => ({
+        if (sourceData.items) {
+          const transformedItems = sourceData.items.map(item => ({
             id: `${item.prompt_id}-${item.order}`,
             prompt_id: item.prompt_id,
             prompt_name: item.prompt_name || `提示词 ${item.prompt_id}`,
@@ -338,7 +356,7 @@ const InlinePromptBuilder: React.FC<InlinePromptBuilderProps> = ({
         setSelectedItems([]);
       }
     }
-  }, [visible, businessTypeName, stage, existingCombination, existingCombinationId]);
+  }, [visible, businessTypeName, stage, existingCombination, existingCombinationId, tempCombinationData]);
 
   // 自动生成组合名称
   const generateCombinationName = () => {
@@ -421,8 +439,8 @@ const InlinePromptBuilder: React.FC<InlinePromptBuilderProps> = ({
       items: selectedItems.map(item => ({
         prompt_id: item.prompt_id,
         order: item.order,
-        variable_name: item.variable_name,
-        is_required: item.is_required
+        variable_name: undefined,
+        is_required: true
       }))
     };
 

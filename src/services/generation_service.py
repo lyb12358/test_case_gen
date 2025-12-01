@@ -81,7 +81,9 @@ class UnifiedGenerationService:
         business_type: str,
         additional_context: Optional[Dict[str, Any]] = None,
         save_to_database: bool = False,
-        project_id: Optional[int] = None
+        project_id: Optional[int] = None,
+        task_id: Optional[str] = None,
+        ai_logger=None
     ) -> GenerationResponse:
         """
         生成测试点（第一阶段）。
@@ -91,6 +93,7 @@ class UnifiedGenerationService:
             additional_context: 额外上下文
             save_to_database: 是否保存到数据库
             project_id: 项目ID
+            task_id: 任务ID（由API端点传入）
 
         Returns:
             生成响应
@@ -98,34 +101,47 @@ class UnifiedGenerationService:
         Raises:
             GenerationError: 生成失败时抛出
         """
-        task_id = str(uuid.uuid4())
+        # 如果没有传入task_id，创建一个（保持向后兼容）
+        if not task_id:
+            task_id = str(uuid.uuid4())
+
         start_time = time.time()
 
         try:
             # 验证业务类型
             business_config = self.validate_business_type(business_type)
 
-            # 创建任务记录
-            self._create_generation_job(
-                task_id=task_id,
-                stage=GenerationStage.TEST_POINT,
-                business_type=business_type,
-                project_id=project_id
+            # 记录业务类型配置到AI日志
+            if ai_logger:
+                try:
+                    business_config_data = {
+                        "business_type": business_type,
+                        "business_config": {
+                            "id": business_config.id if hasattr(business_config, 'id') else None,
+                            "name": getattr(business_config, 'name', None),
+                            "description": getattr(business_config, 'description', None)
+                        }
+                    }
+                    ai_logger.log_business_type_config(business_config_data)
+                except Exception as log_error:
+                    logger.warning(f"Failed to log business type config: {log_error}")
+
+            # 注意：不再在这里创建任务记录，由API端点负责
+            # 这样可以避免重复任务创建的问题
+
+              # 获取测试点生成的提示词（ID=87）
+            system_prompt, user_prompt = self.test_case_generator.prompt_builder.get_two_stage_prompts(
+                business_type, 'test_point'
             )
 
-  
-            # 更新任务状态
-            self._update_job_progress(
-                task_id=task_id,
-                status=GenerationStatus.RUNNING,
-                current_step="正在生成测试点...",
-                progress=10
-            )
+            if system_prompt is None or user_prompt is None:
+                raise RuntimeError(f"无法为 {business_type} 获取测试点生成提示词组合")
 
-            
-            # 生成测试点使用模板变量解析器，确保传递generation_stage='test_point'
-            user_prompt = self.test_case_generator.prompt_builder._apply_template_variables(
-                content="",  # Will use template-based generation
+            logger.info(f"获取到测试点提示词 | 系统提示词长度: {len(system_prompt)} | 用户提示词长度: {len(user_prompt)}")
+
+            # 应用模板变量到系统提示词和用户提示词，确保传递generation_stage='test_point'
+            resolved_system_prompt = self.test_case_generator.prompt_builder._apply_template_variables(
+                content=system_prompt,
                 additional_context=additional_context or {},
                 business_type=business_type,
                 project_id=project_id,
@@ -135,18 +151,111 @@ class UnifiedGenerationService:
                 }
             )
 
-            # For now, create test points data structure
-            # TODO: Implement actual AI-based test point generation using the resolved user_prompt
-            test_points_data = {
-                'test_points': [
-                    {
-                        'title': f'AI生成测试点 - {business_type}',
-                        'description': f'基于模板变量为{business_type}业务类型生成的智能测试点',
-                        'priority': 'medium',
-                        'functional_module': '核心功能',
-                        'functional_domain': business_type
+            resolved_user_prompt = self.test_case_generator.prompt_builder._apply_template_variables(
+                content=user_prompt,
+                additional_context=additional_context or {},
+                business_type=business_type,
+                project_id=project_id,
+                endpoint_params={
+                    'generation_stage': 'test_point',
+                    'additional_context': additional_context or {}
+                }
+            )
+
+            logger.info(f"模板变量解析完成 | 解析后系统提示词长度: {len(resolved_system_prompt)} | 解析后用户提示词长度: {len(resolved_user_prompt)}")
+
+            # 记录模板变量和提示词构建过程到AI日志
+            if ai_logger:
+                try:
+                    template_variables = {
+                        "business_type": business_type,
+                        "project_id": project_id,
+                        "generation_stage": "test_point",
+                        "additional_context": additional_context or {},
+                        "endpoint_params": {
+                            'generation_stage': 'test_point',
+                            'additional_context': additional_context or {}
+                        }
                     }
-                ]
+                    ai_logger.log_template_variables(template_variables)
+
+                    # 记录提示词构建过程
+                    prompt_building_process = {
+                        "system_prompt_length": len(system_prompt),
+                        "user_prompt_length": len(user_prompt),
+                        "resolved_system_prompt_length": len(resolved_system_prompt),
+                        "resolved_user_prompt_length": len(resolved_user_prompt),
+                        "business_type": business_type,
+                        "generation_stage": "test_point",
+                        "system_prompt_was_modified": len(resolved_system_prompt) != len(system_prompt),
+                        "user_prompt_was_modified": len(resolved_user_prompt) != len(user_prompt)
+                    }
+                    ai_logger.log_prompt_building_process(prompt_building_process)
+
+                    # 记录替换后的提示词和模板变量替换信息
+                    ai_logger.log_resolved_prompts(resolved_system_prompt, resolved_user_prompt)
+                    ai_logger.log_template_replacement_info(
+                        system_prompt, resolved_system_prompt,
+                        user_prompt, resolved_user_prompt
+                    )
+                except Exception as log_error:
+                    logger.warning(f"Failed to log template variables and prompt building: {log_error}")
+
+            # 更新进度：开始AI调用
+            self._update_job_progress(
+                task_id=task_id,
+                current_step="正在调用AI模型生成测试点...",
+                progress=30
+            )
+
+            # 使用LLM生成测试点数据
+            logger.info(f"开始AI生成测试点 | 业务类型: {business_type}")
+            response = self.test_case_generator.llm_client.generate_test_cases(
+                system_prompt,
+                resolved_user_prompt,
+                ai_logger=ai_logger,
+                resolved_system_prompt=resolved_system_prompt,
+                resolved_requirements_prompt=resolved_user_prompt
+            )
+
+            if response is None:
+                raise RuntimeError("AI调用失败：无法从LLM获取响应")
+
+            # 更新进度：开始处理AI响应
+            self._update_job_progress(
+                task_id=task_id,
+                current_step="正在解析AI生成的测试点数据...",
+                progress=60
+            )
+
+            # 使用增强的JSON处理和验证机制
+            from ..utils.data_validator_repairer import DataValidatorRepairer
+            from ..core.json_extractor import JSONExtractor
+
+            # 提取和验证JSON数据
+            logger.info(f"Starting JSON extraction from AI response (response length: {len(response)})")
+            logger.info(f"Response type: {type(response)}")
+            logger.info(f"Response preview: {response[:200]}...")
+
+            json_data, validated_test_points = JSONExtractor.extract_and_validate_json_response(
+                response, validate_and_repair=True, ai_logger=ai_logger
+            )
+
+            logger.info(f"JSON extraction completed: json_data type={type(json_data)}, test_points_count={len(validated_test_points)}")
+
+            if not validated_test_points:
+                raise RuntimeError("AI响应解析失败：未找到有效的测试点数据")
+
+            logger.info(f"AI生成测试点成功 | 业务类型: {business_type} | 测试点数量: {len(validated_test_points)}")
+
+            # 获取处理总结
+            validator = DataValidatorRepairer()
+            validation_summary = validator.get_processing_summary()
+            logger.info(f"测试点数据验证完成: 成功率 {validation_summary['success_rate']:.1f}%")
+
+            # 构建标准格式的测试点数据
+            test_points_data = {
+                'test_points': validated_test_points
             }
 
             
@@ -251,7 +360,10 @@ class UnifiedGenerationService:
         Raises:
             GenerationError: 生成失败时抛出
         """
-        task_id = str(uuid.uuid4())
+        # 如果没有传入task_id，创建一个（保持向后兼容）
+        if not task_id:
+            task_id = str(uuid.uuid4())
+
         start_time = time.time()
 
         try:
@@ -268,24 +380,11 @@ class UnifiedGenerationService:
             else:
                 raise ValidationError("必须提供 test_points 或 test_point_ids 参数")
 
-            # 创建任务记录
-            self._create_generation_job(
-                task_id=task_id,
-                stage=GenerationStage.TEST_CASE,
-                business_type=business_type,
-                project_id=project_id
-            )
-
-            # 更新任务状态
-            self._update_job_progress(
-                task_id=task_id,
-                status=GenerationStatus.RUNNING,
-                current_step="正在基于测试点生成测试用例...",
-                progress=20
-            )
+            # 注意：不再在这里创建任务记录，由API端点负责
+            # 这样可以避免重复任务创建的问题
 
             # 生成测试用例
-            test_cases_data = self.test_case_generator.generate_test_cases_from_points(
+            test_cases_data = self.test_case_generator.generate_test_cases_from_external_points(
                 business_type=business_type,
                 test_points_data={
                     "test_points": test_points_data

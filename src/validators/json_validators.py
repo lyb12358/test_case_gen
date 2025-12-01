@@ -8,6 +8,9 @@ from typing import Any, List, Dict, Optional
 from pydantic import field_validator, ValidationError
 import json
 import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class JSONFieldValidator:
@@ -120,13 +123,10 @@ class JSONFieldValidator:
                 if not expected:
                     raise ValueError(f"步骤 {i+1} 的 expected 不能为空字符串")
 
-                if len(expected) > 1000:
-                    raise ValueError(f"步骤 {i+1} 的 expected 长度不能超过1000字符")
+                if len(expected) > 2000:
+                    raise ValueError(f"步骤 {i+1} 的 expected 长度不能超过2000字符")
 
                 step['expected'] = expected
-            else:
-                # 如果没有expected字段，设置为空字符串以保持一致性
-                step['expected'] = ""
 
             # 验证额外字段
             allowed_fields = {'step_number', 'action', 'expected'}

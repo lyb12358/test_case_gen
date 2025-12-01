@@ -226,6 +226,8 @@ class GenerationJob(Base):
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     business_type = Column(Enum(BusinessType), nullable=False, index=True)
     status = Column(Enum(JobStatus), default=JobStatus.PENDING, nullable=False, index=True)
+    # 添加generation_mode字段来区分生成模式
+    generation_mode = Column(String(20), nullable=True, index=True, comment="生成模式: test_points_only/test_cases_only")
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
     completed_at = Column(DateTime, nullable=True)
@@ -356,11 +358,24 @@ class PromptStatus(enum.Enum):
     DEPRECATED = "deprecated"            # Outdated, should not be used
 
 
-class GenerationStage(enum.Enum):
+class GenerationStage(str, enum.Enum):
     """Generation stage type for prompts."""
-    SINGLE_STAGE = "single_stage"                      # Single-stage generation prompts
-    TWO_STAGE_TEST_POINT = "two_stage_test_point"     # Two-stage test point generation prompts
-    TWO_STAGE_TEST_CASE = "two_stage_test_case"       # Two-stage test case generation prompts
+    test_point = "test_point"                         # Test point generation prompts
+    test_case = "test_case"                           # Test case generation prompts
+    general = "general"                               # General purpose prompts
+
+    # 为了向后兼容和代码使用方便，提供大写属性（只读）
+    @property
+    def TEST_POINT(self):
+        return self.test_point
+
+    @property
+    def TEST_CASE(self):
+        return self.test_case
+
+    @property
+    def GENERAL(self):
+        return self.general
 
 
 class PromptCategory(Base):
@@ -401,7 +416,7 @@ class Prompt(Base):
     type = Column(Enum(PromptType), nullable=False, index=True)
     business_type = Column(Enum(BusinessType), nullable=True, index=True)  # Associated business type if applicable
     status = Column(Enum(PromptStatus), default=PromptStatus.DRAFT, nullable=False, index=True)
-    generation_stage = Column(String(50), nullable=True, index=True, default='general')  # Generation stage type: test_point, test_case, general
+    generation_stage = Column(Enum(GenerationStage), nullable=True, index=True, default=GenerationStage.general)  # Generation stage type: test_point, test_case, general
 
     # Metadata
     author = Column(String(100), nullable=True)

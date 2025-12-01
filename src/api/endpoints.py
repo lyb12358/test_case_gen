@@ -100,6 +100,8 @@ class TaskStatusResponse(BaseModel):
     project_id: int
     project_name: Optional[str] = None
     business_type: Optional[str] = None
+    generation_mode: Optional[str] = None
+    task_type_display: Optional[str] = None
     error: Optional[str] = None
     test_case_id: Optional[int] = None
 
@@ -650,6 +652,13 @@ async def get_task_status(task_id: str):
             project = db.query(Project).filter(Project.id == job.project_id).first()
             project_name = project.name if project else None
 
+        # 确定任务类型显示名称
+        task_type_display = "测试用例生成"  # 默认值
+        if job.generation_mode == "test_points_only":
+            task_type_display = "测试点生成"
+        elif job.generation_mode == "test_cases_only":
+            task_type_display = "测试用例生成"
+
         return TaskStatusResponse(
             task_id=task_id,
             status=job.status.value,
@@ -657,6 +666,8 @@ async def get_task_status(task_id: str):
             project_id=job.project_id,
             project_name=project_name,
             business_type=job.business_type.value,
+            generation_mode=job.generation_mode,
+            task_type_display=task_type_display,
             error=job.error_message,
             test_case_id=progress_info.get("test_case_id")
         )
@@ -1069,11 +1080,20 @@ async def list_tasks(project_id: Optional[int] = None, db = Depends(get_db)):
         # Get additional progress info from memory if available
         progress_info = task_progress.get(job.id, {})
 
+        # 确定任务类型显示名称
+        task_type_display = "测试用例生成"  # 默认值
+        if job.generation_mode == "test_points_only":
+            task_type_display = "测试点生成"
+        elif job.generation_mode == "test_cases_only":
+            task_type_display = "测试用例生成"
+
         tasks.append({
             "task_id": job.id,
             "status": job.status.value,
             "progress": progress_info.get("progress"),
             "business_type": job.business_type.value,
+            "generation_mode": job.generation_mode,
+            "task_type_display": task_type_display,
             "error": job.error_message,
             "created_at": job.created_at.isoformat() if job.created_at else None,
             "completed_at": job.completed_at.isoformat() if job.completed_at else None

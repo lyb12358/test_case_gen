@@ -67,7 +67,8 @@ class DatabasePromptBuilder:
                 logger.debug(f"No valid template variables found in content")
                 return content
 
-            logger.debug(f"Found {len(used_variables)} variables in content: {used_variables}")
+            logger.info(f"在内容中发现 {len(used_variables)} 个模板变量: {used_variables}")
+            logger.debug(f"原始内容长度: {len(content)} | 包含模板变量: {len(used_variables) > 0}")
 
             # Resolve variables using the new 3-variable system with generation stage
             generation_stage = endpoint_params.get('generation_stage') if endpoint_params else None
@@ -82,22 +83,45 @@ class DatabasePromptBuilder:
             resolved_content = content
             replacement_count = 0
 
+            logger.debug(f"开始变量替换 | 检测到的变量: {used_variables}")
+            logger.debug(f"可用变量值: {list(variables.keys())}")
+
             for variable_name in used_variables:
                 variable_value = variables.get(variable_name)
+                logger.debug(f"处理变量 '{variable_name}' | 值存在: {variable_value is not None}")
+
                 if variable_value is not None:
+                    value_str = str(variable_value)
+                    logger.debug(f"变量 '{variable_name}' 的值长度: {len(value_str)} | 值预览: {value_str[:100]}...")
+
                     # Support both {{variable_name}} and {{ variable_name }} formats
                     patterns = [
                         f'{{{{{variable_name}}}}}',
                         f'{{{{ {variable_name} }}}}'
                     ]
+
                     for pattern in patterns:
-                        if pattern in resolved_content:
-                            resolved_content = resolved_content.replace(pattern, str(variable_value))
-                            replacement_count += 1
-                            logger.debug(f"Replaced variable '{variable_name}' with value: {str(variable_value)[:100]}...")
+                        pattern_count = resolved_content.count(pattern)
+                        if pattern_count > 0:
+                            logger.debug(f"在内容中找到模式 '{pattern}' 出现 {pattern_count} 次")
+                            resolved_content = resolved_content.replace(pattern, value_str)
+                            replacement_count += pattern_count
+                            logger.debug(f"成功替换变量 '{variable_name}' | 模式 '{pattern}' | 替换次数: {pattern_count}")
+                        else:
+                            logger.debug(f"模式 '{pattern}' 在内容中未找到")
+                else:
+                    logger.debug(f"变量 '{variable_name}' 的值为 None，跳过替换")
 
             
-            logger.debug(f"Variable replacement completed: {replacement_count} replacements made")
+            logger.info(f"模板变量替换完成 | 替换数量: {replacement_count} | 原始长度: {len(content)} | 替换后长度: {len(resolved_content)}")
+
+            # 记录详细的替换结果摘要
+            if replacement_count > 0:
+                content_changed = len(resolved_content) != len(content)
+                logger.info(f"内容变更状态: {'已变更' if content_changed else '长度未变'} | 模板变量是否被替换: {replacement_count > 0}")
+            else:
+                logger.info("未进行任何模板变量替换（可能是内容中无模板变量或变量值为空）")
+
             return resolved_content
 
         except Exception as e:

@@ -397,7 +397,6 @@ async def create_prompt(
 
 
 @router.put("/{prompt_id}", response_model=PromptSchema)
-
 async def update_prompt(
     prompt_id: int,
     prompt_update: PromptUpdate,
@@ -411,40 +410,32 @@ async def update_prompt(
     # Store old content for version history
     old_content = prompt.content
 
-    # Update fields
+    # Update fields with simplified logic
     update_data = prompt_update.dict(exclude_unset=True)
-
-    # 🔍 增强日志：记录更新前的数据状态
-    logger.info(f"🔍 PROMPT UPDATE START - ID: {prompt_id}")
-    logger.info(f"   Before update - generation_stage: {prompt.generation_stage}")
-    logger.info(f"   Update data: {update_data}")
 
     for field, value in update_data.items():
         if field == "generation_stage":
-            # 特殊处理 generation_stage 字段，避免数据库默认值机制冲突
-            logger.info(f"   Updating generation_stage: {prompt.generation_stage} -> {value}")
-            if value is None or value == "":
+            # Simple generation_stage handling
+            if not value:
                 setattr(prompt, field, 'general')
-                logger.info(f"   Set to default 'general' (value was None/empty)")
             else:
                 setattr(prompt, field, value)
-                logger.info(f"   Set to provided value: {value}")
-        elif field in ["tags", "variables", "extra_metadata"] and value is not None:
-            # Convert lists to JSON
-            setattr(prompt, field, json.dumps(value, ensure_ascii=False))
-        else:
+        elif field in ["tags", "variables", "extra_metadata"]:
+            # Convert lists to JSON with error handling
+            if value is not None:
+                try:
+                    setattr(prompt, field, json.dumps(value, ensure_ascii=False))
+                except (TypeError, ValueError):
+                    setattr(prompt, field, "[]")
+        elif value is not None:
             setattr(prompt, field, value)
 
     # Update timestamp
     prompt.updated_at = datetime.now()
-
-    logger.info(f"   Before commit - generation_stage: {prompt.generation_stage}")
     db.commit()
-    logger.info(f"   After commit - generation_stage: {prompt.generation_stage}")
 
     # Create version history if content changed
     if "content" in update_data and old_content != prompt.content:
-        # Parse semantic version and increment patch version
         try:
             version_parts = prompt.version.split('.')
             major = int(version_parts[0])
@@ -452,7 +443,6 @@ async def update_prompt(
             patch = int(version_parts[2])
             new_version = f"{major}.{minor}.{patch + 1}"
         except (IndexError, ValueError):
-            # Fallback if version format is unexpected
             new_version = f"{prompt.version}.1"
 
         version = PromptVersion(
@@ -465,17 +455,8 @@ async def update_prompt(
         db.add(version)
         db.commit()
 
-    # 🔍 关键监控点：检查refresh前的数据状态
-    logger.info(f"   Before db.refresh - generation_stage: {prompt.generation_stage}")
-
     db.refresh(prompt)
-    logger.info(f"   After db.refresh - generation_stage: {prompt.generation_stage}")
-
-    # 🔍 最终返回数据监控
-    result = await get_prompt(prompt_id, prompt.project_id, db)
-    logger.info(f"   Final get_prompt result - generation_stage: {result.generation_stage}")
-
-    return result
+    return await get_prompt(prompt_id, prompt.project_id, db)
 
 
 @router.get("/{prompt_id}/delete-preview")

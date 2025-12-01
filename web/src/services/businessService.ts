@@ -56,6 +56,8 @@ export interface BusinessTypeUpdate {
   project_id?: number;
   is_active?: boolean;
   prompt_combination_id?: number;
+  test_point_combination_id?: number;
+  test_case_combination_id?: number;
 }
 
 export interface BusinessTypeActivationRequest {

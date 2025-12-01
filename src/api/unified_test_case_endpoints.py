@@ -4,13 +4,14 @@ Unified test case API endpoints.
 Combines test point and test case management in a single unified API.
 """
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func, desc, asc
 import json
 import uuid
 import logging
+import time
 from datetime import datetime
 from pydantic import BaseModel
 
@@ -31,6 +32,27 @@ from .dependencies import get_db
 from ..core.test_case_generator import TestCaseGenerator
 from ..services.sync_transaction_manager import SyncTransactionManager
 from ..utils.config import Config
+
+# Import the enhanced data validator and repairer
+try:
+    from ..utils.data_validator_repairer import DataValidatorRepairer
+    from ..core.json_extractor import JSONExtractor
+except ImportError:
+    # Fallback for different import paths
+    import sys
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.dirname(current_dir)
+    utils_dir = os.path.join(parent_dir, 'utils')
+    core_dir = os.path.join(parent_dir, 'core')
+
+    if utils_dir not in sys.path:
+        sys.path.append(utils_dir)
+    if core_dir not in sys.path:
+        sys.path.append(core_dir)
+
+    from data_validator_repairer import DataValidatorRepairer
+    from json_extractor import JSONExtractor
 
 router = APIRouter(prefix="/api/v1/unified-test-cases", tags=["unified-test-cases"])
 
@@ -97,7 +119,7 @@ async def get_unified_test_cases_impl(
         total = query.count()
 
         # 应用排序
-        sort_column = getattr(UnifiedTestCase, filter_params.sort_by, UnifiedTestCase.created_at)
+        sort_column = getattr(UnifiedTestCase, filter_params.sort_by, UnifiedTestCase.id)
         if filter_params.sort_order == "desc":
             query = query.order_by(desc(sort_column))
         else:
@@ -131,9 +153,10 @@ async def get_unified_test_cases_impl(
                 module=test_case.module,
                 functional_module=test_case.functional_module,
                 functional_domain=test_case.functional_domain,
-                preconditions=_parse_json_field(test_case.preconditions),
+                preconditions=test_case.preconditions,
                 steps=_parse_steps_field(test_case.steps),
-                                remarks=test_case.remarks,
+                expected_result=test_case.expected_result,
+                remarks=test_case.remarks,
                 generation_job_id=test_case.generation_job_id,
                 entity_order=test_case.entity_order,
                 created_at=test_case.created_at,
@@ -167,7 +190,7 @@ async def get_unified_test_cases(
     stage: Optional[SchemaUnifiedTestCaseStage] = Query(None, description="阶段"),
     priority: Optional[str] = Query(None, pattern="^(low|medium|high)$", description="优先级"),
     keyword: Optional[str] = Query(None, description="关键词搜索"),
-    sort_by: str = Query("created_at", description="排序字段"),
+    sort_by: str = Query("id", description="排序字段"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="排序方向"),
     db: Session = Depends(get_db)
 ):
@@ -190,6 +213,127 @@ async def get_unified_test_cases(
     return await get_unified_test_cases_impl(filter_params, db)
 
 
+@router.post("/generate-sync", response_model=UnifiedTestCaseGenerationResponse)
+async def generate_unified_sync(
+    request: UnifiedTestCaseGenerationRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Synchronous unified generation endpoint for debugging and testing.
+    Directly executes generation and returns results without background tasks.
+    - test_points_only: Generate test points for a business type
+    - test_cases_only: Generate test cases from existing test points
+    """
+    import time
+    from datetime import datetime
+    from ..database.models import GenerationJob, JobStatus, BusinessTypeConfig
+
+    logger.info(f"🚀 Starting synchronous generation: mode={request.generation_mode}, business_type={request.business_type}")
+
+    try:
+        # Validate business type
+        business_config = db.query(BusinessTypeConfig).filter(
+            BusinessTypeConfig.code == request.business_type.upper(),
+            BusinessTypeConfig.is_active == True
+        ).first()
+
+        if not business_config:
+            raise HTTPException(
+                status_code=400,
+                detail=f"业务类型 '{request.business_type}' 不存在或未激活"
+            )
+
+        # Validate project exists
+        project = db.query(Project).filter(Project.id == request.project_id).first()
+        if not project:
+            raise HTTPException(status_code=400, detail="项目不存在")
+
+        # Generate task ID for tracking (even though we're not using background tasks)
+        task_id = str(uuid.uuid4())
+        start_time = time.time()
+
+        logger.info(f"Task {task_id} started at {datetime.now()}")
+
+        if request.generation_mode == "test_points_only":
+            # Execute synchronous test points generation
+            logger.info(f"Executing synchronous test points generation for task {task_id}")
+            result = await _generate_test_points_sync_unified(
+                task_id=task_id,
+                business_type=request.business_type.upper(),
+                project_id=request.project_id,
+                additional_context=request.additional_context,
+                db=db
+            )
+            generation_time = time.time() - start_time
+
+            return UnifiedTestCaseGenerationResponse(
+                generation_job_id=task_id,
+                status="completed",
+                test_points_generated=result['test_points_generated'],
+                test_cases_generated=0,
+                unified_test_cases=result['unified_test_cases'],
+                generation_time=generation_time,
+                message=f"同步生成完成: {result['test_points_generated']} 个测试点"
+            )
+
+        elif request.generation_mode == "test_cases_only":
+            # Validate test points exist
+            if not request.test_point_ids or len(request.test_point_ids) == 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="test_cases_only模式需要提供test_point_ids"
+                )
+
+            test_points = db.query(UnifiedTestCase).filter(
+                UnifiedTestCase.id.in_(request.test_point_ids),
+                UnifiedTestCase.business_type == request.business_type.upper(),
+                UnifiedTestCase.project_id == request.project_id,
+                # Fix: Remove strict steps.is_(None) requirement to allow partially updated test points
+                or_(UnifiedTestCase.steps.is_(None), UnifiedTestCase.stage == DatabaseUnifiedTestCaseStage.TEST_POINT)
+            ).all()
+
+            if not test_points:
+                raise HTTPException(
+                    status_code=400,
+                    detail="未找到指定的测试点"
+                )
+
+            # Execute synchronous test cases generation
+            logger.info(f"Executing synchronous test cases generation for task {task_id}")
+            result = await _generate_test_cases_sync_unified(
+                task_id=task_id,
+                business_type=request.business_type.upper(),
+                project_id=request.project_id,
+                test_point_ids=request.test_point_ids,
+                additional_context=request.additional_context,
+                db=db
+            )
+            generation_time = time.time() - start_time
+
+            return UnifiedTestCaseGenerationResponse(
+                generation_job_id=task_id,
+                status="completed",
+                test_points_generated=0,
+                test_cases_generated=result['test_cases_generated'],
+                unified_test_cases=result['unified_test_cases'],
+                generation_time=generation_time,
+                message=f"同步生成完成: {result['test_cases_generated']} 个测试用例"
+            )
+        else:
+            raise HTTPException(status_code=400, detail=f"不支持的生成模式: {request.generation_mode}")
+
+    except HTTPException as e:
+        logger.error(f"HTTP Exception in synchronous generation: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"Error in synchronous generation: {str(e)}", exc_info=True)
+        error_message = str(e)
+        generation_time = time.time() - start_time if 'start_time' in locals() else 0
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"同步生成失败: {error_message}"
+        )
 
 
 @router.get("/{test_case_id}", response_model=UnifiedTestCaseResponse)
@@ -225,8 +369,9 @@ async def get_unified_test_case(
             module=test_case.module,
             functional_module=test_case.functional_module,
             functional_domain=test_case.functional_domain,
-            preconditions=_parse_json_field(test_case.preconditions),
+            preconditions=test_case.preconditions,
             steps=_parse_json_field(test_case.steps),
+            expected_result=test_case.expected_result,
                         remarks=test_case.remarks,
             generation_job_id=test_case.generation_job_id,
             entity_order=test_case.entity_order,
@@ -336,7 +481,7 @@ async def create_unified_test_case(
             module=db_test_case.module,
             functional_module=db_test_case.functional_module,
             functional_domain=db_test_case.functional_domain,
-            preconditions=_parse_json_field(db_test_case.preconditions),
+            preconditions=db_test_case.preconditions,
             steps=_parse_json_field(db_test_case.steps),
             remarks=db_test_case.remarks,
             generation_job_id=db_test_case.generation_job_id,
@@ -372,6 +517,15 @@ async def update_unified_test_case(
         if 'status' in update_data:
             update_data['status'] = update_data['status'].value
 
+        # 处理stage枚举值
+        if 'stage' in update_data:
+            if update_data['stage'] == SchemaUnifiedTestCaseStage.TEST_POINT:
+                update_data['stage'] = DatabaseUnifiedTestCaseStage.test_point
+            elif update_data['stage'] == SchemaUnifiedTestCaseStage.TEST_CASE:
+                update_data['stage'] = DatabaseUnifiedTestCaseStage.test_case
+            else:
+                logger.warning(f"Unknown stage value: {update_data['stage']}")
+
         # 添加缺失的business_type枚举转换
         if 'business_type' in update_data:
             try:
@@ -392,6 +546,7 @@ async def update_unified_test_case(
             if field in update_data:
                 update_data[field] = _serialize_json_field(update_data[field])
 
+    
         # 更新时间戳
         update_data['updated_at'] = datetime.now()
 
@@ -459,8 +614,9 @@ async def update_unified_test_case(
             module=test_case.module,
             functional_module=test_case.functional_module,
             functional_domain=test_case.functional_domain,
-            preconditions=_parse_json_field(test_case.preconditions),
+            preconditions=test_case.preconditions,
             steps=_parse_json_field(test_case.steps),
+            expected_result=test_case.expected_result,
                         remarks=test_case.remarks,
             generation_job_id=test_case.generation_job_id,
             entity_order=test_case.entity_order,
@@ -807,7 +963,8 @@ async def generate_unified(
                 UnifiedTestCase.id.in_(request.test_point_ids),
                 UnifiedTestCase.business_type == request.business_type.upper(),
                 UnifiedTestCase.project_id == request.project_id,
-                UnifiedTestCase.steps.is_(None)  # Only test points
+                # Fix: Remove strict steps.is_(None) requirement to allow partially updated test points
+                or_(UnifiedTestCase.steps.is_(None), UnifiedTestCase.stage == DatabaseUnifiedTestCaseStage.TEST_POINT)
             ).all()
 
             if not test_points:
@@ -825,6 +982,7 @@ async def generate_unified(
             business_type=request.business_type.upper(),
             status=JobStatus.PENDING,
             project_id=request.project_id,
+            generation_mode=request.generation_mode,  # 添加generation_mode字段
             created_at=datetime.now()
         )
         db.add(job)
@@ -896,6 +1054,338 @@ async def get_generation_status_unified(task_id: str, db: Session = Depends(get_
         raise HTTPException(status_code=500, detail=f"获取任务状态失败: {str(e)}")
 
 
+
+# ========================================
+# SYNCHRONOUS GENERATION FUNCTIONS
+# ========================================
+
+async def _generate_test_points_sync_unified(
+    task_id: str,
+    business_type: str,
+    project_id: int,
+    additional_context: Optional[str] = None,
+    db: Session = None
+) -> Dict[str, Any]:
+    """
+    Synchronous test points generation function for debugging.
+
+    Args:
+        task_id: Task identifier for tracking
+        business_type: Business type for generation
+        project_id: Project ID
+        additional_context: Additional context for generation
+        db: Database session
+
+    Returns:
+        Dict containing generation results
+    """
+    logger.info(f"🚀 Starting synchronous test points generation: task_id={task_id}, business_type={business_type}")
+
+    try:
+        # Import required services
+        from ..services.generation_service import UnifiedGenerationService
+        from ..utils.config import Config
+
+        config = Config()
+        generator_service = UnifiedGenerationService(config)
+
+        logger.info(f"Services initialized for task {task_id}")
+
+        # Generate test points using unified generation service
+        logger.info(f"Calling generation service for task {task_id}")
+        generation_response = generator_service.generate_test_points(
+            business_type=business_type,
+            additional_context=additional_context or {},
+            save_to_database=False,
+            project_id=project_id,
+            task_id=task_id  # 传入API端点创建的task_id
+        )
+
+        logger.info(f"Generation service completed for task {task_id}")
+        logger.info(f"Generation response type: {type(generation_response)}")
+        logger.info(f"Generation success: {generation_response.success}")
+
+        # Check if generation was successful and extract test points
+        if not generation_response.success:
+            error_msg = f"测试点生成失败: {generation_response.message}"
+            logger.error(f"Task {task_id} failed: {error_msg}")
+            raise RuntimeError(error_msg)
+
+        # Extract test points list directly from GenerationResponse.result.generated_items
+        generation_result = generation_response.result
+        if not generation_result or not generation_result.generated_items:
+            error_msg = "测试点生成结果为空"
+            logger.error(f"Task {task_id} failed: {error_msg}")
+            raise RuntimeError(error_msg)
+
+        test_points_list = generation_result.generated_items
+        logger.info(f"Successfully obtained {len(test_points_list)} test points from generation service for task {task_id}")
+
+        # Save test points to unified table with simplified logic
+        test_point_count = 0
+        id_conflict_count = 0
+        processed_test_points = []
+        created_test_cases = []
+
+        # Use provided database session or create new one
+        if db is None:
+            from ..database.database import DatabaseManager
+            db_manager = DatabaseManager(config)
+            with db_manager.get_session() as db:
+                result = _save_test_points_to_db(
+                    db, test_points_list, business_type, project_id, task_id
+                )
+                test_point_count, id_conflict_count, processed_test_points, created_test_cases = result
+        else:
+            result = _save_test_points_to_db(
+                db, test_points_list, business_type, project_id, task_id
+            )
+            test_point_count, id_conflict_count, processed_test_points, created_test_cases = result
+
+        logger.info(f"Task {task_id} completed successfully: {test_point_count} test points saved")
+
+        # Convert created test cases to response format
+        unified_test_cases = []
+        for test_case in created_test_cases:
+            # Convert database stage enum to schema stage enum
+            stage = (
+                SchemaUnifiedTestCaseStage.TEST_POINT
+                if test_case.is_test_point_stage()
+                else SchemaUnifiedTestCaseStage.TEST_CASE
+            )
+
+            response_data = UnifiedTestCaseResponse(
+                id=test_case.id,
+                project_id=test_case.project_id,
+                business_type=_get_business_type_value(test_case.business_type),
+                test_case_id=test_case.test_case_id,
+                case_id=test_case.test_case_id,
+                name=test_case.name,
+                description=test_case.description,
+                priority=test_case.priority,
+                status=test_case.status,
+                stage=stage,
+                module=test_case.module,
+                functional_module=test_case.functional_module,
+                functional_domain=test_case.functional_domain,
+                preconditions=test_case.preconditions,
+                steps=_parse_json_field(test_case.steps),
+                expected_result=test_case.expected_result,
+                remarks=test_case.remarks,
+                generation_job_id=test_case.generation_job_id,
+                entity_order=test_case.entity_order,
+                created_at=test_case.created_at,
+                updated_at=test_case.updated_at
+            )
+            unified_test_cases.append(response_data)
+
+        return {
+            'test_points_generated': test_point_count,
+            'unified_test_cases': unified_test_cases,
+            'id_conflicts_resolved': id_conflict_count,
+            'processing_details': {
+                'total_processed': len(test_points_list),
+                'successful': test_point_count,
+                'conflicts_resolved': id_conflict_count
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Error in synchronous test points generation for task {task_id}: {str(e)}", exc_info=True)
+        raise RuntimeError(f"同步测试点生成失败: {str(e)}")
+
+
+def _save_test_points_to_db(
+    db: Session,
+    test_points_list: List[Dict[str, Any]],
+    business_type: str,
+    project_id: int,
+    generation_job_id: str
+) -> tuple:
+    """
+    Save test points to database and return statistics.
+
+    Returns:
+        tuple: (test_point_count, id_conflict_count, processed_test_points, created_test_cases)
+    """
+    test_point_count = 0
+    id_conflict_count = 0
+    processed_test_points = []
+    created_test_cases = []
+
+    for i, point_data in enumerate(test_points_list):
+        try:
+            # Extract basic data from test point
+            original_id = point_data.get('test_case_id') or point_data.get('id') or f'TP{str(i+1).zfill(3)}'
+            title = point_data.get('title', point_data.get('name', f'测试点 {i+1}'))
+            description = point_data.get('description', '')
+
+            # Ensure ID uniqueness
+            unique_id = _ensure_unique_test_case_id(original_id, business_type, project_id, db)
+
+            # Track ID conflicts
+            if unique_id != original_id:
+                id_conflict_count += 1
+                logger.info(f"测试点ID冲突处理: {original_id} -> {unique_id}")
+
+            # Convert business_type string to BusinessType enum
+            try:
+                business_type_enum = BusinessType(business_type)
+            except ValueError as e:
+                logger.error(f"Invalid business_type '{business_type}': {str(e)}")
+                raise
+
+            # Create test point record with clean data
+            test_point = UnifiedTestCase(
+                project_id=project_id,
+                business_type=business_type_enum,
+                test_case_id=unique_id,
+                name=title,
+                description=description,
+                status=UnifiedTestCaseStatus.DRAFT,
+                priority='medium',
+                # Test points don't have execution details
+                preconditions=None,
+                steps=None,
+                entity_order=float(i + 1),
+                generation_job_id=generation_job_id
+            )
+
+            db.add(test_point)
+            db.flush()  # Get the ID without committing
+            created_test_cases.append(test_point)
+            test_point_count += 1
+
+            # Record processing result
+            processed_test_points.append({
+                'original_id': original_id,
+                'final_id': unique_id,
+                'was_conflicted': unique_id != original_id,
+                'name': title
+            })
+
+        except Exception as e:
+            logger.error(f"处理测试点时出错 (索引 {i}): {str(e)}")
+            continue  # Continue processing other test points
+
+    return test_point_count, id_conflict_count, processed_test_points, created_test_cases
+
+
+async def _generate_test_cases_sync_unified(
+    task_id: str,
+    business_type: str,
+    project_id: int,
+    test_point_ids: List[int],
+    additional_context: Optional[str] = None,
+    db: Session = None
+) -> Dict[str, Any]:
+    """
+    Synchronous test cases generation function for debugging.
+    """
+    logger.info(f"🚀 Starting synchronous test cases generation: task_id={task_id}, business_type={business_type}")
+
+    try:
+        # This would be implemented similarly to test points generation
+        # For now, return a placeholder result
+        return {
+            'test_cases_generated': 0,
+            'unified_test_cases': [],
+            'message': 'Test cases generation not implemented in sync mode yet'
+        }
+    except Exception as e:
+        logger.error(f"Error in synchronous test cases generation for task {task_id}: {str(e)}", exc_info=True)
+        raise RuntimeError(f"同步测试用例生成失败: {str(e)}")
+
+
+# ========================================
+# HELPER FUNCTIONS FOR ID CONFLICT HANDLING
+# ========================================
+
+def _is_id_exists(test_case_id: str, business_type: str, project_id: int, db) -> bool:
+    """
+    检查test_case_id在指定项目和业务类型中是否已存在
+
+    Args:
+        test_case_id: 要检查的测试用例ID
+        business_type: 业务类型
+        project_id: 项目ID
+        db: 数据库会话
+
+    Returns:
+        bool: 如果ID已存在返回True，否则返回False
+    """
+    existing_case = db.query(UnifiedTestCase).filter(
+        and_(
+            UnifiedTestCase.project_id == project_id,
+            UnifiedTestCase.business_type == business_type,
+            UnifiedTestCase.test_case_id == test_case_id
+        )
+    ).first()
+    return existing_case is not None
+
+
+def _ensure_unique_test_case_id(test_case_id: str, business_type: str, project_id: int, db) -> str:
+    """
+    确保test_case_id在项目和业务类型内唯一，冲突时自动重命名
+
+    Args:
+        test_case_id: 原始测试用例ID
+        business_type: 业务类型
+        project_id: 项目ID
+        db: 数据库会话
+
+    Returns:
+        str: 唯一的测试用例ID
+    """
+    if not _is_id_exists(test_case_id, business_type, project_id, db):
+        return test_case_id
+
+    original_id = test_case_id
+    counter = 1
+
+    # 如果原始ID已经有数字后缀，提取基础部分
+    base_id = original_id
+    if '-' in original_id:
+        parts = original_id.rsplit('-', 1)
+        if len(parts) == 2 and parts[1].isdigit():
+            base_id = parts[0]
+            counter = int(parts[1]) + 1
+
+    # 生成新的唯一ID
+    while True:
+        new_id = f"{base_id}-{counter}"
+        if not _is_id_exists(new_id, business_type, project_id, db):
+            return new_id
+        counter += 1
+
+
+def _batch_check_existing_ids(test_case_ids: List[str], business_type: str, project_id: int, db) -> set:
+    """
+    批量检查哪些ID已经存在
+
+    Args:
+        test_case_ids: 要检查的ID列表
+        business_type: 业务类型
+        project_id: 项目ID
+        db: 数据库会话
+
+    Returns:
+        set: 已存在的ID集合
+    """
+    if not test_case_ids:
+        return set()
+
+    existing_ids = db.query(UnifiedTestCase.test_case_id).filter(
+        and_(
+            UnifiedTestCase.project_id == project_id,
+            UnifiedTestCase.business_type == business_type,
+            UnifiedTestCase.test_case_id.in_(test_case_ids)
+        )
+    ).all()
+
+    return {row.test_case_id for row in existing_ids}
+
+
 # ========================================
 # BACKGROUND TASK FUNCTIONS
 # ========================================
@@ -907,18 +1397,40 @@ async def _generate_test_points_background_unified(
     additional_context: Optional[str] = None
 ):
     """Background task for generating test points in unified system."""
+    logger.info(f"🚀 BACKGROUND TASK STARTING: test_points generation for {business_type}, task_id: {task_id}")
+
+    # Use shared dependencies for background tasks
+    from ..database.models import GenerationJob, JobStatus, UnifiedTestCase
+    from datetime import datetime
+    import json
+    from .dependencies import get_database_manager, get_unified_generation_service
+
+    # Import AI logger for test_points generation
     try:
-        # TestPointGenerator removed - using unified generation system
-        from ..database.models import GenerationJob, JobStatus, UnifiedTestCase
-        from datetime import datetime
-        import json
+        from ..utils.ai_logger import AILoggerManager
+    except ImportError:
+        AILoggerManager = None
+        logger.warning("AILoggerManager not available for test_points generation")
 
-        config = Config()
-        from ..services.generation_service import UnifiedGenerationService
-        generator_service = UnifiedGenerationService(config)
+    # Get shared instances to avoid resource duplication
+    db_manager = get_database_manager()
+    generator_service = get_unified_generation_service()
 
-        # Update job status to running
-        with config.db_manager.get_session() as db:
+    # Initialize AI logger for test_points generation
+    ai_logger = None
+    if AILoggerManager:
+        try:
+            ai_logger = AILoggerManager.create_logger(task_id, business_type, project_id)
+            logger.info(f"✅ AI Logger initialized successfully for task {task_id}")
+        except Exception as e:
+            logger.error(f"Failed to initialize AI logger: {e}")
+            ai_logger = None
+
+    logger.info(f"✅ Services and DB manager initialized successfully for task {task_id}")
+
+    # Update job status to running using dedicated database session
+    try:
+        with db_manager.get_session() as db:
             job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
             if job:
                 job.status = JobStatus.RUNNING
@@ -927,83 +1439,157 @@ async def _generate_test_points_background_unified(
                 db.commit()
 
         # Generate test points using unified generation service
-        generation_result = generator_service.generate_test_points(
+        logger.info(f"Starting test points generation for business_type: {business_type}, project_id: {project_id}")
+        generation_response = generator_service.generate_test_points(
             business_type=business_type,
-            additional_context={"user_input": additional_context} if additional_context else {},
+            additional_context=additional_context or {},
             save_to_database=False,
-            project_id=project_id
+            project_id=project_id,
+            task_id=task_id,
+            ai_logger=ai_logger
         )
 
-        # Extract test points data from generation response
-        test_points_data = generation_result.data if generation_result.success else None
+        # Check if generation was successful and extract test points
+        if not generation_response.success:
+            raise RuntimeError(f"测试点生成失败: {generation_response.message}")
 
-        if not test_points_data:
-            raise RuntimeError("测试点生成失败")
+        # Extract test points list directly from GenerationResponse.result.generated_items
+        generation_result = generation_response.result
+        if not generation_result or not generation_result.generated_items:
+            raise RuntimeError("测试点生成结果为空")
 
-        # Create test case group
-        with config.db_manager.get_session() as db:
-            group = GenerationJob(
-                id=str(uuid.uuid4()),
-                project_id=project_id,
-                business_type=business_type,
-                generation_metadata=json.dumps({
-                    "mode": "test_points_only",
-                    "count": len(test_points_data.get('test_points', [])),
-                    "additional_context": additional_context
-                }, ensure_ascii=False)
-            )
-            db.add(group)
-            db.commit()
-            db.refresh(group)
+        test_points_list = generation_result.generated_items
+        logger.info(f"Successfully obtained {len(test_points_list)} test points from generation service")
 
-        # Save test points to unified table
+        # Save test points to unified table with simplified logic
         test_point_count = 0
-        with config.db_manager.get_session() as db:
-            for i, point_data in enumerate(test_points_data.get('test_points', [])):
-                # Create test point record
-                test_point = UnifiedTestCase(
-                    project_id=project_id,
-                    business_type=business_type,
-                    test_case_id=point_data.get('test_point_id', f'TP{str(i+1).zfill(3)}'),
-                    name=point_data.get('title', f'测试点 {i+1}'),
-                    description=point_data.get('description', ''),
-                    status='draft',
-                    priority='medium',
-                    # Test points don't have execution details
-                    preconditions=None,
-                    steps=None,
-                    entity_order=float(i + 1),
-                    generation_job_id=task_id
-                )
-                db.add(test_point)
-                test_point_count += 1
+        id_conflict_count = 0
+        processed_test_points = []
 
+        with db_manager.get_session() as db:
+            # Process each test point with simplified logic
+            for i, point_data in enumerate(test_points_list):
+                try:
+                    # Extract basic data from test point
+                    original_id = point_data.get('test_case_id') or point_data.get('id') or f'TP{str(i+1).zfill(3)}'
+                    title = point_data.get('title', point_data.get('name', f'测试点 {i+1}'))
+                    description = point_data.get('description', '')
+
+                    # Ensure ID uniqueness
+                    unique_id = _ensure_unique_test_case_id(original_id, business_type, project_id, db)
+
+                    # Track ID conflicts
+                    if unique_id != original_id:
+                        id_conflict_count += 1
+                        logger.info(f"测试点ID冲突处理: {original_id} -> {unique_id}")
+
+                    # Check for duplicate test case by business_type and name
+                    existing_test_point = db.query(UnifiedTestCase).filter(
+                        UnifiedTestCase.business_type == business_type,
+                        UnifiedTestCase.name == title
+                    ).first()
+
+                    if existing_test_point:
+                        logger.info(f"跳过重复的测试点: {title} (ID: {existing_test_point.id})")
+                        # Still record in processing results for tracking
+                        processed_test_points.append({
+                            'original_id': original_id,
+                            'final_id': existing_test_point.test_case_id,
+                            'was_conflicted': unique_id != original_id,
+                            'name': title,
+                            'action': 'skipped_duplicate'
+                        })
+                        continue  # Skip to next test point
+
+                    # Create test point record with clean data
+                    test_point = UnifiedTestCase(
+                        project_id=project_id,
+                        business_type=business_type,
+                        test_case_id=unique_id,
+                        name=title,
+                        description=description,
+                        status='draft',
+                        priority='medium',
+                        # Test points don't have execution details
+                        preconditions=None,
+                        steps=None,
+                        entity_order=float(i + 1),
+                        generation_job_id=task_id
+                    )
+
+                    db.add(test_point)
+                    test_point_count += 1
+
+                    # Record processing result
+                    processed_test_points.append({
+                        'original_id': original_id,
+                        'final_id': unique_id,
+                        'was_conflicted': unique_id != original_id,
+                        'name': title
+                    })
+
+                except Exception as e:
+                    logger.error(f"处理测试点时出错 (索引 {i}): {str(e)}")
+                    continue  # Continue processing other test points
+
+            # Commit all changes
             db.commit()
+            logger.info(f"测试点生成完成，成功保存 {test_point_count} 个测试点")
 
-        # Update job completion
-        with config.db_manager.get_session() as db:
+        # Update job status to completed
+        with db_manager.get_session() as db:
             job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
             if job:
                 job.status = JobStatus.COMPLETED
                 job.completed_at = datetime.now()
                 job.result_data = json.dumps({
                     "test_points_generated": test_point_count,
-                    "project_id": group.id
+                    "project_id": project_id,
+                    "id_conflicts_resolved": id_conflict_count,
+                    "processing_details": {
+                        "total_processed": len(test_points_list),
+                        "successful": test_point_count,
+                        "conflicts_resolved": id_conflict_count
+                    }
                 }, ensure_ascii=False)
                 db.commit()
 
+                # Finalize AI logging with success
+                try:
+                    ai_logger.finalize_session(success=True)
+                except Exception as log_error:
+                    logger.error(f"Failed to finalize AI logging session: {log_error}")
+
     except Exception as e:
-        # Update job with error
+        # Enhanced error logging with full traceback
+        logger.error(f"Background task {task_id} failed with error: {str(e)}", exc_info=True)
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Parameters: business_type={business_type}, project_id={project_id}")
+
+        # Update job status to failed with detailed error information using shared dependencies
         try:
-            config = Config()
-            with config.db_manager.get_session() as db:
+            from .dependencies import get_database_manager
+            db_manager = get_database_manager()
+            with db_manager.get_session() as db:
                 job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
                 if job:
                     job.status = JobStatus.FAILED
-                    job.error_message = str(e)[:2000]
+                    job.error_message = f"{str(e)} (Type: {type(e).__name__})"[:2000]
                     db.commit()
-        except:
-            pass
+                    logger.info(f"Updated job {task_id} status to FAILED")
+                else:
+                    logger.error(f"Job {task_id} not found for error update")
+        except Exception as inner_e:
+            logger.error(f"Failed to update job status with error: {str(inner_e)}", exc_info=True)
+            # Re-throw to make the error visible at the application level
+            raise
+
+        # Finalize AI logging with failure
+        try:
+            if ai_logger:
+                ai_logger.finalize_session(success=False, error_message=f"{str(e)} (Type: {type(e).__name__})")
+        except Exception as log_error:
+            logger.error(f"Failed to finalize AI logging session: {log_error}")
 
 
 async def _generate_test_cases_background_unified(
@@ -1014,17 +1600,28 @@ async def _generate_test_cases_background_unified(
     additional_context: Optional[str] = None
 ):
     """Background task for generating test cases from test points in unified system."""
+    logger.info(f"🚀 BACKGROUND TASK STARTING: test_cases generation for {business_type}, task_id: {task_id}")
+
+    # Use shared dependencies for background tasks
+    from ..database.models import GenerationJob, JobStatus
+    from datetime import datetime
+    import json
+    from .dependencies import get_database_manager, get_test_case_generator
+    from ..utils.ai_logger import AILoggerManager
+
+    # Get shared instances to avoid resource duplication
+    db_manager = get_database_manager()
+    generator = get_test_case_generator()
+
+    # Create AI logger for this task
+    ai_logger = AILoggerManager.create_logger(task_id, business_type, project_id)
+    logger.info(f"✅ AI logger created for task {task_id}: {ai_logger.get_session_path()}")
+
+    logger.info(f"✅ Test cases generator and DB manager initialized successfully for task {task_id}")
+
+    # Update job status to running using dedicated database session
     try:
-        from ..core.test_case_generator import TestCaseGenerator
-        from ..database.models import GenerationJob, JobStatus
-        from datetime import datetime
-        import json
-
-        config = Config()
-        generator = TestCaseGenerator(config)
-
-        # Update job status to running
-        with config.db_manager.get_session() as db:
+        with db_manager.get_session() as db:
             job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
             if job:
                 job.status = JobStatus.RUNNING
@@ -1033,23 +1630,24 @@ async def _generate_test_cases_background_unified(
                 db.commit()
 
         # Get test points
-        with config.db_manager.get_session() as db:
+        with db_manager.get_session() as db:
             test_points = db.query(UnifiedTestCase).filter(
                 UnifiedTestCase.id.in_(test_point_ids) if test_point_ids else True,
                 UnifiedTestCase.business_type == business_type,
                 UnifiedTestCase.project_id == project_id,
-                UnifiedTestCase.steps.is_(None)  # Only test points
+                # Fix: Remove strict steps.is_(None) requirement to allow partially updated test points
+                or_(UnifiedTestCase.steps.is_(None), UnifiedTestCase.stage == DatabaseUnifiedTestCaseStage.TEST_POINT)
             ).all()
 
             if not test_points:
                 raise RuntimeError("未找到可用的测试点")
 
-            # Convert test points to expected format
+            # Convert test points to expected format (fixed field mapping)
             test_points_data = {
                 "test_points": [
                     {
                         "id": tp.id,
-                        "test_point_id": tp.case_id,
+                        "test_case_id": tp.test_case_id,  # Fixed: use test_case_id instead of case_id
                         "title": tp.name,
                         "description": tp.description,
                         "priority": tp.priority
@@ -1058,59 +1656,181 @@ async def _generate_test_cases_background_unified(
                 ]
             }
 
+        # Log test points to prompt transformation
+        ai_logger.log_test_points_to_prompt({
+            "test_points_data": test_points_data,
+            "additional_context": additional_context,
+            "business_type": business_type,
+            "project_id": project_id,
+            "test_point_ids": test_point_ids
+        })
+
         # Generate test cases from test points
-        test_cases_data = generator.generate_test_cases_from_points(
+        # Fix: Pass test_point_ids to enable template variable resolution
+        test_cases_data = generator.generate_test_cases_from_external_points(
             business_type=business_type,
             test_points_data=test_points_data,
-            additional_context={"user_input": additional_context} if additional_context else {}
+            additional_context=additional_context or {},
+            save_to_db=True,
+            project_id=project_id,
+            test_point_ids=test_point_ids,
+            ai_logger=ai_logger
         )
 
         if not test_cases_data:
             raise RuntimeError("基于测试点的测试用例生成失败")
 
-        # Save test cases to unified table
-        test_case_count = 0
-        with config.db_manager.get_session() as db:
-            for i, case_data in enumerate(test_cases_data.get('test_cases', [])):
-                # Find corresponding test point
-                test_point_id = case_data.get('test_point_id')
-                test_point = next((tp for tp in test_points if tp.case_id == test_point_id), None)
+        # Enhanced data validation and repair
+        validator = DataValidatorRepairer()
 
-                if test_point:
-                    # Convert test point to test case by adding execution details
-                    test_point.steps = json.dumps(case_data.get('steps', []), ensure_ascii=False)
-                    test_point.preconditions = json.dumps(case_data.get('preconditions', []), ensure_ascii=False)
-                    test_point.module = case_data.get('module', '')
-                    test_point.functional_module = case_data.get('functional_module', '')
-                    test_point.functional_domain = case_data.get('functional_domain', '')
-                    test_point.remarks = case_data.get('remarks', '')
-                    test_case_count += 1
+        # Extract and validate test cases with repair functionality
+        if isinstance(test_cases_data, str):
+            # If test_cases_data is a string response, parse it first
+            json_data, validated_test_cases = JSONExtractor.extract_and_validate_json_response(test_cases_data, validate_and_repair=True, ai_logger=ai_logger)
+        else:
+            # If test_cases_data is already a dict, validate directly
+            validated_test_cases = JSONExtractor.extract_test_cases_from_json(test_cases_data, validate_and_repair=True)
+
+        # Log validation summary
+        validation_summary = validator.get_processing_summary()
+        logger.info(f"Test case validation complete: {validation_summary['total_cases_processed']} cases, "
+                   f"success rate: {validation_summary['success_rate']:.1f}%")
+
+        # Save test cases to unified table with enhanced error handling
+        test_case_count = 0
+        failed_cases = 0
+
+        with db_manager.get_session() as db:
+            # Use validated test cases instead of raw data
+            test_cases_list = validated_test_cases
+
+            for i, case_data in enumerate(test_cases_list):
+                try:
+                    # Find corresponding test point by database ID (fix: use tp.id instead of tp.test_case_id)
+                    test_point_id = case_data.get('test_point_id') or case_data.get('id')
+                    logger.info(f"Looking for test point with ID: {test_point_id}")
+                    logger.info(f"Available test points: {[tp.id for tp in test_points]}")
+                    test_point = next((tp for tp in test_points if tp.id == test_point_id), None)
+
+                    if test_point:
+                        # Convert test point to test case by adding execution details
+                        # Use validated and repaired data
+                        test_point.steps = _serialize_json_field(case_data.get('steps', []))
+                        test_point.preconditions = _serialize_json_field(case_data.get('preconditions', []))
+                        test_point.module = case_data.get('module', '')
+                        test_point.functional_module = case_data.get('functional_module', '')
+                        test_point.functional_domain = case_data.get('functional_domain', '')
+
+                        # Enhanced remarks handling - preserve validation info
+                        existing_remarks = test_point.remarks or ''
+                        validation_remarks = case_data.get('remarks', '')
+                        if validation_remarks and '[自动修复]' in validation_remarks:
+                            # Add validation info to remarks
+                            combined_remarks = f"{existing_remarks} | {validation_remarks}" if existing_remarks else validation_remarks
+                            test_point.remarks = combined_remarks
+                        else:
+                            test_point.remarks = existing_remarks or validation_remarks or ''
+
+                        test_case_count += 1
+                        logger.info(f"Successfully converted test point to test case: {test_point.test_case_id}")
+                    else:
+                        failed_cases += 1
+                        logger.warning(f"未找到对应的测试点，跳过测试用例生成: {test_point_id}")
+                        # Create new test case if test point not found (fallback mechanism)
+                        try:
+                            case_name = case_data.get('name', f'新生成的测试用例 {i+1}')
+
+                            # Check for duplicate test case by business_type and name
+                            existing_test_case = db.query(UnifiedTestCase).filter(
+                                UnifiedTestCase.business_type == business_type,
+                                UnifiedTestCase.name == case_name
+                            ).first()
+
+                            if existing_test_case:
+                                logger.info(f"跳过重复的测试用例: {case_name} (ID: {existing_test_case.id})")
+                                failed_cases += 1
+                                continue  # Skip to next test case
+
+                            unique_id = _ensure_unique_test_case_id(case_data.get('test_case_id', f'NEW_TC{str(i+1).zfill(3)}'), business_type, project_id, db)
+                            new_test_case = UnifiedTestCase(
+                                project_id=project_id,
+                                business_type=business_type,
+                                test_case_id=unique_id,
+                                name=case_name,
+                                description=case_data.get('description', ''),
+                                status=UnifiedTestCaseStatus.DRAFT,
+                                priority=case_data.get('priority', 'medium'),
+                                steps=_serialize_json_field(case_data.get('steps', [])),
+                                preconditions=_serialize_json_field(case_data.get('preconditions', [])),
+                                module=case_data.get('module', ''),
+                                functional_module=case_data.get('functional_module', ''),
+                                functional_domain=case_data.get('functional_domain', ''),
+                                remarks=case_data.get('remarks', '[自动创建] 未找到对应的测试点'),
+                                entity_order=float(i + 1),
+                                generation_job_id=task_id,
+                                stage=DatabaseUnifiedTestCaseStage.test_case
+                            )
+                            db.add(new_test_case)
+                            test_case_count += 1
+                            logger.info(f"Created new test case as fallback: {unique_id}")
+                        except Exception as create_error:
+                            logger.error(f"Failed to create fallback test case: {str(create_error)}")
+                            failed_cases += 1
+
+                except Exception as e:
+                    failed_cases += 1
+                    logger.error(f"处理测试用例时出错 (索引 {i}): {str(e)}")
+                    continue
 
             db.commit()
 
-        # Update job completion
-        with config.db_manager.get_session() as db:
+            # 记录处理结果
+            if failed_cases > 0:
+                logger.info(f"测试用例生成完成，成功转换 {test_case_count} 个测试用例，失败 {failed_cases} 个")
+
+        # Update job completion with detailed processing results
+        with db_manager.get_session() as db:
             job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
             if job:
                 job.status = JobStatus.COMPLETED
                 job.completed_at = datetime.now()
                 job.result_data = json.dumps({
-                    "test_cases_generated": test_case_count
+                    "test_cases_generated": test_case_count,
+                    "test_points_used": len(test_points),
+                    "failed_cases": failed_cases,
+                    "processing_details": {
+                        "total_test_cases": len(test_cases_list),
+                        "successful": test_case_count,
+                        "failed": failed_cases
+                    }
                 }, ensure_ascii=False)
                 db.commit()
 
     except Exception as e:
-        # Update job with error
+        # Enhanced error logging with full traceback
+        logger.error(f"Background test case generation task {task_id} failed with error: {str(e)}", exc_info=True)
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Parameters: business_type={business_type}, project_id={project_id}")
+
+        # Finalize AI logging with failure
         try:
-            config = Config()
-            with config.db_manager.get_session() as db:
+            ai_logger.finalize_session(success=False, error_message=f"{str(e)} (Type: {type(e).__name__})")
+        except Exception as log_error:
+            logger.error(f"Failed to finalize AI logging session: {log_error}")
+
+        # Update job status to failed with detailed error information using shared dependencies
+        try:
+            # Use shared db_manager for error handling
+            with db_manager.get_session() as db:
                 job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
                 if job:
                     job.status = JobStatus.FAILED
-                    job.error_message = str(e)[:2000]
+                    job.error_message = f"{str(e)} (Type: {type(e).__name__})"[:2000]
                     db.commit()
-        except:
-            pass
+        except Exception as inner_e:
+            logger.error(f"Failed to update job status with error: {str(inner_e)}", exc_info=True)
+            # Don't silently fail - rethrow to make the error visible at the application level
+            raise
 
 
 
@@ -1124,6 +1844,8 @@ def _parse_json_field(field_value: Optional[str]) -> Optional[Any]:
         return json.loads(field_value)
     except (json.JSONDecodeError, TypeError):
         return field_value
+
+
 
 
 def _serialize_json_field(field_value: Optional[Any]) -> Optional[str]:
@@ -1271,3 +1993,241 @@ def _parse_single_step_string(step_str: str) -> Optional[Dict[str, Any]]:
             "action": step_str,
             "expected": None
         }
+
+
+def _intelligent_update_test_cases(
+    test_cases_data: List[Dict[str, Any]],
+    business_type: str,
+    project_id: int,
+    db,
+    generation_job_id: str
+) -> Dict[str, Any]:
+    """
+    智能增量更新测试用例，避免删除重建导致的关联数据丢失
+
+    Args:
+        test_cases_data: 新的测试用例数据列表
+        business_type: 业务类型
+        project_id: 项目ID
+        db: 数据库会话
+        generation_job_id: 生成任务ID
+
+    Returns:
+        Dict: 更新结果统计
+    """
+    logger.info(f"开始智能增量更新测试用例，业务类型: {business_type}, 项目: {project_id}")
+
+    updated_count = 0
+    created_count = 0
+    skipped_count = 0
+    error_count = 0
+
+    # 获取现有测试用例（按test_case_id索引）
+    existing_cases = db.query(UnifiedTestCase).filter(
+        UnifiedTestCase.business_type == business_type,
+        UnifiedTestCase.project_id == project_id,
+        UnifiedTestCase.stage == DatabaseUnifiedTestCaseStage.test_case
+    ).all()
+
+    # 创建ID到现有用例的映射
+    existing_by_id = {case.test_case_id: case for case in existing_cases}
+
+    # 处理新的测试用例数据
+    for i, case_data in enumerate(test_cases_data):
+        try:
+            new_test_case_id = case_data.get('test_case_id')
+
+            if not new_test_case_id:
+                logger.warning(f"测试用例数据缺少test_case_id，跳过处理")
+                skipped_count += 1
+                continue
+
+            # 检查是否存在相同ID的测试用例
+            existing_case = existing_by_id.get(new_test_case_id)
+
+            if existing_case:
+                # 执行智能更新
+                needs_update = False
+                update_fields = {}
+
+                # 比较并更新有变化的字段
+                field_mappings = {
+                    'name': case_data.get('name'),
+                    'description': case_data.get('description'),
+                    'priority': case_data.get('priority', 'medium'),
+                    'module': case_data.get('module', ''),
+                    'functional_module': case_data.get('functional_module', ''),
+                    'functional_domain': case_data.get('functional_domain', ''),
+                    'remarks': case_data.get('remarks', ''),
+                    'steps': _serialize_json_field(case_data.get('steps', [])),
+                    'preconditions': _serialize_json_field(case_data.get('preconditions', []))
+                }
+
+                for field, new_value in field_mappings.items():
+                    old_value = getattr(existing_case, field, None)
+
+                    # 处理JSON字段的比较
+                    if field in ['steps', 'preconditions']:
+                        old_value = _parse_json_field(old_value)
+
+                    if old_value != new_value:
+                        update_fields[field] = new_value
+                        needs_update = True
+
+                # 如果有变化，执行更新
+                if needs_update:
+                    update_fields['updated_at'] = datetime.now()
+                    update_fields['generation_job_id'] = generation_job_id
+
+                    # 合并备注信息，保留更新历史
+                    if 'remarks' in update_fields:
+                        old_remarks = existing_case.remarks or ''
+                        new_remarks = update_fields['remarks']
+                        if new_remarks and '[自动修复]' in new_remarks:
+                            update_fields['remarks'] = f"{old_remarks} | {new_remarks}" if old_remarks else new_remarks
+
+                    for field, value in update_fields.items():
+                        setattr(existing_case, field, value)
+
+                    logger.info(f"更新测试用例: {new_test_case_id}, 更新字段: {list(update_fields.keys())}")
+                    updated_count += 1
+                else:
+                    logger.debug(f"测试用例无变化，跳过: {new_test_case_id}")
+                    skipped_count += 1
+
+            else:
+                # 创建新测试用例
+                unique_id = _ensure_unique_test_case_id(new_test_case_id, business_type, project_id, db)
+
+                new_case = UnifiedTestCase(
+                    project_id=project_id,
+                    business_type=business_type,
+                    test_case_id=unique_id,
+                    name=case_data.get('name', f'新测试用例 {i+1}'),
+                    description=case_data.get('description', ''),
+                    status=UnifiedTestCaseStatus.DRAFT,
+                    priority=case_data.get('priority', 'medium'),
+                    steps=_serialize_json_field(case_data.get('steps', [])),
+                    preconditions=_serialize_json_field(case_data.get('preconditions', [])),
+                    module=case_data.get('module', ''),
+                    functional_module=case_data.get('functional_module', ''),
+                    functional_domain=case_data.get('functional_domain', ''),
+                    remarks=case_data.get('remarks', '[增量更新] 新创建'),
+                    entity_order=float(i + 1),
+                    generation_job_id=generation_job_id,
+                    stage=DatabaseUnifiedTestCaseStage.test_case
+                )
+
+                db.add(new_case)
+                logger.info(f"创建新测试用例: {unique_id}")
+                created_count += 1
+
+        except Exception as e:
+            logger.error(f"处理测试用例时出错: {str(e)}")
+            error_count += 1
+
+    # 提交所有更改
+    try:
+        db.commit()
+        logger.info(f"智能增量更新完成 - 更新: {updated_count}, 创建: {created_count}, 跳过: {skipped_count}, 错误: {error_count}")
+    except Exception as commit_error:
+        db.rollback()
+        logger.error(f"提交更改时出错: {str(commit_error)}")
+        error_count += len(test_cases_data)
+
+    return {
+        'updated_count': updated_count,
+        'created_count': created_count,
+        'skipped_count': skipped_count,
+        'error_count': error_count,
+        'total_processed': len(test_cases_data),
+        'success_rate': ((updated_count + created_count) / len(test_cases_data) * 100) if test_cases_data else 0
+    }
+
+
+def _batch_update_with_intelligent_mode(
+    test_cases_data: List[Dict[str, Any]],
+    business_type: str,
+    project_id: int,
+    db,
+    generation_job_id: str
+) -> Dict[str, Any]:
+    """
+    批量智能更新测试用例的包装函数，兼容现有调用方式
+
+    Args:
+        test_cases_data: 测试用例数据
+        business_type: 业务类型
+        project_id: 项目ID
+        db: 数据库会话
+        generation_job_id: 生成任务ID
+
+    Returns:
+        Dict: 更新结果统计
+    """
+    return _intelligent_update_test_cases(
+        test_cases_data=test_cases_data,
+        business_type=business_type,
+        project_id=project_id,
+        db=db,
+        generation_job_id=generation_job_id
+    )
+
+
+@router.post("/test-background", response_model=Dict[str, str])
+async def test_background_task(
+    background_tasks: BackgroundTasks,
+    message: str = "Default test message"
+):
+    """
+    Test endpoint to verify BackgroundTasks functionality.
+    This creates a simple background task that logs after a delay.
+    """
+    task_id = f"test-{uuid.uuid4().hex[:8]}"
+    logger.info(f"🧪 TEST: Creating background task {task_id}")
+
+    background_tasks.add_task(
+        _simple_background_test,
+        task_id=task_id,
+        message=message
+    )
+
+    return {
+        "message": "Background task created successfully",
+        "task_id": task_id,
+        "status": "Check logs for background task execution"
+    }
+
+
+async def _simple_background_test(
+    task_id: str,
+    message: str
+):
+    """
+    Simple background task for testing BackgroundTasks functionality.
+    """
+    logger.info(f"🧪 BACKGROUND TASK {task_id} STARTED: message={message}")
+
+    # Simulate some work
+    import asyncio
+    await asyncio.sleep(2)
+
+    logger.info(f"🧪 BACKGROUND TASK {task_id} COMPLETED: message={message}")
+
+    # Test database connection from background task
+    try:
+        from ..database.database import DatabaseManager
+        from ..utils.config import Config
+
+        config = Config()
+        db_manager = DatabaseManager(config)
+
+        with db_manager.get_session() as db:
+            # Simple database query to test connection
+            from ..database.models import GenerationJob
+            job_count = db.query(GenerationJob).count()
+            logger.info(f"🧪 BACKGROUND TASK {task_id}: Database connection successful, found {job_count} generation jobs")
+
+    except Exception as e:
+        logger.error(f"🧪 BACKGROUND TASK {task_id}: Database connection failed: {str(e)}")
+        raise

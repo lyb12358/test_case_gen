@@ -63,6 +63,16 @@ const BusinessPromptConfiguration: React.FC<BusinessPromptConfigurationProps> = 
   const [previewVisible, setPreviewVisible] = useState(false);
   const [previewStage, setPreviewStage] = useState<'test_point' | 'test_case'>('test_point');
   const [previewCombinationId, setPreviewCombinationId] = useState<number | undefined>();
+  const [previewCombinationItems, setPreviewCombinationItems] = useState<Array<{
+    id: number;
+    prompt_id: number;
+    order: number;
+    prompt_name: string;
+    prompt_type: string;
+    prompt_content: string;
+    variable_name?: string;
+    is_required: boolean;
+  }>>([]);
 
   // 组合数据状态（用于临时存储用户配置的组合）
   const [testPointCombinationData, setTestPointCombinationData] = useState<{
@@ -86,6 +96,7 @@ const BusinessPromptConfiguration: React.FC<BusinessPromptConfigurationProps> = 
     }>;
   } | undefined>();
 
+  
   // Get business type data if ID is provided
   const { data: businessData, isLoading: businessLoading } = useQuery({
     queryKey: ['businessType', urlId],
@@ -130,13 +141,18 @@ const BusinessPromptConfiguration: React.FC<BusinessPromptConfigurationProps> = 
 
       if (data.test_point_combination_data) {
         if (data.test_point_combination_data.existingCombinationId) {
-          // Update existing combination
+          // Update existing combination - 使用完整的 items 数据而不是仅 prompt_ids
           await businessService.updatePromptCombination(
             data.test_point_combination_data.existingCombinationId,
             {
               name: data.test_point_combination_data.name,
               description: data.test_point_combination_data.description,
-              prompt_ids: data.test_point_combination_data.items.map(item => item.prompt_id)
+              items: data.test_point_combination_data.items.map(item => ({
+                prompt_id: item.prompt_id,
+                order: item.order,
+                variable_name: item.variable_name,
+                is_required: item.is_required
+              }))
             }
           );
           updateData.test_point_combination_id = data.test_point_combination_data.existingCombinationId;
@@ -157,13 +173,18 @@ const BusinessPromptConfiguration: React.FC<BusinessPromptConfigurationProps> = 
 
       if (data.test_case_combination_data) {
         if (data.test_case_combination_data.existingCombinationId) {
-          // Update existing combination
+          // Update existing combination - 使用完整的 items 数据而不是仅 prompt_ids
           await businessService.updatePromptCombination(
             data.test_case_combination_data.existingCombinationId,
             {
               name: data.test_case_combination_data.name,
               description: data.test_case_combination_data.description,
-              prompt_ids: data.test_case_combination_data.items.map(item => item.prompt_id)
+              items: data.test_case_combination_data.items.map(item => ({
+                prompt_id: item.prompt_id,
+                order: item.order,
+                variable_name: item.variable_name,
+                is_required: item.is_required
+              }))
             }
           );
           updateData.test_case_combination_id = data.test_case_combination_data.existingCombinationId;
@@ -184,11 +205,65 @@ const BusinessPromptConfiguration: React.FC<BusinessPromptConfigurationProps> = 
 
       return businessService.updateBusinessType(businessId, updateData);
     },
-    onSuccess: () => {
+    onSuccess: async (data, variables) => {
+      console.log('保存配置成功 - 返回数据:', { data, variables });
       message.success('业务类型提示词配置保存成功');
+
+      // 获取最新的组合数据并更新临时状态，确保显示完整的提示词信息
+      const loadCombinationData = async (combinationId: number, setCombinationData: React.Dispatch<React.SetStateAction<any>>) => {
+        try {
+          const combination = await businessService.getPromptCombination(combinationId);
+          if (combination && combination.items) {
+            const items = combination.items.map(item => ({
+              id: item.id,
+              prompt_id: item.prompt_id,
+              order: item.order,
+              prompt_name: item.prompt_name || '',
+              prompt_type: item.prompt_type || '',
+              prompt_content: item.prompt_content || '',
+              variable_name: item.variable_name,
+              is_required: item.is_required
+            }));
+            setCombinationData({
+              ...combination,
+              items
+            });
+          }
+        } catch (error) {
+          console.error('Failed to fetch combination data after save:', error);
+          // 如果获取失败，清除临时状态，让组件回退到API查询
+          setCombinationData(undefined);
+        }
+      };
+
+      // 异步更新组合数据
+      if (data.test_point_combination_id) {
+        loadCombinationData(data.test_point_combination_id, setTestPointCombinationData);
+      }
+      if (data.test_case_combination_id) {
+        loadCombinationData(data.test_case_combination_id, setTestCaseCombinationData);
+      }
+
+      // 立即清除相关缓存的临时数据，确保从后端获取最新数据
+      if (testPointCombinationId) {
+        queryClient.setQueryData(['promptCombination', testPointCombinationId], undefined);
+        queryClient.removeQueries({ queryKey: ['promptCombination', testPointCombinationId] });
+      }
+      if (testCaseCombinationId) {
+        queryClient.setQueryData(['promptCombination', testCaseCombinationId], undefined);
+        queryClient.removeQueries({ queryKey: ['promptCombination', testCaseCombinationId] });
+      }
+
+      // 刷新业务类型相关缓存
       queryClient.invalidateQueries({ queryKey: ['businessType', urlId] });
       queryClient.invalidateQueries({ queryKey: ['businessTypes'] });
       queryClient.invalidateQueries({ queryKey: ['businessTypeStats'] });
+
+      // 触发业务数据的重新加载以获取最新的组合ID
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['businessType', urlId] });
+      }, 100);
+
       if (onSave) {
         onSave();
       } else {
@@ -196,7 +271,35 @@ const BusinessPromptConfiguration: React.FC<BusinessPromptConfigurationProps> = 
       }
     },
     onError: (error: any) => {
-      message.error(error.message || '保存配置失败');
+      console.error('保存配置失败 - 详细错误信息:', {
+        error,
+        errorMessage: error.message,
+        errorStatus: error.status,
+        errorData: error.response?.data,
+        testData: {
+          testPointCombinationData: testPointCombinationData ? { name: testPointCombinationData.name, itemsCount: testPointCombinationData.items.length } : null,
+          testCaseCombinationData: testCaseCombinationData ? { name: testCaseCombinationData.name, itemsCount: testCaseCombinationData.items.length } : null,
+          testPointCombinationId,
+          testCaseCombinationId
+        }
+      });
+
+      // 提供更友好的错误信息
+      let errorMessage = '保存配置失败';
+
+      if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      } else if (error.message) {
+        errorMessage = error.message;
+      } else if (error.status === 422) {
+        errorMessage = '数据验证失败，请检查提示词组合的格式和内容';
+      } else if (error.status === 404) {
+        errorMessage = '未找到相关的业务类型或提示词组合';
+      } else if (error.status === 500) {
+        errorMessage = '服务器内部错误，请稍后重试';
+      }
+
+      message.error(errorMessage);
     },
   });
 
@@ -234,9 +337,48 @@ const BusinessPromptConfiguration: React.FC<BusinessPromptConfigurationProps> = 
     setTestCaseBuilderVisible(true);
   };
 
-  const handlePreviewCombination = (stage: 'test_point' | 'test_case', combinationId?: number) => {
+  const handlePreviewCombination = async (stage: 'test_point' | 'test_case', combinationId?: number) => {
     setPreviewStage(stage);
     setPreviewCombinationId(combinationId);
+
+    // 重置预览 items
+    setPreviewCombinationItems([]);
+
+    // 如果有 combinationId，获取组合的详细 items 数据
+    if (combinationId) {
+      try {
+        console.log('Fetching combination data for preview:', combinationId);
+        const combination = await businessService.getPromptCombination(combinationId);
+
+        if (combination && combination.items) {
+          const items = combination.items.map(item => ({
+            id: item.id,
+            prompt_id: item.prompt_id,
+            order: item.order,
+            prompt_name: item.prompt_name || '',
+            prompt_type: item.prompt_type || '',
+            prompt_content: item.prompt_content || '',
+            variable_name: item.variable_name,
+            is_required: item.is_required
+          }));
+          console.log('Set preview combination items:', items);
+          setPreviewCombinationItems(items);
+        }
+      } catch (error) {
+        console.error('Failed to fetch combination for preview:', error);
+        message.error('获取组合详情失败');
+      }
+    } else {
+      // 如果没有 combinationId，检查是否有临时数据可用
+      const tempData = stage === 'test_point' ? testPointCombinationData : testCaseCombinationData;
+      if (tempData && tempData.items) {
+        console.log('Using temporary data for preview:', tempData);
+        // 对于临时数据，我们需要构建一个符合 CombinationPreview 要求的 items 数组
+        // 这里我们可以使用一些默认值，因为 CombinationPreview 组件会根据 combinationId 自动获取数据
+        setPreviewCombinationItems([]);
+      }
+    }
+
     setPreviewVisible(true);
   };
 
@@ -256,9 +398,63 @@ const BusinessPromptConfiguration: React.FC<BusinessPromptConfigurationProps> = 
     if (stage === 'test_point') {
       setTestPointCombinationData(combinationData);
       setTestPointBuilderVisible(false);
+
+      // 乐观更新缓存：如果有现有的组合ID，立即更新缓存
+      if (currentCombinationId) {
+        const mockCombination = {
+          id: currentCombinationId,
+          name: combinationData.name,
+          description: combinationData.description,
+          business_type: business?.code || '',
+          project_id: currentProject?.id || 1,
+          items: combinationData.items.map(item => ({
+            id: 0, // 临时ID
+            combination_id: currentCombinationId,
+            prompt_id: item.prompt_id,
+            order: item.order,
+            variable_name: item.variable_name,
+            is_required: item.is_required,
+            prompt_name: `提示词 ${item.prompt_id}`,
+            prompt_type: 'unknown', // 临时类型
+            prompt_content: '',
+            created_at: new Date().toISOString()
+          })),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+
+        queryClient.setQueryData(['promptCombination', currentCombinationId], mockCombination);
+      }
     } else {
       setTestCaseCombinationData(combinationData);
       setTestCaseBuilderVisible(false);
+
+      // 乐观更新缓存：如果有现有的组合ID，立即更新缓存
+      if (currentCombinationId) {
+        const mockCombination = {
+          id: currentCombinationId,
+          name: combinationData.name,
+          description: combinationData.description,
+          business_type: business?.code || '',
+          project_id: currentProject?.id || 1,
+          items: combinationData.items.map(item => ({
+            id: 0, // 临时ID
+            combination_id: currentCombinationId,
+            prompt_id: item.prompt_id,
+            order: item.order,
+            variable_name: item.variable_name,
+            is_required: item.is_required,
+            prompt_name: `提示词 ${item.prompt_id}`,
+            prompt_type: 'unknown', // 临时类型
+            prompt_content: '',
+            created_at: new Date().toISOString()
+          })),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+
+        queryClient.setQueryData(['promptCombination', currentCombinationId], mockCombination);
+      }
     }
 
     message.success(`${isEditMode ? '编辑' : '创建'}${stage === 'test_point' ? '测试点' : '测试用例'}提示词组合${isEditMode ? '并更新' : ''}`);
@@ -417,8 +613,11 @@ const BusinessPromptConfiguration: React.FC<BusinessPromptConfigurationProps> = 
               <Space>
                 <SettingOutlined />
                 <span>测试点提示词组合</span>
-                {testPointCombinationId && <Tag color="green">已保存</Tag>}
-                {testPointCombinationData && !testPointCombinationId && <Tag color="orange">待保存</Tag>}
+                {testPointCombinationData ? (
+                  <Tag color="orange">待保存</Tag>
+                ) : testPointCombinationId ? (
+                  <Tag color="green">已保存</Tag>
+                ) : null}
               </Space>
             }
             extra={
@@ -434,7 +633,7 @@ const BusinessPromptConfiguration: React.FC<BusinessPromptConfigurationProps> = 
                 </Tooltip>
               )
             }
-            style={{ height: 260 }}
+            style={{ height: testPointCombinationData ? 380 : 320 }}
           >
             <div style={{
               height: '100%',
@@ -447,6 +646,24 @@ const BusinessPromptConfiguration: React.FC<BusinessPromptConfigurationProps> = 
               <div style={{ textAlign: 'center', maxWidth: '100%', width: '100%' }}>
                 {testPointCombinationId ? (
                   <div style={{ height: '100%', width: '100%' }}>
+                    {/* 编辑模式下的待保存提示 */}
+                    {testPointCombinationData && (
+                      <div style={{
+                        padding: '12px',
+                        backgroundColor: '#fff7e6',
+                        borderRadius: 6,
+                        border: '1px solid #ffd591',
+                        marginBottom: '16px'
+                      }}>
+                        <Text type="warning">
+                          <ExclamationCircleOutlined style={{ marginRight: '8px' }} />
+                          测试点提示词组合已修改（待保存）
+                        </Text>
+                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#d48806' }}>
+                          组合名称：{testPointCombinationData.name} | 包含 {testPointCombinationData.items.length} 个提示词
+                        </div>
+                      </div>
+                    )}
                     <InlineCombinationDetails
                       combinationId={testPointCombinationId}
                       businessType={business.code}
@@ -454,7 +671,8 @@ const BusinessPromptConfiguration: React.FC<BusinessPromptConfigurationProps> = 
                       stage="test_point"
                       onPreview={(combinationId) => handlePreviewCombination('test_point', combinationId)}
                       onEdit={() => setTestPointBuilderVisible(true)}
-                      height={180}
+                      height={testPointCombinationData ? 220 : 280}
+                      tempCombinationData={testPointCombinationData}
                     />
                   </div>
                 ) : (
@@ -498,8 +716,11 @@ const BusinessPromptConfiguration: React.FC<BusinessPromptConfigurationProps> = 
               <Space>
                 <SettingOutlined />
                 <span>测试用例提示词组合</span>
-                {testCaseCombinationId && <Tag color="green">已保存</Tag>}
-                {testCaseCombinationData && !testCaseCombinationId && <Tag color="orange">待保存</Tag>}
+                {testCaseCombinationData ? (
+                  <Tag color="orange">待保存</Tag>
+                ) : testCaseCombinationId ? (
+                  <Tag color="green">已保存</Tag>
+                ) : null}
               </Space>
             }
             extra={
@@ -515,7 +736,7 @@ const BusinessPromptConfiguration: React.FC<BusinessPromptConfigurationProps> = 
                 </Tooltip>
               )
             }
-            style={{ height: 260 }}
+            style={{ height: testCaseCombinationData ? 380 : 320 }}
           >
             <div style={{
               height: '100%',
@@ -528,6 +749,24 @@ const BusinessPromptConfiguration: React.FC<BusinessPromptConfigurationProps> = 
               <div style={{ textAlign: 'center', maxWidth: '100%', width: '100%' }}>
                 {testCaseCombinationId ? (
                   <div style={{ height: '100%', width: '100%' }}>
+                    {/* 编辑模式下的待保存提示 */}
+                    {testCaseCombinationData && (
+                      <div style={{
+                        padding: '12px',
+                        backgroundColor: '#fff7e6',
+                        borderRadius: 6,
+                        border: '1px solid #ffd591',
+                        marginBottom: '16px'
+                      }}>
+                        <Text type="warning">
+                          <ExclamationCircleOutlined style={{ marginRight: '8px' }} />
+                          测试用例提示词组合已修改（待保存）
+                        </Text>
+                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#d48806' }}>
+                          组合名称：{testCaseCombinationData.name} | 包含 {testCaseCombinationData.items.length} 个提示词
+                        </div>
+                      </div>
+                    )}
                     <InlineCombinationDetails
                       combinationId={testCaseCombinationId}
                       businessType={business.code}
@@ -535,7 +774,8 @@ const BusinessPromptConfiguration: React.FC<BusinessPromptConfigurationProps> = 
                       stage="test_case"
                       onPreview={(combinationId) => handlePreviewCombination('test_case', combinationId)}
                       onEdit={() => setTestCaseBuilderVisible(true)}
-                      height={180}
+                      height={testCaseCombinationData ? 220 : 280}
+                      tempCombinationData={testCaseCombinationData}
                     />
                   </div>
                 ) : (
@@ -618,7 +858,8 @@ const BusinessPromptConfiguration: React.FC<BusinessPromptConfigurationProps> = 
         stage="test_point"
         projectId={business.project_id}
         existingCombinationId={testPointCombinationId}
-        onSuccess={(combinationId) => handleCombinationCreated(combinationId, 'test_point')}
+        tempCombinationData={testPointCombinationData}
+        onSuccess={(combinationData) => handleCombinationCreated(combinationData, 'test_point')}
         onCancel={() => setTestPointBuilderVisible(false)}
       />
 
@@ -630,7 +871,8 @@ const BusinessPromptConfiguration: React.FC<BusinessPromptConfigurationProps> = 
         stage="test_case"
         projectId={business.project_id}
         existingCombinationId={testCaseCombinationId}
-        onSuccess={(combinationId) => handleCombinationCreated(combinationId, 'test_case')}
+        tempCombinationData={testCaseCombinationData}
+        onSuccess={(combinationData) => handleCombinationCreated(combinationData, 'test_case')}
         onCancel={() => setTestCaseBuilderVisible(false)}
       />
 
@@ -651,6 +893,7 @@ const BusinessPromptConfiguration: React.FC<BusinessPromptConfigurationProps> = 
           businessType={business.code}
           businessTypeName={business.name}
           stage={previewStage}
+          items={previewCombinationItems}
           visible={previewVisible}
           onClose={() => setPreviewVisible(false)}
         />

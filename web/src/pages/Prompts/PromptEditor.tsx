@@ -441,6 +441,7 @@ const PromptEditor: React.FC = () => {
         author: values.author,
         tags: values.tags,
         variables: detectedVariables,
+        project_id: currentProject?.id,
         extra_metadata: {
           detected_variables_count: detectedVariables.length,
           content_length: content.length,
@@ -448,19 +449,23 @@ const PromptEditor: React.FC = () => {
         }
       };
 
-      // 添加ID验证，防止NaN导致API调用失败
+      // 为编辑分支定义numericId
       const numericId = Number(id);
-      if (isNaN(numericId) || !isFinite(numericId)) {
-        console.error('PromptEditor: Invalid ID for update:', { id, numericId });
-        if (showMessage) {
-          message.error('无效的提示词ID，无法保存');
+
+      // 只在编辑模式下进行ID验证
+      if (!isNew) {
+        if (isNaN(numericId) || !isFinite(numericId)) {
+          console.error('PromptEditor: Invalid ID for update:', { id, numericId });
+          if (showMessage) {
+            message.error('无效的提示词ID，无法保存');
+          }
+          return;
         }
-        return;
       }
 
       // 详细的保存前日志记录
       console.log('PromptEditor: Preparing to save prompt with the following data:');
-      console.log('- ID:', numericId);
+      console.log('- ID:', isNew ? 'new' : Number(id));
       console.log('- Name:', values.name);
       console.log('- Type:', values.type);
       console.log('- Business Type:', values.business_type);

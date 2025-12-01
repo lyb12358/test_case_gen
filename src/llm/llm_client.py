@@ -40,15 +40,21 @@ class LLMClient:
         self,
         system_prompt: str,
         requirements_prompt: str,
-        max_retries: Optional[int] = None
+        max_retries: Optional[int] = None,
+        ai_logger=None,
+        resolved_system_prompt: Optional[str] = None,
+        resolved_requirements_prompt: Optional[str] = None
     ) -> Optional[str]:
         """
         Generate test cases using the LLM with enhanced error handling.
 
         Args:
-            system_prompt (str): System prompt for the LLM
-            requirements_prompt (str): Requirements prompt for the LLM
+            system_prompt (str): Original system prompt for the LLM (may contain template variables)
+            requirements_prompt (str): Original requirements prompt for the LLM (may contain template variables)
             max_retries (Optional[int]): Maximum number of retry attempts
+            ai_logger: AI logger instance for logging
+            resolved_system_prompt (Optional[str]): Resolved system prompt with template variables replaced
+            resolved_requirements_prompt (Optional[str]): Resolved requirements prompt with template variables replaced
 
         Returns:
             Optional[str]: LLM response content or None if failed
@@ -60,9 +66,54 @@ class LLMClient:
         start_time = time.time()
         base_tokens = 80000
 
-        # Adjust token count based on prompt length
-        prompt_length = len(system_prompt) + len(requirements_prompt)
+        # Use resolved prompts if provided, otherwise use original prompts
+        final_system_prompt = resolved_system_prompt or system_prompt
+        final_requirements_prompt = resolved_requirements_prompt or requirements_prompt
+
+        # Log which prompts are being used for debugging
+        logger.info(f"LLM客户端提示词选择:")
+        logger.info(f"  系统提示词 - 使用解析版本: {resolved_system_prompt is not None} | 长度: {len(final_system_prompt)}")
+        logger.info(f"  用户提示词 - 使用解析版本: {resolved_requirements_prompt is not None} | 长度: {len(final_requirements_prompt)}")
+
+        # Check if prompts contain template variables (indicating they weren't resolved)
+        system_has_templates = "{{" in final_system_prompt and "}}" in final_system_prompt
+        user_has_templates = "{{" in final_requirements_prompt and "}}" in final_requirements_prompt
+
+        if system_has_templates or user_has_templates:
+            logger.warning(f"检测到提示词中仍包含模板变量！系统提示词: {system_has_templates}, 用户提示词: {user_has_templates}")
+            # Show first few template variables found
+            import re
+            system_templates = re.findall(r'\{\{[^}]+\}\}', final_system_prompt)
+            user_templates = re.findall(r'\{\{[^}]+\}\}', final_requirements_prompt)
+            if system_templates:
+                logger.warning(f"系统提示词中的模板变量: {system_templates[:3]}")
+            if user_templates:
+                logger.warning(f"用户提示词中的模板变量: {user_templates[:3]}")
+        else:
+            logger.info("✅ 提示词中未检测到模板变量，解析成功")
+
+        # Adjust token count based on final prompt length
+        prompt_length = len(final_system_prompt) + len(final_requirements_prompt)
         estimated_tokens = max(base_tokens, int(prompt_length * 1.5))
+
+        # Log prompts if ai_logger is available
+        if ai_logger:
+            # Log original templates
+            ai_logger.log_system_prompt(system_prompt)
+            ai_logger.log_user_prompt(requirements_prompt)
+
+            # If we have resolved prompts, log them as well
+            if resolved_system_prompt or resolved_requirements_prompt:
+                try:
+                    # Use the new AI logger methods for cleaner logging
+                    ai_logger.log_resolved_prompts(final_system_prompt, final_requirements_prompt)
+                    ai_logger.log_template_replacement_info(
+                        system_prompt, final_system_prompt,
+                        requirements_prompt, final_requirements_prompt
+                    )
+
+                except Exception as log_error:
+                    logger.warning(f"Failed to log resolved prompts: {log_error}")
 
         last_error = None
 
@@ -82,15 +133,15 @@ class LLMClient:
                 response = self.client.chat.completions.create(
                     model=self.config.model,
                     messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": requirements_prompt}
+                        {"role": "system", "content": final_system_prompt},
+                        {"role": "user", "content": final_requirements_prompt}
                     ],
                     max_tokens=8000,  # Reasonable max token limit
                     temperature=0,
                     # top_p=1.0,
                     # frequency_penalty=0.1,
                     # presence_penalty=0.1,
-                    timeout=120  # 2 minutes timeout
+                    timeout=300  # 5 minutes timeout for synchronous generation
                 )
 
                 api_time = time.time() - api_start
@@ -118,6 +169,32 @@ class LLMClient:
                     f"总令牌: {usage.total_tokens}"
                 )
 
+                # Log AI response and call details if ai_logger is available
+                if ai_logger:
+                    ai_logger.log_ai_response_raw(content)
+
+                    # Log LLM call details
+                    call_details = {
+                        "model": self.config.model,
+                        "attempt": attempt + 1,
+                        "max_retries": max_attempts,
+                        "api_time": api_time,
+                        "total_time": total_time,
+                        "prompt_length": prompt_length,
+                        "estimated_tokens": estimated_tokens,
+                        "usage": {
+                            "prompt_tokens": usage.prompt_tokens,
+                            "completion_tokens": usage.completion_tokens,
+                            "total_tokens": usage.total_tokens
+                        },
+                        "parameters": {
+                            "max_tokens": 8000,
+                            "temperature": 0,
+                            "timeout": 300
+                        }
+                    }
+                    ai_logger.log_llm_call_details(call_details)
+
                 return content
 
             except openai.RateLimitError as e:
@@ -141,7 +218,7 @@ class LLMClient:
                         f"LLM请求超时: {str(e)}",
                         model=self.config.model,
                         retry_count=attempt,
-                        details={"error_type": "timeout", "timeout_seconds": 120}
+                        details={"error_type": "timeout", "timeout_seconds": 300}
                     )
 
             except openai.APIError as e:

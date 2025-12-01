@@ -237,8 +237,8 @@ async def update_prompt_combination(
     """Update an existing prompt combination."""
     try:
         # Direct database session from dependency injection
-            combination_service = PromptCombinationService(db)
-            return combination_service.update_prompt_combination(combination_id, combination_data)
+        combination_service = PromptCombinationService(db)
+        return combination_service.update_prompt_combination(combination_id, combination_data)
     except Exception as e:
         logger.error(f"Error updating prompt combination {combination_id}: {str(e)}")
         raise HTTPException(

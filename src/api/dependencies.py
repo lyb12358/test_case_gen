@@ -14,11 +14,18 @@ from fastapi import Depends
 from ..database.database import DatabaseManager
 from ..utils.config import Config
 from ..database.models import Project
+from ..services.generation_service import UnifiedGenerationService
+from ..core.test_case_generator import TestCaseGenerator
 
 logger = logging.getLogger(__name__)
 
 # Global database manager instance for connection pooling
 _db_manager = None
+
+# Global shared service instances for background tasks and efficient resource usage
+_config = None
+_unified_generation_service = None
+_test_case_generator = None
 
 def get_database_manager() -> DatabaseManager:
     """
@@ -113,6 +120,20 @@ def get_db_readonly() -> Generator[Session, None, None]:
             raise
 
 
+def get_db_for_background() -> DatabaseManager:
+    """
+    Get database manager specifically for background tasks.
+
+    Unlike get_db() which uses context managers that close when HTTP request ends,
+    this function provides a DatabaseManager that background tasks can use
+    to create their own database sessions independently.
+
+    Returns:
+        DatabaseManager: Database manager for background tasks
+    """
+    return get_database_manager()
+
+
 def get_current_project(
     db: Session = Depends(get_db),
     project_id: Optional[int] = None
@@ -158,3 +179,68 @@ def get_current_project(
 
     logger.info(f"Created default project with ID: {default_project.id}")
     return default_project
+
+
+def get_config() -> Config:
+    """
+    Get or create a singleton Config instance.
+
+    Returns:
+        Config: Shared configuration instance
+    """
+    global _config
+    if _config is None:
+        try:
+            _config = Config()
+            logger.info("Configuration initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize configuration: {str(e)}")
+            raise
+    return _config
+
+
+def get_unified_generation_service() -> UnifiedGenerationService:
+    """
+    Get or create a singleton UnifiedGenerationService instance.
+    This service shares database connections and resources across all calls.
+
+    Returns:
+        UnifiedGenerationService: Shared service instance
+    """
+    global _unified_generation_service
+    if _unified_generation_service is None:
+        try:
+            # Use the shared config and database manager
+            config = get_config()
+            db_manager = get_database_manager()
+
+            # Create service with shared dependencies
+            _unified_generation_service = UnifiedGenerationService(config)
+            # Replace the service's db_manager with our shared one
+            _unified_generation_service.db_manager = db_manager
+
+            logger.info("Unified generation service initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize unified generation service: {str(e)}")
+            raise
+    return _unified_generation_service
+
+
+def get_test_case_generator() -> TestCaseGenerator:
+    """
+    Get or create a singleton TestCaseGenerator instance.
+    This generator shares configuration and LLM connections across all calls.
+
+    Returns:
+        TestCaseGenerator: Shared generator instance
+    """
+    global _test_case_generator
+    if _test_case_generator is None:
+        try:
+            config = get_config()
+            _test_case_generator = TestCaseGenerator(config)
+            logger.info("Test case generator initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize test case generator: {str(e)}")
+            raise
+    return _test_case_generator

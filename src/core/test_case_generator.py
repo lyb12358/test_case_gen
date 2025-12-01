@@ -6,7 +6,7 @@ Core test case generation functionality.
 import logging
 import json
 import time
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, List
 
 logger = logging.getLogger(__name__)
 
@@ -262,7 +262,9 @@ class TestCaseGenerator:
                                                test_points_data: Dict[str, Any],
                                                additional_context: Optional[Dict[str, Any]] = None,
                                                save_to_db: bool = False,
-                                               project_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+                                               project_id: Optional[int] = None,
+                                               test_point_ids: Optional[List[int]] = None,
+                                               ai_logger=None) -> Optional[Dict[str, Any]]:
         """
         Generate test cases from externally provided test points (second stage only).
 
@@ -282,7 +284,12 @@ class TestCaseGenerator:
                 raise ValueError(f"Invalid or inactive business type: {business_type}")
 
             # Get both system and user prompts from prompt combination
-            context_with_points = additional_context.copy() if additional_context else {}
+            # Fix: Handle both string and dictionary types for additional_context
+            if isinstance(additional_context, dict):
+                context_with_points = additional_context.copy()
+            else:
+                # If additional_context is a string, wrap it in a dictionary
+                context_with_points = {'user_input': additional_context} if additional_context else {}
             context_with_points['test_points_data'] = test_points_data
 
             system_prompt, user_prompt = self.prompt_builder.get_two_stage_prompts(
@@ -291,25 +298,65 @@ class TestCaseGenerator:
             if system_prompt is None or user_prompt is None:
                 raise RuntimeError(f"无法为 {business_type} 获取测试用例生成提示词组合")
 
-            # Apply template variables to user prompt
+            # Apply template variables to both system and user prompts
+            # Fix: Include test_point_ids for template variable resolution
+            resolved_system_prompt = self.prompt_builder._apply_template_variables(
+                content=system_prompt,
+                additional_context=additional_context,
+                business_type=business_type,
+                project_id=project_id,
+                endpoint_params={
+                    'test_point_ids': test_point_ids,  # ✅ Add test_point_ids for template resolution
+                    'test_points_data': test_points_data,  # Keep existing data structure
+                    'additional_context': additional_context,
+                    'generation_stage': 'test_case',
+                    'project_id': project_id
+                }
+            )
+
             user_prompt = self.prompt_builder._apply_template_variables(
                 content=user_prompt,
-                additional_context=context_with_points.get('additional_context'),
+                additional_context=additional_context,
                 business_type=business_type,
-                project_id=context_with_points.get('project_id'),
+                project_id=project_id,
                 endpoint_params={
-                    **context_with_points,
-                    'generation_stage': 'test_case'  # Explicitly identify as test_case generation
+                    'test_point_ids': test_point_ids,  # ✅ Add test_point_ids for template resolution
+                    'test_points_data': test_points_data,  # Keep existing data structure
+                    'additional_context': additional_context,
+                    'generation_stage': 'test_case',
+                    'project_id': project_id
                 }
             )
 
             logger.info(f"开始从测试点生成测试用例 | 业务类型: {business_type} | "
                        f"测试点数量: {len(test_points_data.get('test_points', []))}")
 
+            # 记录模板变量替换结果到AI日志
+            if ai_logger:
+                try:
+                    ai_logger.log_resolved_prompts(resolved_system_prompt, user_prompt)
+                    ai_logger.log_template_replacement_info(
+                        system_prompt, resolved_system_prompt,
+                        user_prompt, user_prompt
+                    )
+                except Exception as log_error:
+                    logger.warning(f"Failed to log resolved prompts for test case generation: {log_error}")
+
             # Generate test cases using LLM
-            response = self.llm_client.generate_test_cases(system_prompt, user_prompt)
+            response = self.llm_client.generate_test_cases(
+                system_prompt,
+                user_prompt,
+                ai_logger=ai_logger,
+                resolved_system_prompt=resolved_system_prompt,
+                resolved_requirements_prompt=user_prompt
+            )
             if response is None:
-                raise RuntimeError("Failed to get response from LLM")
+                # Enhanced error handling for template variable issues
+                logger.error(f"LLM call failed for business_type: {business_type}")
+                logger.error(f"Template variables status: test_point_ids={test_point_ids}, template_resolution_completed=True")
+                logger.error(f"Prompt length: system={len(system_prompt)}, user={len(user_prompt)}")
+                logger.error(f"LLM client info: {self.llm_client.get_model_info()}")
+                raise RuntimeError(f"LLM call failed for {business_type} - check template variable resolution and LLM connectivity")
 
             # Extract JSON from response
             json_result = self.json_extractor.extract_json_from_response(response)
@@ -340,7 +387,7 @@ class TestCaseGenerator:
 
             # Save to database if requested
             if save_to_db:
-                self.save_to_database(json_result, business_type, project_id)
+                self.save_to_database(json_result, business_type, project_id, test_point_ids, ai_logger)
 
             return json_result
 
@@ -348,159 +395,152 @@ class TestCaseGenerator:
             logger.error(f"Error generating test cases from external points for {business_type}: {str(e)}")
             return None
 
-    def save_to_database(self, test_cases_data: Dict[str, Any], business_type: str, project_id: Optional[int] = None) -> bool:
+    def save_to_database(self, test_cases_data: Dict[str, Any], business_type: str, project_id: Optional[int] = None, test_point_ids: Optional[List[int]] = None, ai_logger=None) -> bool:
         """
-        Save test cases to database using new object + UnifiedTestCase structure.
+        Update existing test point records with generated test case details.
 
-        This method uses a single ACID transaction to ensure data integrity and consistency.
-        All database operations (delete, create, verify) are performed atomically to prevent
-        data loss or corruption. The transaction includes proper rollback handling on failures.
+        This method implements the core logic that test case generation is always an UPDATE operation,
+        not a creation. It finds existing test point records by their IDs and updates them with
+        AI-generated detailed test case information, changing their stage from 'test_point' to 'test_case'.
 
         Args:
-            test_cases_data (Dict[str, Any]): Test cases data
-            business_type (str): Business type
-            project_id (Optional[int]): Project ID
+            test_cases_data (Dict[str, Any]): Generated test cases data from AI
+            business_type (str): Business type for categorization
+            project_id (Optional[int]): Project ID (not used in update logic)
+            test_point_ids (Optional[List[int]]): List of test point IDs to update with test case details
 
         Returns:
             bool: True if successful, False otherwise
         """
         import traceback
+        import json
+        from datetime import datetime
+        from ..database.models import UnifiedTestCase, UnifiedTestCaseStage
 
         try:
-
-            # Validate business type
-            try:
-                business_enum = BusinessType(business_type.upper())
-            except ValueError as e:
-                error_msg = f"Invalid business type '{business_type}' for database save: {str(e)}"
-                raise ValueError(error_msg)
+            if not test_point_ids:
+                logger.warning("No test_point_ids provided for updating test cases")
+                return False
 
             test_cases_list = test_cases_data.get('test_cases', [])
+            if not test_cases_list:
+                logger.warning("No test cases found in generated data")
+                return False
 
-            # Remove duplicate test case names, keep the first occurrence
-            try:
-                original_count = len(test_cases_list)
-                test_cases_list = self._remove_duplicate_test_cases(test_cases_list)
-                dedup_count = len(test_cases_list)
-            except Exception as e:
-                error_msg = f"Error during deduplication: {str(e)}"
-                raise RuntimeError(error_msg) from e
+            logger.info(f"Updating {len(test_point_ids)} test point records with test case details")
 
-            # Use a single transaction for data integrity, but implement batch processing for performance
+            # Use simple database session for update operations
             try:
                 with self.db_manager.get_session() as db:
-                    db_operations = DatabaseOperations(db)
+                    # Find existing test point records to update
+                    existing_test_points = db.query(UnifiedTestCase).filter(
+                        UnifiedTestCase.id.in_(test_point_ids),
+                        UnifiedTestCase.stage == UnifiedTestCaseStage.TEST_POINT
+                    ).all()
 
-                    # All operations in a single transaction to ensure data consistency
-                    # Step 1: Delete existing data
-                    deleted_count = db_operations.delete_projects_by_business_type(business_enum)
+                    if not existing_test_points:
+                        logger.error(f"No test point records found for IDs: {test_point_ids}")
+                        return False
 
-                    # Delete existing test case knowledge entities
-                    db_operations.db.query(KnowledgeEntity).filter(
-                        KnowledgeEntity.business_type == business_enum,
-                        KnowledgeEntity.type == EntityType.TEST_CASE
-                    ).delete()
+                    logger.info(f"Found {len(existing_test_points)} existing test point records to update")
 
-                    # Step 2: Ensure business entities exist
-                    self._ensure_business_entities_exist(db_operations, business_enum)
-
-                    # Step 3: Create test case group
-                    generation_metadata = {
-                        'generated_at': test_cases_data.get('generated_at'),
-                        'total_test_cases': len(test_cases_list),
-                        'generator_version': '2.0'
+                    # 准备数据映射日志
+                    mapping_data = {
+                        "business_type": business_type,
+                        "project_id": project_id,
+                        "test_point_ids_requested": test_point_ids,
+                        "test_point_ids_found": [tp.id for tp in existing_test_points],
+                        "test_cases_generated_count": len(test_cases_list),
+                        "mapping_details": []
                     }
 
-                    # Include test points data if available
-                    if 'test_points' in test_cases_data:
-                        generation_metadata['test_points'] = test_cases_data['test_points']
+                    # Update each test point record with generated test case details
+                    updated_count = 0
+                    for i, test_point in enumerate(existing_test_points):
+                        if i < len(test_cases_list):
+                            test_case = test_cases_list[i]
 
-                    project = db_operations.create_project(
-                        business_enum,
-                        generation_metadata,
-                        project_id
-                    )
-                    test_case_project_id = project.id
+                            # 记录映射前的测试点数据
+                            test_point_before = {
+                                "id": test_point.id,
+                                "test_case_id": test_point.test_case_id,
+                                "name": test_point.name,
+                                "description": test_point.description,
+                                "preconditions": test_point.preconditions,
+                                "steps": test_point.steps,
+                                "stage": str(test_point.stage)
+                            }
 
-                    # Step 4: Create test case items with batch processing for performance
-                    db_operations = DatabaseOperations(db)
+                            # Update test point with test case details
+                            # Convert lists to JSON strings for database storage
+                            preconditions = test_case.get('preconditions')
+                            steps = test_case.get('steps')
+                            expected_result = test_case.get('expected_result')
 
-                    # For two-stage generation, try to create test point associations
-                    if 'test_points' in generation_metadata:
-                        # Get test points mapping from database
-                        test_points_mapping = self._get_test_points_mapping(db_operations, test_case_project_id, business_type)
+                            test_point.preconditions = json.dumps(preconditions, ensure_ascii=False) if isinstance(preconditions, list) else preconditions
+                            test_point.steps = json.dumps(steps, ensure_ascii=False) if isinstance(steps, list) else steps
+                            test_point.expected_result = json.dumps(expected_result, ensure_ascii=False) if isinstance(expected_result, list) else expected_result
+                            test_point.module = test_case.get('module')
+                            test_point.functional_module = test_case.get('functional_module')
+                            test_point.functional_domain = test_case.get('functional_domain')
+                            test_point.remarks = test_case.get('remarks')
 
-                        # Create test case items with test point associations
-                        unified_test_cases = db_operations.create_unified_test_cases_from_test_points(
-                            test_case_project_id,
-                            test_cases_list,
-                            test_points_mapping
-                        )
-                    else:
-                        # Regular generation without test points
-                        unified_test_cases = db_operations.create_unified_test_cases_batch(
-                            test_case_project_id,  # Use the captured ID
-                            test_cases_list
-                        )
+                            # Critical: Update stage from test_point to test_case
+                            test_point.stage = UnifiedTestCaseStage.TEST_CASE
+                            test_point.updated_at = datetime.utcnow()
 
-                    # Capture all required UnifiedTestCase data before session closes
-                    unified_test_cases_data = []
-                    for item in unified_test_cases:
-                        item_data = {
-                            'id': item.id,
-                            'name': item.name,
-                            'description': item.description,
-                            'test_case_id': item.test_case_id,
-                            'module': item.module,
-                            'preconditions': item.preconditions,
-                            'steps': item.steps,
-                            'expected_result': item.expected_result,
-                            'functional_module': item.functional_module,
-                            'functional_domain': item.functional_domain,
-                            'remarks': item.remarks,
-                            'entity_order': item.entity_order
-                        }
-                        unified_test_cases_data.append(item_data)
+                            # 记录映射后的数据对比
+                            mapping_detail = {
+                                "test_point_before": test_point_before,
+                                "test_case_generated": test_case,
+                                "mapping_index": i,
+                                "updated_fields": {
+                                    "preconditions": {
+                                        "before": test_point_before["preconditions"],
+                                        "after": test_point.preconditions
+                                    },
+                                    "steps": {
+                                        "before": test_point_before["steps"],
+                                        "after": test_point.steps
+                                    },
+                                    "stage": {
+                                        "before": test_point_before["stage"],
+                                        "after": str(test_point.stage)
+                                    }
+                                }
+                            }
+                            mapping_data["mapping_details"].append(mapping_detail)
 
-                    # Step 5: Create knowledge graph entities (within the same transaction)
-                    self._create_knowledge_entities_for_new_structure(
-                        db_operations,
-                        test_case_project_id,  # Pass the ID instead of object
-                        unified_test_cases_data,  # Pass captured data instead of detached objects
-                        business_enum
-                    )
+                            updated_count += 1
+                        else:
+                            logger.warning(f"No test case data available for test point ID {test_point.id}")
+                            mapping_data["mapping_details"].append({
+                                "test_point_id": test_point.id,
+                                "error": "No corresponding test case data available",
+                                "mapping_index": i
+                            })
 
-                    # Step 6: Final verification (within the same transaction, read-only operations)
-                    self._verify_data_consistency(test_case_project_id, unified_test_cases_data, business_enum, db_operations)
+                    # 记录AI映射日志
+                    if ai_logger:
+                        ai_logger.log_data_mapping_comparison(mapping_data)
 
-                    # Commit all operations in a single transaction
+                    # Commit the updates
                     db.commit()
+                    logger.info(f"Successfully updated {updated_count} test point records to test cases")
 
             except Exception as e:
-                # Rollback the transaction if any step fails
+                # Rollback on error
                 db.rollback()
                 error_msg = f"Database transaction failed: {str(e)}"
                 logger.error(f"{error_msg}\n{traceback.format_exc()}")
-                raise RuntimeError(error_msg) from e
+                return False
 
-            # Run enhanced consistency validation using our new validator
-            try:
-                consistency_result = self.validate_generation_consistency(business_type, project_id)
-                if not consistency_result.get("validation_passed", True):
-                    logger.warning(f"⚠️ Enhanced consistency validation found {consistency_result.get('total_issues', 0)} issues for {business_type}")
-                    logger.warning(f"   Errors: {consistency_result.get('error_count', 0)}, Warnings: {consistency_result.get('warning_count', 0)}")
-                    # Log first 3 issues for debugging
-                    for issue in consistency_result.get("issues_summary", [])[:3]:
-                        logger.warning(f"   - {issue['type']}: {issue['description']}")
-                else:
-                    logger.info(f"✅ Enhanced consistency validation passed for {business_type}")
-            except Exception as validation_error:
-                logger.error(f"❌ Enhanced consistency validation failed for {business_type}: {str(validation_error)}")
-
+            logger.info(f"✅ Test case update completed for business type: {business_type}")
             return True
 
         except Exception as e:
-            error_msg = f"Error saving test cases to database for {business_type}: {str(e)}\n\nFull traceback:\n{traceback.format_exc()}"
+            error_msg = f"Error updating test cases to database for {business_type}: {str(e)}\n\nFull traceback:\n{traceback.format_exc()}"
+            logger.error(error_msg)
             return False
 
     def _create_knowledge_entities_for_new_structure(self, db_operations, test_case_project_id, unified_test_cases_data, business_type):

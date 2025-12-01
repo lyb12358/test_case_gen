@@ -45,16 +45,26 @@ class TemplateVariableResolver:
         Returns:
             Dictionary of resolved template variables with intelligent processing
         """
+        logger.info(f"开始解析模板变量 | 业务类型: {business_type} | 生成阶段: {generation_stage} | 项目ID: {project_id}")
+        logger.debug(f"端点参数详情: {endpoint_params}")
+
         variables = {}
 
         # 1. user_input - from endpoint additional_context
         additional_context = endpoint_params.get('additional_context') if endpoint_params else None
+        logger.debug(f"提取用户输入 | additional_context: {additional_context}")
+
         user_input = self._extract_user_input(additional_context)
         variables['user_input'] = user_input
+        logger.info(f"用户输入解析完成 | 长度: {len(user_input) if user_input else 0}")
 
         # 2. test_points - based on endpoint parameters with intelligent processing
+        logger.debug("开始解析测试点数据...")
         test_points_data = self._get_test_points_from_endpoint(business_type, project_id, endpoint_params)
+
         if test_points_data:
+            logger.info(f"找到测试点数据 | 数量: {len(test_points_data) if isinstance(test_points_data, list) else 1}")
+
             # Apply intelligent processing based on generation stage
             if generation_stage == 'test_point':
                 # For test point generation: add anti-duplication warning
@@ -63,6 +73,7 @@ class TemplateVariableResolver:
                     "test_points": test_points_data
                 }
                 variables['test_points'] = json.dumps(test_points_with_warning, ensure_ascii=False, indent=2)
+                logger.debug("测试点生成阶段：添加防重复警告")
             elif generation_stage == 'test_case':
                 # For test case generation: add correspondence requirement
                 test_points_with_correspondence = {
@@ -70,25 +81,43 @@ class TemplateVariableResolver:
                     "test_points": test_points_data
                 }
                 variables['test_points'] = json.dumps(test_points_with_correspondence, ensure_ascii=False, indent=2)
+                logger.debug("测试用例生成阶段：添加对应关系要求")
             else:
                 variables['test_points'] = json.dumps(test_points_data, ensure_ascii=False, indent=2)
+                logger.debug("通用处理：原始测试点数据")
         else:
             variables['test_points'] = ""
+            logger.info("未找到测试点数据，设置为空字符串")
 
         # 3. test_cases - from database with intelligent processing (only for test_case generation stage)
+        logger.debug("开始解析测试用例数据...")
         test_cases_data = self._get_test_cases_from_database(business_type, project_id, generation_stage)
+
         if test_cases_data and generation_stage == 'test_case':
+            logger.info(f"找到已有测试用例 | 数量: {len(test_cases_data) if isinstance(test_cases_data, list) else 1}")
+
             # For test case generation: add anti-duplication warning
             test_cases_with_warning = {
                 "warning": "目前已有这些测试用例，不要跟这些测试用例内容重复。",
                 "test_cases": test_cases_data
             }
             variables['test_cases'] = json.dumps(test_cases_with_warning, ensure_ascii=False, indent=2)
+            logger.debug("测试用例生成阶段：添加防重复警告")
         else:
             # For test_point generation or no data: return empty
             variables['test_cases'] = ""
+            if generation_stage != 'test_case':
+                logger.info("测试点生成阶段：测试用例变量设置为空")
+            else:
+                logger.info("未找到已有测试用例，设置为空字符串")
 
-        logger.debug(f"Resolved variables with intelligent processing for business_type: {business_type}, generation_stage: {generation_stage}")
+        # 记录最终解析结果摘要
+        for var_name, var_value in variables.items():
+            value_length = len(var_value) if var_value else 0
+            has_template_vars = "{{" in var_value and "}}" in var_value
+            logger.debug(f"变量解析结果 | {var_name}: 长度={value_length}, 包含模板变量={has_template_vars}")
+
+        logger.info(f"模板变量解析完成 | 业务类型: {business_type} | 生成阶段: {generation_stage} | 变量数量: {len(variables)}")
         return variables
 
     def _extract_user_input(self, additional_context: Optional[Dict[str, Any]]) -> str:
@@ -102,24 +131,36 @@ class TemplateVariableResolver:
         Returns:
             User input string
         """
+        logger.debug(f"开始提取用户输入 | additional_context类型: {type(additional_context)} | 值: {additional_context}")
+
         if not additional_context:
+            logger.debug("additional_context为空，返回空字符串")
             return ""
 
         # If additional_context is already a string (new format), return as-is
         if isinstance(additional_context, str):
+            logger.debug(f"additional_context是字符串格式，直接返回: {additional_context[:100]}...")
             return additional_context
 
         # If it's a dict (old format), try to get user_input directly
         if isinstance(additional_context, dict):
+            logger.debug(f"additional_context是字典格式，包含的键: {list(additional_context.keys())}")
+
             if 'user_input' in additional_context:
-                return str(additional_context['user_input'])
+                user_input = str(additional_context['user_input'])
+                logger.debug(f"从字典中提取user_input: {user_input[:100]}...")
+                return user_input
 
             # Fall back to converting the entire context to string for simplicity
             try:
-                return json.dumps(additional_context, ensure_ascii=False)
-            except (TypeError, ValueError):
+                context_str = json.dumps(additional_context, ensure_ascii=False)
+                logger.debug(f"将字典转换为JSON字符串: {context_str[:100]}...")
+                return context_str
+            except (TypeError, ValueError) as e:
+                logger.warning(f"JSON序列化失败，使用str转换: {e}")
                 return str(additional_context)
 
+        logger.debug(f"未知格式，使用str转换: {str(additional_context)[:100]}...")
         return str(additional_context) if additional_context else ""
 
     def _get_test_points_from_endpoint(self, business_type: str, project_id: Optional[int],
@@ -135,27 +176,54 @@ class TemplateVariableResolver:
         Returns:
             List of test point dictionaries
         """
+        logger.debug(f"开始获取测试点数据 | 业务类型: {business_type} | 项目ID: {project_id}")
+        logger.debug(f"端点参数: {endpoint_params}")
+
         if not endpoint_params:
+            logger.debug("端点参数为空，返回空列表")
             return []
 
         # Scenario 1: test_point_ids → database query
         if 'test_point_ids' in endpoint_params and endpoint_params['test_point_ids']:
-            return self._get_test_points_by_ids(endpoint_params['test_point_ids'], business_type)
+            test_point_ids = endpoint_params['test_point_ids']
+            logger.debug(f"场景1：通过test_point_ids获取测试点: {test_point_ids}")
+            test_points = self._get_test_points_by_ids(test_point_ids, business_type)
+            logger.debug(f"获取到测试点数量: {len(test_points)}")
+            return test_points
 
         # Scenario 2: test_points → use directly from endpoint
         if 'test_points' in endpoint_params and endpoint_params['test_points']:
-            return endpoint_params['test_points']
+            test_points = endpoint_params['test_points']
+            if isinstance(test_points, list):
+                logger.debug(f"场景2：直接使用端点的test_points: {len(test_points)}")
+            else:
+                logger.debug(f"场景2：直接使用端点的test_points: {test_points}")
+            return test_points
 
         # Scenario 3: test_points_data → extract from nested structure
         if 'test_points_data' in endpoint_params and endpoint_params['test_points_data']:
             test_points_data = endpoint_params['test_points_data']
-            if 'test_points' in test_points_data:
-                return test_points_data['test_points']
+            if isinstance(test_points_data, dict):
+                logger.debug(f"场景3：从test_points_data提取: {list(test_points_data.keys())}")
+            else:
+                logger.debug(f"场景3：从test_points_data提取: {test_points_data}")
+            if isinstance(test_points_data, dict) and 'test_points' in test_points_data:
+                test_points = test_points_data['test_points']
+                if isinstance(test_points, list):
+                    logger.debug(f"从test_points_data中提取到测试点数量: {len(test_points)}")
+                    return test_points
+                else:
+                    logger.debug(f"从test_points_data中提取到测试点数量: 1")
+                    return test_points
 
         # Scenario 4: get from current business data if project_id is available
         if project_id:
-            return self._get_business_test_points(business_type, project_id)
+            logger.debug(f"场景4：从数据库获取业务测试点数据")
+            test_points = self._get_business_test_points(business_type, project_id)
+            logger.debug(f"从数据库获取到测试点数量: {len(test_points)}")
+            return test_points
 
+        logger.debug("所有场景都无法获取测试点，返回空列表")
         return []
 
     def _get_test_cases_from_database(self, business_type: str, project_id: Optional[int],

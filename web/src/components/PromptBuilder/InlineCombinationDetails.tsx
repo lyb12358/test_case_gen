@@ -30,6 +30,19 @@ interface InlineCombinationDetailsProps {
   onEdit?: () => void;
   onDelete?: () => void;
   height?: number;
+  tempCombinationData?: {
+    name: string;
+    description?: string;
+    items: Array<{
+      prompt_id: number;
+      order: number;
+      variable_name?: string;
+      is_required: boolean;
+      prompt_name?: string;
+      prompt_type?: string;
+      prompt_content?: string;
+    }>;
+  };
 }
 
 const InlineCombinationDetails: React.FC<InlineCombinationDetailsProps> = ({
@@ -40,15 +53,19 @@ const InlineCombinationDetails: React.FC<InlineCombinationDetailsProps> = ({
   onPreview,
   onEdit,
   onDelete,
-  height = 180
+  height = 180,
+  tempCombinationData
 }) => {
   // 获取组合详情
   const { data: combination, isLoading, error, refetch } = useQuery({
     queryKey: ['promptCombination', combinationId],
     queryFn: () => businessService.getPromptCombination(combinationId),
-    enabled: !!combinationId,
+    enabled: !!combinationId && !tempCombinationData, // 如果有临时数据，不请求API
     staleTime: 5 * 60 * 1000
   });
+
+  // 优先使用临时数据，否则使用API数据
+  const displayData = tempCombinationData || combination;
 
   if (isLoading) {
     return (
@@ -66,7 +83,7 @@ const InlineCombinationDetails: React.FC<InlineCombinationDetailsProps> = ({
     );
   }
 
-  if (error || !combination) {
+  if (error || !displayData) {
     return (
       <div style={{ height: `${height}px`, padding: '16px' }}>
         <Alert
@@ -90,13 +107,7 @@ const InlineCombinationDetails: React.FC<InlineCombinationDetailsProps> = ({
     }
   };
 
-  // 统计信息
-  const stats = {
-    total: combination.items?.length || 0,
-    system: combination.items?.filter(item => item.prompt_type === 'system').length || 0,
-    business: combination.items?.filter(item => item.prompt_type !== 'system').length || 0
-  };
-
+  
   return (
     <div style={{ height: `${height}px`, overflow: 'hidden' }}>
       {/* 头部信息 */}
@@ -115,9 +126,9 @@ const InlineCombinationDetails: React.FC<InlineCombinationDetailsProps> = ({
               color: '#222',
               lineHeight: '1.4'
             }}>
-              {combination.name}
+              {displayData.name}
             </Title>
-            {combination.description && (
+            {displayData.description && (
               <Text
                 type="secondary"
                 style={{
@@ -127,7 +138,7 @@ const InlineCombinationDetails: React.FC<InlineCombinationDetailsProps> = ({
                   display: 'block'
                 }}
               >
-                {combination.description}
+                {displayData.description}
               </Text>
             )}
           </div>
@@ -173,15 +184,50 @@ const InlineCombinationDetails: React.FC<InlineCombinationDetailsProps> = ({
         </div>
       </div>
 
-      {/* 统计信息 */}
+      {/* 提示词列表 */}
       <div style={{
         padding: '12px 16px',
         background: '#fff',
         marginTop: '0px'
       }}>
-        <Tag color="blue" style={{ fontSize: '13px', padding: '4px 12px' }}>
-          总计 {stats.total} (系统{stats.system}, 业务{stats.business})
-        </Tag>
+        <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}>
+          包含的提示词：
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+          {displayData.items?.slice(0, 5).map((item, index) => {
+            // Determine the best display name for the prompt
+            let displayName = '';
+            if (item.prompt_name && item.prompt_name.trim()) {
+              displayName = item.prompt_name;
+            } else {
+              // Fallback to a more descriptive format
+              const typeLabel = item.prompt_type ?
+                (item.prompt_type === 'system' ? '系统' :
+                 item.prompt_type === 'business_description' ? '业务' :
+                 item.prompt_type === 'shared_content' ? '共享' :
+                 item.prompt_type === 'template' ? '模板' : '提示') : '提示';
+              displayName = `${typeLabel}${item.prompt_id}`;
+            }
+
+            return (
+              <Tag
+                key={index}
+                color={item.prompt_type === 'system' ? 'blue' :
+                       item.prompt_type === 'business_description' ? 'green' :
+                       item.prompt_type === 'shared_content' ? 'orange' :
+                       item.prompt_type === 'template' ? 'purple' : 'default'}
+                style={{ fontSize: '11px' }}
+              >
+                {displayName}
+              </Tag>
+            );
+          })}
+          {(displayData.items?.length || 0) > 5 && (
+            <Tag color="default" style={{ fontSize: '11px' }}>
+              ...还有 {(displayData.items?.length || 0) - 5}个
+            </Tag>
+          )}
+        </div>
       </div>
 
     </div>
