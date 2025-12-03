@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, startTransition } from 'react';
 import { Card, Row, Col, Statistic, Button, Select, Space, Spin, Alert, message } from 'antd';
 import { ReloadOutlined, ClearOutlined, BarChartOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
-import Graph from './Graph';
+import OptimizedKnowledgeGraph from '../../components/KnowledgeGraph/OptimizedKnowledgeGraph';
 import { knowledgeGraphService } from '../../services/knowledgeGraphService';
 import { businessService } from '../../services/businessService';
 import unifiedGenerationService from '../../services/unifiedGenerationService';
@@ -51,8 +51,11 @@ const KnowledgeGraph: React.FC = () => {
       console.log('Data nodes count:', dataResponse?.nodes?.length);
       console.log('Data edges count:', dataResponse?.edges?.length);
 
-      setGraphData(dataResponse);
-      setStats(statsResponse);
+      // Use startTransition for non-urgent state updates
+      startTransition(() => {
+        setGraphData(dataResponse);
+        setStats(statsResponse);
+      });
     } catch (err: any) {
       setError(err.response?.data?.detail || '加载知识图谱数据失败');
       console.error('Error loading graph data:', err);
@@ -61,33 +64,7 @@ const KnowledgeGraph: React.FC = () => {
     }
   };
 
-  const handleInitialize = async () => {
-    setLoading(true);
-    try {
-      await knowledgeGraphService.initializeGraph();
-      message.success('TSP本体图谱初始化成功');
-      await loadData(selectedBusinessType);
-    } catch (err: any) {
-      message.error(err.response?.data?.detail || '初始化知识图谱失败');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleClear = async () => {
-    setLoading(true);
-    try {
-      await knowledgeGraphService.clearGraph();
-      message.success('TSP本体图谱清空成功');
-      setGraphData(null);
-      setStats(null);
-    } catch (err: any) {
-      message.error(err.response?.data?.detail || '清空知识图谱失败');
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  
   useEffect(() => {
     loadData(selectedBusinessType, selectedProject);
   }, [selectedBusinessType, selectedProject]);
@@ -102,8 +79,9 @@ const KnowledgeGraph: React.FC = () => {
         <Col span={4}>
           <Card>
             <Statistic
-              title="实体总数"
-              value={stats?.total_entities || 0}
+              title="项目总数"
+              value={stats?.project_count || 0}
+              valueStyle={{ color: '#1890ff' }}
               prefix={<BarChartOutlined />}
             />
           </Card>
@@ -111,8 +89,8 @@ const KnowledgeGraph: React.FC = () => {
         <Col span={4}>
           <Card>
             <Statistic
-              title="场景实体"
-              value={stats?.scenario_entities || 0}
+              title="业务类型"
+              value={stats?.business_type_count || 0}
               valueStyle={{ color: '#722ed1' }}
             />
           </Card>
@@ -120,17 +98,8 @@ const KnowledgeGraph: React.FC = () => {
         <Col span={4}>
           <Card>
             <Statistic
-              title="业务实体"
-              value={stats?.business_entities || 0}
-              valueStyle={{ color: '#1890ff' }}
-            />
-          </Card>
-        </Col>
-        <Col span={4}>
-          <Card>
-            <Statistic
-              title="接口实体"
-              value={stats?.interface_entities || 0}
+              title="测试点"
+              value={stats?.test_point_count || 0}
               valueStyle={{ color: '#fa8c16' }}
             />
           </Card>
@@ -138,8 +107,19 @@ const KnowledgeGraph: React.FC = () => {
         <Col span={4}>
           <Card>
             <Statistic
-              title="用例实体"
-              value={stats?.test_case_entities || 0}
+              title="测试用例"
+              value={stats?.test_case_count || 0}
+              valueStyle={{ color: '#52c41a' }}
+            />
+          </Card>
+        </Col>
+        <Col span={4}>
+          <Card>
+            <Statistic
+              title="完成率"
+              value={stats?.completion_rate || 0}
+              precision={1}
+              suffix="%"
               valueStyle={{ color: '#13c2c2' }}
             />
           </Card>
@@ -187,23 +167,6 @@ const KnowledgeGraph: React.FC = () => {
           >
             刷新
           </Button>
-
-          <Button
-            type="primary"
-            onClick={handleInitialize}
-            loading={loading}
-          >
-            初始化图谱
-          </Button>
-
-          <Button
-            danger
-            icon={<ClearOutlined />}
-            onClick={handleClear}
-            loading={loading}
-          >
-            清空图谱
-          </Button>
         </Space>
       </Card>
 
@@ -219,12 +182,14 @@ const KnowledgeGraph: React.FC = () => {
       )}
 
       <div style={{ minHeight: '600px' }}>
-        {loading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '500px' }}>
-            <Spin size="large" />
-          </div>
-        ) : graphData ? (
-          <Graph data={graphData} />
+        {graphData ? (
+          <OptimizedKnowledgeGraph
+            data={graphData}
+            onError={(error) => {
+              console.error('Knowledge graph error:', error);
+              setError(error.message);
+            }}
+          />
         ) : (
           <div style={{
             display: 'flex',
@@ -235,8 +200,8 @@ const KnowledgeGraph: React.FC = () => {
           }}>
             <div style={{ textAlign: 'center' }}>
               <p>暂无图谱数据</p>
-              <Button type="primary" onClick={handleInitialize}>
-                初始化TSP本体图谱
+              <Button type="primary" onClick={() => loadData()} loading={loading}>
+                重新加载图谱数据
               </Button>
             </div>
           </div>

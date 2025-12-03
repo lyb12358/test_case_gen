@@ -11,6 +11,7 @@ import {
   Tabs,
   List
 } from 'antd';
+import { registerNode } from '../NodeRegistry';
 import {
   ApiOutlined,
   CodeOutlined,
@@ -32,6 +33,7 @@ type DensityLevel = 'compact' | 'normal' | 'spacious';
 interface InterfaceNodeProps {
   id: string;
   data: {
+    id: string;
     label: string;
     type: 'interface';
     description?: string;
@@ -528,5 +530,14 @@ const InterfaceNode: React.FC<InterfaceNodeProps> = ({ data, density = 'spacious
     </Card>
   );
 };
+
+// Register the component with the node registry
+registerNode('interface', 'Interface Node', {
+  displayName: 'Interface Node',
+  description: 'API interface node with endpoint details',
+  defaultSize: { width: 150, height: 95 },
+  minSize: { width: 120, height: 80 },
+  maxSize: { width: 200, height: 120 }
+})(InterfaceNode);
 
 export default InterfaceNode;

@@ -305,69 +305,180 @@ class DatabaseOperations:
 
     def get_knowledge_graph_data(self, business_type: Optional[BusinessType] = None, project_id: Optional[int] = None) -> Dict[str, Any]:
         """
-        Get knowledge graph data in G6 format.
+        Get knowledge graph data in G6 format based on real project, business types, and test cases.
 
         Args:
             business_type (Optional[BusinessType]): Filter by business type
-            project_id (Optional[str]): Filter by project ID
+            project_id (Optional[int]): Filter by project ID
 
         Returns:
             Dict[str, Any]: Graph data in G6 format
         """
-        # 添加调试日志
-        print(f"DB: get_knowledge_graph_data called with business_type: {business_type}, project_id: {project_id}")
-
-        # Get entities
-        if business_type:
-            entities = self.get_knowledge_entities_by_business_type(business_type)
-            relations = self.get_knowledge_relations_by_business_type(business_type)
-            print(f"DB: Filtered by business_type {business_type}: {len(entities)} entities, {len(relations)} relations")
-        elif project_id:
-            entities = self.get_knowledge_entities_by_project(project_id)
-            relations = self.get_knowledge_relations_by_project(project_id)
-            print(f"DB: Filtered by project_id {project_id}: {len(entities)} entities, {len(relations)} relations")
-        else:
-            entities = self.get_all_knowledge_entities()
-            relations = self.get_all_knowledge_relations()
-            print(f"DB: No filter: {len(entities)} entities, {len(relations)} relations")
-
-        # Convert to G6 format
+        print(f"get_knowledge_graph_data called with business_type: {business_type}, project_id: {project_id}")
         nodes = []
         edges = []
 
-        for entity in entities:
-            nodes.append({
-                "id": str(entity.id),
-                "name": entity.name,
-                "label": entity.name,
-                "type": entity.type.value,
-                "description": entity.description,
-                "businessType": entity.business_type.value if entity.business_type else None
+        # Add hardcoded TSP root node
+        tsp_node = {
+            "id": "tsp-root",
+            "name": "TSP",
+            "label": "TSP",
+            "type": "tsp",
+            "description": "Telematics Service Provider - 根节点",
+            "businessType": None,
+            "isRoot": True,
+            "style": {
+                "fill": "#1890ff",
+                "stroke": "#096dd9",
+                "size": 60
+            }
+        }
+        nodes.append(tsp_node)
+
+        # Get projects
+        projects_query = self.db.query(Project)
+        if project_id:
+            projects_query = projects_query.filter(Project.id == project_id)
+
+        projects = projects_query.filter(Project.is_active == True).all()
+
+        # Add project nodes and edges from TSP
+        for project in projects:
+            project_node = {
+                "id": f"project-{project.id}",
+                "name": project.name,
+                "label": project.name,
+                "type": "project",
+                "description": project.description or "",
+                "businessType": None,
+                "projectId": project.id
+            }
+            nodes.append(project_node)
+
+            # Edge from TSP to project
+            edges.append({
+                "source": "tsp-root",
+                "target": f"project-{project.id}",
+                "label": "contains",
+                "type": "contains"
             })
 
-        # Use a set to track unique edges
-        seen_edges = set()
+            # Get business type configs for this project
+            business_configs = self.db.query(BusinessTypeConfig).filter(
+                BusinessTypeConfig.project_id == project.id,
+                BusinessTypeConfig.is_active == True
+            ).all()
 
-        for relation in relations:
-            # Create unique edge identifier
-            edge_key = (str(relation.subject_id), str(relation.object_id), relation.predicate)
+            # Add business type nodes and edges
+            for config in business_configs:
+                business_code = config.code
+                business_node = {
+                    "id": f"business-{project.id}-{business_code}",
+                    "name": business_code,
+                    "label": business_code,
+                    "type": "business",
+                    "description": f"Business type: {business_code} - {config.name}",
+                    "businessType": business_code,
+                    "projectId": project.id
+                }
+                nodes.append(business_node)
 
-            # Only add edge if not already seen
-            if edge_key not in seen_edges:
-                seen_edges.add(edge_key)
+                # Edge from project to business type
                 edges.append({
-                    "source": str(relation.subject_id),
-                    "target": str(relation.object_id),
-                    "label": relation.predicate,
-                    "type": relation.predicate,
-                    "businessType": relation.business_type.value if relation.business_type else None
+                    "source": f"project-{project.id}",
+                    "target": f"business-{project.id}-{business_code}",
+                    "label": "has",
+                    "type": "has"
                 })
+
+                # Get unified test cases for this business type and project
+                # Apply business type filter at test case level, not business config level
+                try:
+                    # Convert business_code string to BusinessType enum
+                    business_enum = BusinessType(business_code)
+
+                    if business_type:
+                        # If a specific business type is selected, only get test cases for that type
+                        if business_enum != business_type:
+                            # Skip test cases for this business type, but keep the business node
+                            test_cases = []
+                        else:
+                            test_cases = self.db.query(UnifiedTestCase).filter(
+                                UnifiedTestCase.project_id == project.id,
+                                UnifiedTestCase.business_type == business_enum
+                            ).all()
+                    else:
+                        # No business type filter, get all test cases for this business type
+                        test_cases = self.db.query(UnifiedTestCase).filter(
+                            UnifiedTestCase.project_id == project.id,
+                            UnifiedTestCase.business_type == business_enum
+                        ).all()
+                except ValueError:
+                    # If business_code is not a valid BusinessType, skip this business config
+                    print(f"Warning: Business code '{business_code}' is not a valid BusinessType enum")
+                    test_cases = []
+
+                # Add test case nodes and edges
+                for test_case in test_cases:
+                    print(f"Processing test_case: {test_case.id}, business_type: {test_case.business_type}, stage: {test_case.stage}")
+
+                    # Safe access to enum values
+                    business_type_str = test_case.business_type.value if hasattr(test_case.business_type, 'value') and not isinstance(test_case.business_type, str) else str(test_case.business_type)
+                    stage_str = test_case.stage.value if hasattr(test_case.stage, 'value') and not isinstance(test_case.stage, str) else str(test_case.stage)
+                    status_str = test_case.status.value if hasattr(test_case.status, 'value') and not isinstance(test_case.status, str) else str(test_case.status)
+
+                    # 根据stage区分测试点和测试用例
+                    if stage_str == "test_point":
+                        # 测试点节点（黄色背景，仅名称+描述）
+                        test_node = {
+                            "id": f"tp-{test_case.id}",
+                            "name": test_case.name,
+                            "label": test_case.name,
+                            "type": "test_point",
+                            "level": 4,
+                            "stage": "test_point",
+                            "description": test_case.description or "",
+                            "businessType": business_type_str,
+                            "projectId": project.id,
+                            "priority": test_case.priority
+                        }
+                    else:
+                        # 测试用例节点（绿色背景，丰富信息）
+                        test_node = {
+                            "id": f"tc-{test_case.id}",
+                            "name": test_case.name,
+                            "label": test_case.name,
+                            "type": "test_case",
+                            "level": 4,
+                            "stage": "test_case",
+                            "description": test_case.description or "",
+                            "businessType": business_type_str,
+                            "projectId": project.id,
+                            "status": status_str,
+                            "priority": test_case.priority,
+                            "preconditions": test_case.preconditions,
+                            "steps": test_case.steps,
+                            "expected_results": test_case.expected_results,
+                            "module": test_case.module,
+                            "functional_module": test_case.functional_module
+                        }
+                    nodes.append(test_node)
+
+                    # Edge from business type to test case/test point
+                    node_id = test_node["id"]  # 使用修改后的ID
+                    edges.append({
+                        "source": f"business-{project.id}-{business_code}",
+                        "target": node_id,
+                        "label": "contains",
+                        "type": "contains"
+                    })
 
         result = {
             "nodes": nodes,
             "edges": edges
         }
-        print(f"DB: Returning graph data: {len(result['nodes'])} nodes, {len(result['edges'])} edges")
+
+        print(f"Generated knowledge graph: {len(nodes)} nodes, {len(edges)} edges")
         return result
 
     def clear_knowledge_graph(self) -> int:
@@ -388,20 +499,41 @@ class DatabaseOperations:
         self.db.commit()
         return relations_count + entities_count
 
-    def get_knowledge_graph_stats(self) -> Dict[str, int]:
+    def get_knowledge_graph_stats(self) -> Dict[str, Any]:
         """
-        Get knowledge graph statistics.
+        Get knowledge graph statistics based on real project, business types, and test cases.
 
         Returns:
-            Dict[str, int]: Statistics about the knowledge graph
+            Dict[str, Any]: Statistics about the knowledge graph
         """
+        # Count active projects
+        project_count = self.db.query(Project).filter(Project.is_active == True).count()
+
+        # Count active business type configurations
+        business_type_count = self.db.query(BusinessTypeConfig).filter(
+            BusinessTypeConfig.is_active == True
+        ).count()
+
+        # Count test points and test cases
+        test_point_count = self.db.query(UnifiedTestCase).filter(
+            UnifiedTestCase.stage == UnifiedTestCaseStage.TEST_POINT
+        ).count()
+
+        test_case_count = self.db.query(UnifiedTestCase).filter(
+            UnifiedTestCase.stage == UnifiedTestCaseStage.TEST_CASE
+        ).count()
+
+        # Calculate completion rate
+        total_test_count = test_point_count + test_case_count
+        completion_rate = (test_case_count / total_test_count * 100) if total_test_count > 0 else 0
+
         return {
-            "total_entities": self.db.query(KnowledgeEntity).count(),
-            "total_relations": self.db.query(KnowledgeRelation).count(),
-            "scenario_entities": self.db.query(KnowledgeEntity).filter(KnowledgeEntity.type == EntityType.SCENARIO).count(),
-            "business_entities": self.db.query(KnowledgeEntity).filter(KnowledgeEntity.type == EntityType.BUSINESS).count(),
-            "interface_entities": self.db.query(KnowledgeEntity).filter(KnowledgeEntity.type == EntityType.INTERFACE).count(),
-            "test_case_entities": self.db.query(KnowledgeEntity).filter(KnowledgeEntity.type == EntityType.TEST_CASE).count()
+            "project_count": project_count,
+            "business_type_count": business_type_count,
+            "test_point_count": test_point_count,
+            "test_case_count": test_case_count,
+            "completion_rate": round(completion_rate, 1),
+            "total_test_count": total_test_count
         }
 
     def get_knowledge_entity_by_name(self, name: str) -> Optional[KnowledgeEntity]:

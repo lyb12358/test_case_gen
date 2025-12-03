@@ -30,7 +30,6 @@ from ..utils.config import Config
 from ..database.database import DatabaseManager
 from ..database.operations import DatabaseOperations
 from ..database.models import BusinessType, JobStatus, EntityType, BusinessTypeConfig, Project, GenerationJob, UnifiedTestCaseStatus, UnifiedTestCase
-from ..core.business_data_extractor import BusinessDataExtractor
 from ..core.excel_converter import ExcelConverter
 from ..models.test_case import TestCase
 from ..models.project import ProjectCreate, ProjectUpdate, ProjectResponse, ProjectListResponse, ProjectStats, ProjectStatsResponse
@@ -161,6 +160,12 @@ class GraphNode(BaseModel):
     type: str
     description: Optional[str] = None
     businessType: Optional[str] = None
+    projectId: Optional[int] = None
+    stage: Optional[str] = None  # test_point or test_case
+    status: Optional[str] = None  # draft, approved, completed
+    priority: Optional[str] = None  # low, medium, high
+    isRoot: Optional[bool] = False
+    style: Optional[Dict[str, Any]] = None
 
 
 class GraphEdge(BaseModel):
@@ -180,12 +185,12 @@ class KnowledgeGraphResponse(BaseModel):
 
 class GraphStatsResponse(BaseModel):
     """Response model for graph statistics."""
-    total_entities: int
-    total_relations: int
-    scenario_entities: int
-    business_entities: int
-    interface_entities: int
-    test_case_entities: int
+    project_count: int
+    business_type_count: int
+    test_point_count: int
+    test_case_count: int
+    completion_rate: float
+    total_test_count: int
 
 
 class EntityDetailsResponse(BaseModel):
@@ -374,8 +379,7 @@ async def root():
             "GET /knowledge-graph/entities - Get knowledge graph entities",
             "GET /knowledge-graph/relations - Get knowledge graph relations",
             "GET /knowledge-graph/stats - Get knowledge graph statistics",
-            "POST /knowledge-graph/initialize - Initialize knowledge graph from business descriptions",
-            "DELETE /knowledge-graph/clear - Clear all knowledge graph data",
+              "DELETE /knowledge-graph/clear - Clear all knowledge graph data",
             "GET /projects - Get all projects",
             "POST /projects - Create new project",
             "GET /projects/{project_id} - Get project details",
@@ -1371,34 +1375,6 @@ async def get_knowledge_graph_stats():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get graph stats: {str(e)}")
 
-
-@main_router.post("/knowledge-graph/initialize")
-async def initialize_knowledge_graph():
-    """
-    Initialize knowledge graph data from business descriptions.
-
-    Returns:
-        Dict: Initialization result
-    """
-    try:
-        with db_manager.get_session() as db:
-            db_operations = DatabaseOperations(db)
-            extractor = BusinessDataExtractor(db_operations)
-
-            # Extract all business data
-            success = extractor.extract_all_business_data()
-
-            if success:
-                stats = extractor.get_extraction_summary()
-                return {
-                    "message": "Knowledge graph initialized successfully",
-                    "stats": stats
-                }
-            else:
-                raise HTTPException(status_code=500, detail="Failed to initialize knowledge graph")
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to initialize knowledge graph: {str(e)}")
 
 
 @main_router.delete("/knowledge-graph/clear")

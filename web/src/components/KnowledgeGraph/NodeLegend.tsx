@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Space, Typography, Button, Avatar, Tag, Tooltip } from 'antd';
+import { Card, Space, Typography, Button, Avatar, Tag, Tooltip, Badge } from 'antd';
 import {
-  ApartmentOutlined,
-  DatabaseOutlined,
-  ApiOutlined,
-  FileTextOutlined,
+  CloudOutlined,
+  ProjectOutlined,
+  AppstoreOutlined,
+  CheckCircleOutlined,
+  PlayCircleOutlined,
   InfoCircleOutlined,
   EyeOutlined,
   EyeInvisibleOutlined,
@@ -38,35 +39,46 @@ const NodeLegend: React.FC<NodeLegendProps> = ({
   // 确定最终的可见性状态
   const visible = externalVisible !== undefined ? externalVisible : internalVisible;
 
-  // 节点类型信息配置
+  // 新架构节点类型信息配置 - 与实际节点组件保持一致
   const nodeTypes: NodeTypeInfo[] = [
     {
-      type: 'scenario',
-      name: '场景',
-      color: '#722ed1',
-      icon: <ApartmentOutlined />,
-      description: 'TSP远控业务场景根节点'
+      type: 'tsp',
+      name: 'TSP服务',
+      color: '#8c8c8c',
+      icon: <CloudOutlined />,
+      description: 'TSP远程控制服务根节点（灰色背景）'
+    },
+    {
+      type: 'project',
+      name: '项目',
+      color: '#1890ff',
+      icon: <ProjectOutlined />,
+      description: '测试项目管理节点（蓝色背景）'
     },
     {
       type: 'business',
-      name: '业务',
-      color: '#1890ff',
-      icon: <DatabaseOutlined />,
-      description: '具体业务类型（如RCC、RFD、ZAB等远程控制业务）'
-    },
+      name: '业务类型',
+      color: '#722ed1',
+      icon: <AppstoreOutlined />,
+      description: 'TSP业务类型（紫色背景）'
+    }
+  ];
+
+  // 统一测试节点的状态信息 - 与UnifiedTestNode组件保持一致
+  const testNodeStates = [
     {
-      type: 'interface',
-      name: '接口',
-      color: '#fa8c16',
-      icon: <ApiOutlined />,
-      description: 'TSP远程控制接口'
+      type: 'test_point',
+      name: '测试点',
+      color: '#faad14',
+      icon: <PlayCircleOutlined />,
+      description: '测试点（黄色背景，仅名称+描述）'
     },
     {
       type: 'test_case',
       name: '测试用例',
-      color: '#13c2c2',
-      icon: <FileTextOutlined />,
-      description: '自动化测试用例'
+      color: '#52c41a',
+      icon: <CheckCircleOutlined />,
+      description: '测试用例（绿色背景，详细信息）'
     }
   ];
 
@@ -181,7 +193,7 @@ const NodeLegend: React.FC<NodeLegendProps> = ({
         styles={{
           body: {
             padding: expanded ? '12px 16px' : '8px 12px',
-            maxHeight: expanded ? 'none' : '160px',
+            maxHeight: expanded ? 'none' : '180px',
             overflow: expanded ? 'visible' : 'hidden'
           },
           header: {
@@ -192,6 +204,7 @@ const NodeLegend: React.FC<NodeLegendProps> = ({
         }}
       >
         <Space direction="vertical" size={6} style={{ width: '100%' }}>
+          {/* 基础节点类型 */}
           {nodeTypes.map((nodeType) => (
             <div
               key={nodeType.type}
@@ -263,6 +276,113 @@ const NodeLegend: React.FC<NodeLegendProps> = ({
                     }}
                   >
                     {nodeType.description}
+                  </Text>
+                )}
+              </div>
+            </div>
+          ))}
+
+          {/* 分隔线 */}
+          {expanded && (
+            <div style={{
+              height: '1px',
+              background: 'linear-gradient(to right, transparent, rgba(24, 144, 255, 0.2), transparent)',
+              margin: '8px 0'
+            }} />
+          )}
+
+          {/* 测试节点状态 */}
+          {expanded && (
+            <div style={{ marginBottom: '4px' }}>
+              <Text
+                strong
+                style={{
+                  fontSize: '12px',
+                  color: '#595959',
+                  display: 'block',
+                  marginBottom: '6px'
+                }}
+              >
+                测试节点状态
+              </Text>
+            </div>
+          )}
+
+          {testNodeStates.map((testState) => (
+            <div
+              key={testState.type}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                padding: expanded ? '6px 8px' : '4px 6px',
+                borderRadius: '6px',
+                backgroundColor: expanded ? 'rgba(24, 144, 255, 0.03)' : 'transparent',
+                transition: 'all 0.2s ease',
+                cursor: 'default',
+                border: expanded ? `1px solid ${testState.color}20` : 'none'
+              }}
+              onMouseEnter={(e) => {
+                if (expanded) {
+                  e.currentTarget.style.backgroundColor = `${testState.color}10`;
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = expanded ? 'rgba(24, 144, 255, 0.03)' : 'transparent';
+              }}
+            >
+              <div
+                style={{
+                  width: expanded ? '24px' : '20px',
+                  height: expanded ? '24px' : '20px',
+                  borderRadius: '50%',
+                  background: testState.type === 'test_point'
+                    ? 'linear-gradient(135deg, #fffbe6 0%, #fff7e6 100%)'
+                    : 'linear-gradient(135deg, #f6ffed 0%, #e6f7d2 100%)',
+                  border: `2px solid ${testState.color}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginRight: expanded ? '8px' : '6px'
+                }}
+              >
+                {testState.icon}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: expanded ? '6px' : '4px'
+                }}>
+                  <Text
+                    strong
+                    style={{
+                      fontSize: expanded ? '13px' : '12px',
+                      color: '#262626',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {testState.name}
+                  </Text>
+                  <Badge
+                    color={testState.color}
+                    text={testState.type}
+                    style={{
+                      fontSize: '10px',
+                      lineHeight: '14px'
+                    }}
+                  />
+                </div>
+                {expanded && (
+                  <Text
+                    type="secondary"
+                    style={{
+                      fontSize: '11px',
+                      lineHeight: '1.3',
+                      display: 'block',
+                      marginTop: '2px'
+                    }}
+                  >
+                    {testState.description}
                   </Text>
                 )}
               </div>

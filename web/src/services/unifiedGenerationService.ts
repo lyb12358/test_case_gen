@@ -62,8 +62,11 @@ class UnifiedGenerationService {
   /**
    * 导出测试用例到Excel
    */
-  async exportTestCasesToExcel(businessType: string, projectId?: number): Promise<Blob> {
-    const params: any = { business_type: businessType };
+  async exportTestCasesToExcel(businessType?: string, projectId?: number): Promise<Blob> {
+    const params: any = {};
+    if (businessType) {
+      params.business_type = businessType;
+    }
     if (projectId) {
       params.project_id = projectId;
     }

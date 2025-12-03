@@ -42,6 +42,7 @@ import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 
 import { unifiedGenerationService } from '../../services';
+import { downloadFile, generateExportFilename } from '../../utils/fileUtils';
 import {
   UnifiedTestCaseResponse,
   UnifiedTestCaseFilter,
@@ -85,6 +86,7 @@ const UnifiedTestCaseList: React.FC<UnifiedTestCaseListProps> = ({
   const [pageSize, setPageSize] = useState(20);
   const [selectedRowKeys, setSelectedRowKeys] = useState<number[]>([]);
   const [selectedItems, setSelectedItems] = useState<UnifiedTestCaseResponse[]>([]);
+  const [isExporting, setIsExporting] = useState(false);
 
   // 搜索和过滤
   const [searchFilter, setSearchFilter] = useState<SearchFilter>({});
@@ -134,6 +136,32 @@ const UnifiedTestCaseList: React.FC<UnifiedTestCaseListProps> = ({
       setStatistics(stats);
     } catch (error) {
       console.error('加载统计信息失败:', error);
+    }
+  };
+
+  // 导出处理函数
+  const handleExport = async () => {
+    if (isExporting) return;
+
+    setIsExporting(true);
+    try {
+      const blob = await service.exportTestCasesToExcel(
+        businessType || undefined,
+        projectId || undefined
+      );
+
+      const filename = generateExportFilename(businessType);
+      downloadFile(blob, filename);
+
+      message.success('导出成功！');
+    } catch (error: any) {
+      console.error('导出失败:', error);
+      const errorMessage = error?.response?.data?.detail ||
+                          error?.message ||
+                          '导出失败，请稍后重试';
+      message.error(`导出失败: ${errorMessage}`);
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -462,7 +490,11 @@ const UnifiedTestCaseList: React.FC<UnifiedTestCaseListProps> = ({
               <Button icon={<ReloadOutlined />} onClick={() => loadTestCases()}>
                 刷新
               </Button>
-              <Button icon={<ExportOutlined />}>
+              <Button
+                icon={<ExportOutlined />}
+                onClick={handleExport}
+                loading={isExporting}
+              >
                 导出
               </Button>
               {showActions && (

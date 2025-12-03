@@ -2,11 +2,14 @@ export interface GraphNode {
   id: string;
   name: string;
   label: string;
-  type: 'scenario' | 'business' | 'interface' | 'test_case';
+  type: 'tsp' | 'project' | 'business' | 'interface' | 'test_case';
   description?: string;
   businessType?: string;
-  parentId?: number;
-  entityOrder?: number;
+  projectId?: number;
+  stage?: 'test_point' | 'test_case';
+  status?: 'draft' | 'approved' | 'completed';
+  priority?: 'low' | 'medium' | 'high';
+  isRoot?: boolean;
   extra_data?: any;
 }
 
@@ -24,12 +27,12 @@ export interface KnowledgeGraphData {
 }
 
 export interface GraphStats {
-  total_entities: number;
-  total_relations: number;
-  scenario_entities: number;
-  business_entities: number;
-  interface_entities: number;
-  test_case_entities: number;
+  project_count: number;
+  business_type_count: number;
+  test_point_count: number;
+  test_case_count: number;
+  completion_rate: number;
+  total_test_count: number;
 }
 
 export interface GraphEntity {
