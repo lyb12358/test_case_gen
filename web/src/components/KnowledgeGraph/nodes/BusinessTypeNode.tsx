@@ -2,7 +2,16 @@ import React, { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import { Typography, Space, Tag, Badge } from 'antd';
 import { AppstoreOutlined, ExperimentOutlined, CheckCircleOutlined } from '@ant-design/icons';
-import { getNodeColors, getNodeSize, GlassStyles } from '../styles/KnowledgeGraphStyles';
+import {
+  getNodeColors,
+  getNodeSize,
+  ModernCardStyles,
+  WhiteBackgroundNodeStyles,
+  NodeSpecificStyles,
+  TextTruncation,
+  StatusColors,
+  KnowledgeGraphColors
+} from '../styles/KnowledgeGraphStyles';
 
 const { Title, Text } = Typography;
 
@@ -94,208 +103,211 @@ const BusinessTypeNode: React.FC<BusinessTypeNodeProps> = ({ id, data, selected 
         }}
       />
 
-      {/* 玻璃拟态节点卡片 */}
+      {/* 现代化业务类型节点卡片 */}
       <div
         style={{
-          width: sizes.width,
-          minWidth: sizes.width,
-          height: sizes.height,
-          ...GlassStyles.glassCard,
-          background: isActive ? colors.gradient : 'rgba(249, 250, 251, 0.8)',
-          borderColor: selected ? 'rgba(255, 255, 255, 0.6)' : colors.primary,
-          borderWidth: selected ? 3 : 2,
-          transform: selected ? GlassStyles.selectedEffect.transform : 'scale(1)',
-          boxShadow: selected
-            ? `0 12px 40px ${colors.shadow}, 0 6px 20px rgba(0, 0, 0, 0.15)`
-            : `0 8px 32px ${colors.shadow}, 0 4px 16px rgba(0, 0, 0, 0.1)`,
-          transition: GlassStyles.transition,
+          ...WhiteBackgroundNodeStyles.business,
+          ...(selected ? ModernCardStyles.selectedCard : ModernCardStyles.card),
+          ...(selected && ModernCardStyles.hoverCard),
+          background: '#ffffff',
+          borderColor: isActive ? colors.primary : '#d1d5db',
+          borderWidth: selected ? 4 : 3,
           cursor: 'pointer',
           opacity: isActive ? 1 : 0.6,
-          padding: '12px',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
+          position: 'relative',
+          overflow: 'hidden',
         }}
       >
-        {/* 标题区域 */}
-        <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-          <Space align="center" size={6}>
+        {/* 移除渐变装饰背景，使用纯白色背景 */}
+
+        {/* 内容容器 */}
+        <div style={ModernCardStyles.contentContainer}>
+          {/* 标题区域 */}
+          <div style={ModernCardStyles.header}>
             <div style={{
-              color: isActive ? 'rgba(255, 255, 255, 0.9)' : 'rgba(156, 163, 175, 0.9)',
-              textShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
-              filter: isActive ? 'none' : 'grayscale(0.6)'
+              filter: isActive ? 'none' : 'grayscale(0.6)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}>
               {getBusinessIcon()}
             </div>
-            <div style={{ textAlign: 'left', flex: 1 }}>
-              <Title
+            <div style={{ flex: 1, textAlign: 'left' }}>
+              <Typography.Title
                 level={5}
                 style={{
-                  margin: 0,
-                  color: isActive ? 'rgba(255, 255, 255, 0.95)' : 'rgba(107, 114, 128, 0.95)',
+                  ...ModernCardStyles.title,
+                  color: isActive ? '#111827' : '#6b7280',
                   fontWeight: 'bold',
+                  margin: 0,
                   fontSize: `${sizes.fontSize}px`,
                   lineHeight: '1.3',
-                  textShadow: isActive ? '0 2px 4px rgba(0, 0, 0, 0.3)' : 'none',
                 }}
               >
                 {label}
-              </Title>
+              </Typography.Title>
               {businessName && businessName !== label && (
-                <Text
+                <Typography.Text
                   style={{
-                    fontSize: '9px',
-                    color: isActive ? 'rgba(255, 255, 255, 0.7)' : 'rgba(107, 114, 128, 0.7)',
+                    ...ModernCardStyles.subtitle,
+                    color: isActive ? '#4b5563' : '#9ca3af',
                     display: 'block',
                     marginTop: '1px',
                   }}
                 >
                   {businessName}
-                </Text>
+                </Typography.Text>
               )}
             </div>
-          </Space>
-        </div>
+          </div>
 
-        {/* 业务类型标签 - 玻璃拟态样式 */}
-        {businessType && (
-          <div style={{ textAlign: 'center', marginBottom: '6px' }}>
-            <div
-              style={{
-                display: 'inline-block',
-                backdropFilter: 'blur(8px)',
-                background: isActive
-                  ? 'rgba(147, 51, 234, 0.2)'
-                  : 'rgba(156, 163, 175, 0.2)',
-                padding: '1px 6px',
-                borderRadius: '10px',
-                border: isActive
-                  ? '1px solid rgba(147, 51, 234, 0.3)'
-                  : '1px solid rgba(156, 163, 175, 0.3)',
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
-              }}
-            >
-              <Text
+          {/* 业务类型标签 */}
+          {businessType && (
+            <div style={{ textAlign: 'center', marginBottom: '6px' }}>
+              <div
                 style={{
-                  fontSize: '9px',
-                  color: isActive ? 'rgba(255, 255, 255, 0.9)' : 'rgba(255, 255, 255, 0.7)',
-                  fontWeight: 'bold',
+                  ...ModernCardStyles.statusTag,
+                  background: isActive
+                    ? `${colors.primary}20`
+                    : StatusColors.draft.bg,
+                  color: isActive
+                    ? colors.primary
+                    : StatusColors.draft.text,
+                  border: `1px solid ${isActive ? `${colors.primary}40` : 'rgba(156, 163, 175, 0.3)'}`,
+                  backdropFilter: 'blur(8px)',
                 }}
               >
                 {businessType}
-              </Text>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* 描述信息 */}
-        {description && (
-          <Text
-            style={{
-              fontSize: '9px',
-              color: '#666',
-              display: 'block',
-              textAlign: 'center',
-              marginBottom: '6px',
-              height: '24px',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              lineHeight: '1.3',
-            }}
-          >
-            {description}
-          </Text>
-        )}
+          {/* 描述信息 - 使用智能文字截断 */}
+          {description && (
+            <Typography.Text
+              style={{
+                ...ModernCardStyles.multilineText,
+                color: isActive ? '#374151' : '#9ca3af',
+                textAlign: 'center',
+                fontSize: '10px',
+                height: '24px',
+              }}
+            >
+              {description}
+            </Typography.Text>
+          )}
 
-        {/* 统计信息 - 玻璃拟态样式 */}
-        <div style={{ marginBottom: '6px' }}>
-          <Space size={8} style={{ width: '100%', justifyContent: 'center', display: 'flex' }}>
+          {/* 统计信息网格 */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'center',
+            gap: '8px',
+            marginTop: '6px'
+          }}>
             <div
               style={{
-                backdropFilter: 'blur(8px)',
-                background: 'rgba(255, 255, 255, 0.15)',
+                background: isActive ? 'rgba(14, 165, 233, 0.08)' : '#f9fafb',
                 padding: '4px 6px',
                 borderRadius: '6px',
-                border: '1px solid rgba(255, 255, 255, 0.3)',
-                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+                border: isActive ? '1px solid rgba(14, 165, 233, 0.15)' : '1px solid #e5e7eb',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)',
                 textAlign: 'center',
+                minWidth: '50px',
               }}
             >
               <ExperimentOutlined
                 style={{
+                  ...ModernCardStyles.icon,
                   fontSize: '12px',
-                  color: isActive ? 'rgba(255, 255, 255, 0.9)' : 'rgba(156, 163, 175, 0.9)',
+                  color: isActive ? KnowledgeGraphColors.testPoint.primary : '#9ca3af',
                   display: 'block',
-                  marginBottom: '1px',
-                  textShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
+                  marginBottom: '2px'
                 }}
               />
-              <Text style={{ fontSize: '8px', color: isActive ? 'rgba(255, 255, 255, 0.8)' : 'rgba(156, 163, 175, 0.8)' }}>
+              <Typography.Text style={{
+                fontSize: '8px',
+                color: isActive ? '#374151' : '#9ca3af',
+                fontWeight: '500',
+                display: 'block'
+              }}>
                 测试点
-              </Text>
+              </Typography.Text>
               <Badge
                 count={testPointCount}
                 style={{
-                  backgroundColor: colors.primary,
+                  backgroundColor: isActive ? KnowledgeGraphColors.testPoint.primary : '#9ca3af',
                   fontSize: '9px',
                   height: '16px',
                   lineHeight: '16px',
                   borderRadius: '8px',
-                  border: '1px solid rgba(255, 255, 255, 0.3)',
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
                 }}
                 overflowCount={99}
               />
             </div>
+
             <div
               style={{
-                backdropFilter: 'blur(8px)',
-                background: 'rgba(255, 255, 255, 0.15)',
+                background: isActive ? 'rgba(22, 163, 74, 0.08)' : '#f9fafb',
                 padding: '4px 6px',
                 borderRadius: '6px',
-                border: '1px solid rgba(255, 255, 255, 0.3)',
-                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+                border: isActive ? '1px solid rgba(22, 163, 74, 0.15)' : '1px solid #e5e7eb',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)',
                 textAlign: 'center',
+                minWidth: '50px',
               }}
             >
               <CheckCircleOutlined
                 style={{
+                  ...ModernCardStyles.icon,
                   fontSize: '12px',
-                  color: isActive ? 'rgba(255, 255, 255, 0.9)' : 'rgba(156, 163, 175, 0.9)',
+                  color: isActive ? KnowledgeGraphColors.testCase.primary : '#9ca3af',
                   display: 'block',
-                  marginBottom: '1px',
-                  textShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
+                  marginBottom: '2px'
                 }}
               />
-              <Text style={{ fontSize: '8px', color: isActive ? 'rgba(255, 255, 255, 0.8)' : 'rgba(156, 163, 175, 0.8)' }}>
+              <Typography.Text style={{
+                fontSize: '8px',
+                color: isActive ? '#374151' : '#9ca3af',
+                fontWeight: '500',
+                display: 'block'
+              }}>
                 测试用例
-              </Text>
+              </Typography.Text>
               <Badge
                 count={testCaseCount}
                 style={{
-                  backgroundColor: '#22c55e',
+                  backgroundColor: isActive ? KnowledgeGraphColors.testCase.primary : '#9ca3af',
                   fontSize: '9px',
                   height: '16px',
                   lineHeight: '16px',
                   borderRadius: '8px',
-                  border: '1px solid rgba(255, 255, 255, 0.3)',
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
                 }}
                 overflowCount={999}
               />
             </div>
-          </Space>
+          </div>
         </div>
 
         {/* 活跃状态指示器 */}
-        <div style={{ textAlign: 'center' }}>
+        <div style={{
+          position: 'absolute',
+          bottom: '6px',
+          left: 0,
+          right: 0,
+          display: 'flex',
+          justifyContent: 'center'
+        }}>
           <div
             style={{
-              width: '8px',
-              height: '8px',
+              width: '6px',
+              height: '6px',
               borderRadius: '50%',
               background: isActive ? colors.primary : '#9ca3af',
-              margin: '0 auto',
-              opacity: isActive ? 1 : 0.5,
-              boxShadow: isActive ? `0 0 8px ${colors.primary}50` : 'none',
+              opacity: isActive ? 1 : 0.4,
+              boxShadow: isActive ? `0 0 8px ${colors.primary}60` : 'none',
+              transition: 'all 0.2s ease-in-out'
             }}
           />
         </div>

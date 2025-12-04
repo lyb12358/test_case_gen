@@ -2,7 +2,17 @@ import React, { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import { Typography, Space, Tag } from 'antd';
 import { FileTextOutlined, CheckCircleOutlined, ClockCircleOutlined } from '@ant-design/icons';
-import { getNodeColors, getNodeSize, GlassStyles } from '../styles/KnowledgeGraphStyles';
+import {
+  getNodeColors,
+  getNodeSize,
+  ModernCardStyles,
+  WhiteBackgroundNodeStyles,
+  NodeSpecificStyles,
+  TextTruncation,
+  StatusColors,
+  PriorityColors,
+  KnowledgeGraphColors
+} from '../styles/KnowledgeGraphStyles';
 
 const { Title, Text } = Typography;
 
@@ -66,8 +76,16 @@ const TestCaseNode: React.FC<TestCaseNodeProps> = ({ id, data, selected }) => {
     }
   };
 
+  // 获取状态信息
   const statusInfo = getStatusInfo();
   const priorityColor = getPriorityColor();
+
+  // 创建颜色背景样式
+  const createStatusStyle = (color: string, opacity: number = 0.1): React.CSSProperties => ({
+    background: `${color}${Math.round(opacity * 255).toString(16).padStart(2, '0')}`,
+    color: color,
+    border: `1px solid ${color}${Math.round(opacity * 255).toString(16).padStart(2, '0')}`,
+  });
 
   return (
     <>
@@ -83,184 +101,137 @@ const TestCaseNode: React.FC<TestCaseNodeProps> = ({ id, data, selected }) => {
         }}
       />
 
-      {/* 玻璃拟态节点卡片 */}
+      {/* 现代化测试用例节点卡片 */}
       <div
         style={{
-          width: sizes.width,
-          minWidth: sizes.width,
-          height: sizes.height,
-          ...GlassStyles.glassCard,
-          background: colors.gradient,
-          borderColor: selected ? 'rgba(255, 255, 255, 0.6)' : colors.primary,
-          borderWidth: selected ? 3 : 2,
-          transform: selected ? GlassStyles.selectedEffect.transform : 'scale(1)',
-          boxShadow: selected
-            ? `0 12px 40px ${colors.shadow}, 0 6px 20px rgba(0, 0, 0, 0.15)`
-            : `0 8px 32px ${colors.shadow}, 0 4px 16px rgba(0, 0, 0, 0.1)`,
-          transition: GlassStyles.transition,
+          ...(nodeType === 'test_point' ? WhiteBackgroundNodeStyles.testPoint : WhiteBackgroundNodeStyles.testCase),
+          ...(selected ? ModernCardStyles.selectedCard : ModernCardStyles.card),
+          ...(selected && ModernCardStyles.hoverCard),
+          background: '#ffffff',
+          borderColor: selected ? colors.primary : colors.primary,
+          borderWidth: selected ? 4 : 2,
           cursor: 'pointer',
-          padding: '10px',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
+          position: 'relative',
+          overflow: 'hidden',
         }}
       >
-        {/* 标题区域 */}
-        <div style={{ textAlign: 'center', marginBottom: '6px' }}>
-          <Space align="center" size={4}>
+        {/* 移除渐变装饰背景，使用纯白色背景 */}
+
+        {/* 内容容器 */}
+        <div style={ModernCardStyles.contentContainer}>
+          {/* 标题区域 */}
+          <div style={ModernCardStyles.header}>
             <div style={{
-              fontSize: `${sizes.iconSize}px`,
-              color: 'rgba(255, 255, 255, 0.9)',
-              textShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
+              ...ModernCardStyles.icon,
+              color: colors.primary,
+              display: 'flex',
+              alignItems: 'center',
+              fontSize: '16px'
             }}>
               {stage === 'test_point' ? '📝' : <FileTextOutlined />}
             </div>
-            <div style={{ textAlign: 'left', flex: 1, minWidth: 0 }}>
-              <Title
-                level={5}
-                style={{
-                  margin: 0,
-                  color: 'rgba(255, 255, 255, 0.95)',
-                  fontWeight: 'bold',
-                  fontSize: `${sizes.labelFontSize}px`,
-                  lineHeight: '1.2',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  textShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-                }}
-                title={label}
-              >
-                {label}
-              </Title>
-            </div>
-          </Space>
-        </div>
-
-        {/* 阶段和状态标签 - 玻璃拟态样式 */}
-        <div style={{ textAlign: 'center', marginBottom: '4px' }}>
-          <Space size={2}>
-            <div
+            <Typography.Title
+              level={5}
               style={{
-                display: 'inline-block',
-                backdropFilter: 'blur(8px)',
-                background: stage === 'test_point'
-                  ? 'rgba(14, 165, 233, 0.2)'
-                  : 'rgba(22, 163, 74, 0.2)',
-                padding: '1px 4px',
-                borderRadius: '8px',
-                border: stage === 'test_point'
-                  ? '1px solid rgba(14, 165, 233, 0.3)'
-                  : '1px solid rgba(22, 163, 74, 0.3)',
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+                ...ModernCardStyles.title,
+                ...TextTruncation.singleLine,
+                color: '#111827',
+                fontWeight: 'bold',
+                margin: 0,
+                fontSize: `${sizes.labelFontSize}px`,
+                lineHeight: '1.2',
+                flex: 1,
               }}
+              title={label}
             >
-              <Text
+              {label}
+            </Typography.Title>
+          </div>
+
+          {/* 阶段和状态标签 */}
+          <div style={{ textAlign: 'center', marginBottom: '4px' }}>
+            <Space size={2}>
+              <div
                 style={{
-                  fontSize: '9px',
-                  color: 'rgba(255, 255, 255, 0.9)',
-                  fontWeight: '500',
-                  lineHeight: '1.2',
+                  ...ModernCardStyles.statusTag,
+                  ...(stage === 'test_point'
+                    ? createStatusStyle(KnowledgeGraphColors.testPoint.primary, 0.1)
+                    : createStatusStyle(KnowledgeGraphColors.testCase.primary, 0.1)
+                  ),
                 }}
               >
                 {stage === 'test_point' ? '测试点' : '测试用例'}
-              </Text>
-            </div>
-            <div
-              style={{
-                display: 'inline-block',
-                backdropFilter: 'blur(8px)',
-                background: `${statusInfo.color}20`,
-                padding: '1px 4px',
-                borderRadius: '8px',
-                border: `1px solid ${statusInfo.color}40`,
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
-              }}
-            >
-              <Text
+              </div>
+              <div
                 style={{
-                  fontSize: '9px',
-                  color: 'rgba(255, 255, 255, 0.9)',
-                  fontWeight: '500',
-                  lineHeight: '1.2',
+                  ...ModernCardStyles.statusTag,
+                  ...createStatusStyle(statusInfo.color, 0.1),
                 }}
               >
                 {statusInfo.text}
-              </Text>
-            </div>
-          </Space>
-        </div>
+              </div>
+            </Space>
+          </div>
 
-        {/* 优先级指示器 - 玻璃拟态样式 */}
-        <div style={{ textAlign: 'center', marginBottom: '4px' }}>
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '3px',
-              backdropFilter: 'blur(8px)',
-              background: `${priorityColor}20`,
-              border: `1px solid ${priorityColor}40`,
-              borderRadius: '10px',
-              padding: '2px 6px',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
-            }}
-          >
+          {/* 优先级指示器 */}
+          <div style={{ textAlign: 'center', marginBottom: '4px' }}>
             <div
               style={{
-                width: '6px',
-                height: '6px',
-                borderRadius: '50%',
-                background: priorityColor,
-                boxShadow: `0 0 4px ${priorityColor}50`,
+                ...ModernCardStyles.priorityTag,
+                ...createStatusStyle(priorityColor, 0.1),
               }}
-            />
-            <Text style={{
-              fontSize: '7px',
-              color: 'rgba(255, 255, 255, 0.9)',
-              fontWeight: '500',
-            }}>
+            >
+              <div
+                style={{
+                  width: '4px',
+                  height: '4px',
+                  borderRadius: '50%',
+                  background: priorityColor,
+                  display: 'inline-block',
+                  marginRight: '3px',
+                  boxShadow: `0 0 4px ${priorityColor}33`,
+                }}
+              />
               {priority === 'high' ? '高' : priority === 'medium' ? '中' : '低'}
-            </Text>
+            </div>
           </div>
-        </div>
 
-        {/* 模块信息 */}
-        {module && (
-          <Text
-            style={{
-              fontSize: '7px',
-              color: 'rgba(255, 255, 255, 0.8)',
-              display: 'block',
-              textAlign: 'center',
-              marginBottom: '4px',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              textShadow: '0 1px 2px rgba(0, 0, 0, 0.2)',
-            }}
-            title={module}
-          >
-            {module}
-          </Text>
-        )}
+          {/* 模块信息 - 使用智能文字截断 */}
+          {module && (
+            <Typography.Text
+              style={{
+                ...TextTruncation.singleLine,
+                color: '#6b7280',
+                display: 'block',
+                textAlign: 'center',
+                fontSize: '9px',
+                fontWeight: '500',
+              }}
+              title={module}
+            >
+              {module}
+            </Typography.Text>
+          )}
 
-        {/* 状态图标 */}
-        <div style={{ textAlign: 'center' }}>
+          {/* 状态图标 */}
           <div style={{
-            fontSize: '12px',
-            color: 'rgba(255, 255, 255, 0.9)',
-            textShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
-            display: 'inline-block',
-            backdropFilter: 'blur(8px)',
-            background: `${statusInfo.color}15`,
-            borderRadius: '50%',
-            width: '20px',
-            height: '20px',
-            lineHeight: '20px',
-            border: `1px solid ${statusInfo.color}30`,
+            textAlign: 'center',
+            marginTop: '4px'
           }}>
-            {statusInfo.icon}
+            <div style={{
+              ...ModernCardStyles.icon,
+              fontSize: '12px',
+              color: statusInfo.color,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              ...createStatusStyle(statusInfo.color, 0.1),
+              borderRadius: '50%',
+              width: '20px',
+              height: '20px',
+            }}>
+              {statusInfo.icon}
+            </div>
           </div>
         </div>
       </div>

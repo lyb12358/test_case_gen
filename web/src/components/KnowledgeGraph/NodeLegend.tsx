@@ -12,7 +12,7 @@ import {
   DownOutlined,
   UpOutlined
 } from '@ant-design/icons';
-import { KnowledgeGraphColors, GlassStyles } from './styles/KnowledgeGraphStyles';
+import { KnowledgeGraphColors, ModernCardStyles } from './styles/KnowledgeGraphStyles';
 
 const { Text } = Typography;
 
@@ -136,7 +136,7 @@ const NodeLegend: React.FC<NodeLegendProps> = ({
             icon={<EyeOutlined />}
             onClick={() => handleVisibilityChange(true)}
             style={{
-              boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
               background: '#1890ff'
             }}
           />
@@ -164,11 +164,20 @@ const NodeLegend: React.FC<NodeLegendProps> = ({
             justifyContent: 'space-between',
             alignItems: 'center',
             fontSize: '14px',
-            ...GlassStyles.glassLabel,
+            width: '100%',
           }}>
             <Space size={4}>
-              <InfoCircleOutlined style={{ color: 'rgba(255, 255, 255, 0.9)' }} />
-              <span style={{ color: 'rgba(255, 255, 255, 0.95)', fontWeight: '600' }}>节点图例</span>
+              <InfoCircleOutlined style={{
+                color: '#000000 !important',
+                fontSize: '14px'
+              }} />
+              <span style={{
+                color: '#000000 !important',
+                fontWeight: '600 !important',
+                fontSize: '14px',
+                lineHeight: '1.2',
+                letterSpacing: '0.3px'
+              }}>节点图例</span>
             </Space>
             <Space size={2}>
               <Button
@@ -180,11 +189,11 @@ const NodeLegend: React.FC<NodeLegendProps> = ({
                   padding: '0 4px',
                   minWidth: 'auto',
                   height: '20px',
-                  color: 'rgba(255, 255, 255, 0.8)',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  color: '#000000 !important',
+                  background: 'rgba(255, 255, 255, 0.8) !important',
+                  border: '1px solid rgba(0, 0, 0, 0.2) !important',
                   borderRadius: '4px',
-                  backdropFilter: 'blur(8px)',
+                  fontWeight: '500'
                 }}
               />
               <Button
@@ -196,34 +205,38 @@ const NodeLegend: React.FC<NodeLegendProps> = ({
                   padding: '0 4px',
                   minWidth: 'auto',
                   height: '20px',
-                  color: 'rgba(255, 255, 255, 0.8)',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  color: '#000000 !important',
+                  background: 'rgba(255, 255, 255, 0.8) !important',
+                  border: '1px solid rgba(0, 0, 0, 0.2) !important',
                   borderRadius: '4px',
-                  backdropFilter: 'blur(8px)',
+                  fontWeight: '500'
                 }}
               />
             </Space>
           </div>
         }
         style={{
-          ...GlassStyles.glassCard,
-          background: 'rgba(255, 255, 255, 0.12)',
-          backdropFilter: 'blur(12px)',
-          border: '1px solid rgba(255, 255, 255, 0.25)',
-          borderRadius: '16px',
-          boxShadow: '0 12px 48px rgba(0, 0, 0, 0.15)',
+          background: '#ffffff',
+          border: '1px solid #e5e7eb',
+          borderRadius: '8px',
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+          transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+          overflow: 'hidden',
         }}
         styles={{
           body: {
             padding: expanded ? '12px 16px' : '8px 12px',
             maxHeight: expanded ? 'none' : '180px',
-            overflow: expanded ? 'visible' : 'hidden'
+            overflow: expanded ? 'visible' : 'hidden',
+            background: '#ffffff',
+            borderRadius: '0 0 8px 8px'
           },
           header: {
             padding: '8px 12px',
-            borderBottom: '1px solid rgba(24, 144, 255, 0.1)',
-            minHeight: 'auto'
+            borderBottom: '1px solid #e5e7eb',
+            minHeight: 'auto',
+            background: '#ffffff',
+            borderRadius: '8px 8px 0 0'
           }
         }}
       >
@@ -260,10 +273,8 @@ const NodeLegend: React.FC<NodeLegendProps> = ({
                   alignItems: 'center',
                   justifyContent: 'center',
                   marginRight: expanded ? '8px' : '6px',
-                  border: '2px solid rgba(255, 255, 255, 0.3)',
-                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
+                  border: '2px solid #e5e7eb',
                   color: 'rgba(255, 255, 255, 0.9)',
-                  backdropFilter: 'blur(4px)',
                   fontSize: expanded ? '12px' : '10px',
                 }}
               >
@@ -279,7 +290,7 @@ const NodeLegend: React.FC<NodeLegendProps> = ({
                     strong
                     style={{
                       fontSize: expanded ? '13px' : '12px',
-                      color: '#262626',
+                      color: '#000000',
                       whiteSpace: 'nowrap'
                     }}
                   >
@@ -293,7 +304,8 @@ const NodeLegend: React.FC<NodeLegendProps> = ({
                       lineHeight: '14px',
                       padding: '0 4px',
                       borderRadius: '3px',
-                      opacity: expanded ? 0.9 : 0.8
+                      opacity: expanded ? 0.9 : 0.8,
+                      fontWeight: '600'
                     }}
                   >
                     {nodeType.type}
@@ -301,12 +313,12 @@ const NodeLegend: React.FC<NodeLegendProps> = ({
                 </div>
                 {expanded && (
                   <Text
-                    type="secondary"
                     style={{
                       fontSize: '11px',
                       lineHeight: '1.3',
                       display: 'block',
-                      marginTop: '2px'
+                      marginTop: '2px',
+                      color: '#666666'
                     }}
                   >
                     {nodeType.description}
@@ -321,14 +333,14 @@ const NodeLegend: React.FC<NodeLegendProps> = ({
             <div style={{
               textAlign: 'center',
               padding: '4px',
-              borderTop: '1px solid rgba(24, 144, 255, 0.1)',
+              borderTop: '1px solid #e5e7eb',
               marginTop: '4px'
             }}>
               <Text
-                type="secondary"
                 style={{
                   fontSize: '10px',
-                  fontStyle: 'italic'
+                  fontStyle: 'italic',
+                  color: '#666666'
                 }}
               >
                 点击展开查看详情

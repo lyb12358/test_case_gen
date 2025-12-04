@@ -336,31 +336,153 @@ const ReactFlowKnowledgeGraphContent: React.FC<ReactFlowKnowledgeGraphProps> = (
  * 包装的React Flow知识图谱组件，包含Provider
  */
 const ReactFlowKnowledgeGraph: React.FC<ReactFlowKnowledgeGraphProps> = (props) => {
+  const [isCardFullscreen, setIsCardFullscreen] = useState(false);
+
+  // 卡片全屏切换
+  const toggleCardFullscreen = useCallback(() => {
+    setIsCardFullscreen(prev => !prev);
+  }, []);
+
+  // 键盘事件监听（ESC键退出全屏）
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && isCardFullscreen) {
+        setIsCardFullscreen(false);
+      }
+    };
+
+    if (isCardFullscreen) {
+      document.addEventListener('keydown', handleKeyDown);
+      // 防止背景滚动
+      document.body.style.overflow = 'hidden';
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'unset';
+    };
+  }, [isCardFullscreen]);
+
   return (
     <ReactFlowProvider>
       <KnowledgeGraphErrorBoundary onError={props.onError}>
-        <Card
-          title="知识图谱"
-          extra={
-            <Space>
-              <Tooltip title="重新布局">
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<ReloadOutlined />}
-                  onClick={() => window.location.reload()}
-                />
-              </Tooltip>
-              <Tooltip title="适应视图">
-                <Button type="text" size="small" icon={<FullscreenOutlined />} />
-              </Tooltip>
-            </Space>
+        {/* 正常模式：显示知识图谱卡片 */}
+        {!isCardFullscreen && (
+          <Card
+            title="知识图谱（施工中）"
+            extra={
+              <Space>
+                <Tooltip title="重新布局">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<ReloadOutlined />}
+                    onClick={() => window.location.reload()}
+                  />
+                </Tooltip>
+                <Tooltip title={isCardFullscreen ? "退出全屏" : "全屏显示"}>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={isCardFullscreen ? <CompressOutlined /> : <FullscreenOutlined />}
+                    onClick={toggleCardFullscreen}
+                  />
+                </Tooltip>
+              </Space>
+            }
+            style={{ height: '100%', margin: 0 }}
+            styles={{ body: { padding: 0, height: 'calc(100% - 60px)' } }}
+          >
+            <ReactFlowKnowledgeGraphContent {...props} />
+          </Card>
+        )}
+
+        {/* 全屏模式：显示模态覆盖层 */}
+        {isCardFullscreen && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 1000,
+              background: 'rgba(0, 0, 0, 0.85)',
+              backdropFilter: 'blur(4px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              animation: 'fadeIn 0.3s ease-in-out',
+            }}
+            onClick={toggleCardFullscreen}
+          >
+            <div
+              style={{
+                width: '95vw',
+                height: '95vh',
+                maxWidth: '95%',
+                maxHeight: '95%',
+                background: 'white',
+                borderRadius: '16px',
+                overflow: 'hidden',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+                animation: 'slideUp 0.3s ease-out',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Card
+                title="知识图谱（施工中）"
+                extra={
+                  <Space>
+                    <Tooltip title="重新布局">
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<ReloadOutlined />}
+                        onClick={() => window.location.reload()}
+                      />
+                    </Tooltip>
+                    <Tooltip title="退出全屏 (ESC)">
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<CompressOutlined />}
+                        onClick={toggleCardFullscreen}
+                      />
+                    </Tooltip>
+                  </Space>
+                }
+                style={{ height: '100%', margin: 0 }}
+                styles={{ body: { padding: 0, height: 'calc(100% - 60px)' } }}
+              >
+                <ReactFlowKnowledgeGraphContent {...props} />
+              </Card>
+            </div>
+          </div>
+        )}
+
+        {/* CSS动画定义 */}
+        <style>{`
+          @keyframes fadeIn {
+            from {
+              opacity: 0;
+            }
+            to {
+              opacity: 1;
+            }
           }
-          style={{ height: '100%', margin: 0 }}
-          styles={{ body: { padding: 0, height: 'calc(100% - 60px)' } }}
-        >
-          <ReactFlowKnowledgeGraphContent {...props} />
-        </Card>
+
+          @keyframes slideUp {
+            from {
+              transform: translateY(20px);
+              opacity: 0;
+            }
+            to {
+              transform: translateY(0);
+              opacity: 1;
+            }
+          }
+        `}</style>
       </KnowledgeGraphErrorBoundary>
     </ReactFlowProvider>
   );

@@ -47,8 +47,8 @@ const CustomBezierEdge = memo<EdgeProps<Edge<CustomEdgeData>>>(
     // 获取连接强度，默认为中等强度
     const strength = data?.strength || 3;
 
-    // 根据连接强度计算边的样式
-    const strokeWidth = Math.max(1, Math.min(4, strength * 0.8));
+    // 根据连接强度计算边的样式 - 更细的线条
+    const strokeWidth = Math.max(0.5, Math.min(2, strength * 0.4));
 
     // 根据选择状态和连接强度计算颜色
     const getStrokeColor = () => {

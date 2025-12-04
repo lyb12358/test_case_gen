@@ -1,8 +1,16 @@
 import React, { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Card, Typography, Space, Badge } from 'antd';
+import { Typography, Space, Badge } from 'antd';
 import { CrownOutlined, ProjectOutlined, FileTextOutlined } from '@ant-design/icons';
-import { getNodeColors, getNodeSize, GlassStyles } from '../styles/KnowledgeGraphStyles';
+import {
+  getNodeColors,
+  getNodeSize,
+  ModernCardStyles,
+  WhiteBackgroundNodeStyles,
+  NodeSpecificStyles,
+  TextTruncation,
+  KnowledgeGraphColors
+} from '../styles/KnowledgeGraphStyles';
 
 const { Title, Text } = Typography;
 
@@ -68,196 +76,218 @@ const TSPNode: React.FC<TSPNodeProps> = ({ id, data, selected }) => {
         }}
       />
 
-      {/* 玻璃拟态节点卡片 */}
+      {/* 现代化TSP节点卡片 */}
       <div
         style={{
-          width: sizes.width,
-          minWidth: sizes.width,
-          height: sizes.height,
-          ...GlassStyles.glassCard,
-          background: colors.gradient,
-          borderColor: selected ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.3)',
-          borderWidth: selected ? 3 : 2,
-          transform: selected ? GlassStyles.selectedEffect.transform : 'scale(1)',
-          boxShadow: selected
-            ? GlassStyles.selectedEffect.boxShadow
-            : `0 8px 32px ${colors.shadow}, 0 4px 16px rgba(0, 0, 0, 0.1)`,
-          transition: GlassStyles.transition,
+          ...WhiteBackgroundNodeStyles.tsp,
+          ...(selected ? ModernCardStyles.selectedCard : ModernCardStyles.card),
+          ...(selected && ModernCardStyles.hoverCard),
+          background: '#ffffff',
+          borderColor: selected ? colors.primary : colors.primary,
+          borderWidth: selected ? 4 : 3,
           cursor: 'pointer',
-          padding: '16px',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
+          position: 'relative',
+          overflow: 'hidden',
         }}
       >
-        {/* 标题区域 */}
-        <div style={{ textAlign: 'center', marginBottom: '12px' }}>
-          <Space align="center" size={8}>
+        {/* 移除渐变装饰背景，使用纯白色背景 */}
+
+        {/* 内容容器 */}
+        <div style={ModernCardStyles.contentContainer}>
+          {/* 标题区域 */}
+          <div style={ModernCardStyles.header}>
             <CrownOutlined
               style={{
-                fontSize: `${sizes.iconSize}px`,
-                color: 'rgba(255, 255, 255, 0.9)',
-                textShadow: '0 2px 4px rgba(0, 0, 0, 0.2)'
+                ...ModernCardStyles.icon,
+                color: colors.primary,
+                fontSize: '20px'
               }}
             />
-            <Title
+            <Typography.Title
               level={4}
               style={{
-                margin: 0,
-                color: 'rgba(255, 255, 255, 0.95)',
+                ...ModernCardStyles.title,
+                color: '#111827',
                 fontWeight: 'bold',
+                margin: 0,
                 fontSize: `${sizes.fontSize}px`,
                 lineHeight: '1.2',
-                textShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
               }}
             >
               {label}
-            </Title>
-          </Space>
+            </Typography.Title>
+          </div>
+
+          {/* 统计数据网格 */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '8px',
+            marginTop: '8px'
+          }}>
+            {/* 项目统计 */}
+            <div
+              style={{
+                background: 'rgba(59, 130, 246, 0.08)',
+                padding: '8px',
+                borderRadius: '8px',
+                border: '1px solid rgba(59, 130, 246, 0.15)',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)',
+              }}
+            >
+              <Space direction="vertical" size={2} align="center">
+                <ProjectOutlined
+                  style={{
+                    ...ModernCardStyles.icon,
+                    color: KnowledgeGraphColors.project.primary,
+                    fontSize: '16px'
+                  }}
+                />
+                <Typography.Text style={{
+                  fontSize: '11px',
+                  color: '#374151',
+                  fontWeight: '500'
+                }}>
+                  项目
+                </Typography.Text>
+                <Badge
+                  count={finalStats.projectCount}
+                  style={{
+                    backgroundColor: KnowledgeGraphColors.project.primary,
+                    border: 'none',
+                    color: '#ffffff',
+                    fontSize: '10px',
+                    fontWeight: 'bold'
+                  }}
+                  overflowCount={99}
+                />
+              </Space>
+            </div>
+
+            {/* 测试用例统计 */}
+            <div
+              style={{
+                background: 'rgba(34, 197, 94, 0.08)',
+                padding: '8px',
+                borderRadius: '8px',
+                border: '1px solid rgba(34, 197, 94, 0.15)',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)',
+              }}
+            >
+              <Space direction="vertical" size={2} align="center">
+                <FileTextOutlined
+                  style={{
+                    ...ModernCardStyles.icon,
+                    color: KnowledgeGraphColors.testCase.primary,
+                    fontSize: '16px'
+                  }}
+                />
+                <Typography.Text style={{
+                  fontSize: '11px',
+                  color: '#374151',
+                  fontWeight: '500'
+                }}>
+                  测试
+                </Typography.Text>
+                <Badge
+                  count={finalStats.testCaseCount}
+                  style={{
+                    backgroundColor: KnowledgeGraphColors.testCase.primary,
+                    border: 'none',
+                    color: '#ffffff',
+                    fontSize: '10px',
+                    fontWeight: 'bold'
+                  }}
+                  overflowCount={999}
+                />
+              </Space>
+            </div>
+
+            {/* 业务类型统计 */}
+            <div
+              style={{
+                background: 'rgba(147, 51, 234, 0.08)',
+                padding: '8px',
+                borderRadius: '8px',
+                border: '1px solid rgba(147, 51, 234, 0.15)',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)',
+              }}
+            >
+              <Space direction="vertical" size={2} align="center">
+                <div
+                  style={{
+                    width: '16px',
+                    height: '16px',
+                    borderRadius: '50%',
+                    background: KnowledgeGraphColors.business.primary,
+                    boxShadow: '0 1px 3px rgba(147, 51, 234, 0.3)',
+                  }}
+                />
+                <Typography.Text style={{
+                  fontSize: '11px',
+                  color: '#374151',
+                  fontWeight: '500'
+                }}>
+                  业务
+                </Typography.Text>
+                <Badge
+                  count={finalStats.businessTypeCount}
+                  style={{
+                    backgroundColor: KnowledgeGraphColors.business.primary,
+                    border: 'none',
+                    color: '#ffffff',
+                    fontSize: '10px',
+                    fontWeight: 'bold'
+                  }}
+                  overflowCount={99}
+                />
+              </Space>
+            </div>
+
+            {/* 测试点统计 */}
+            <div
+              style={{
+                background: 'rgba(14, 165, 233, 0.08)',
+                padding: '8px',
+                borderRadius: '8px',
+                border: '1px solid rgba(14, 165, 233, 0.15)',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)',
+              }}
+            >
+              <Space direction="vertical" size={2} align="center">
+                <div
+                  style={{
+                    width: '16px',
+                    height: '16px',
+                    borderRadius: '4px',
+                    background: KnowledgeGraphColors.testPoint.primary,
+                    boxShadow: '0 1px 3px rgba(14, 165, 233, 0.3)',
+                  }}
+                />
+                <Typography.Text style={{
+                  fontSize: '11px',
+                  color: '#374151',
+                  fontWeight: '500'
+                }}>
+                  测试点
+                </Typography.Text>
+                <Badge
+                  count={finalStats.testPointCount}
+                  style={{
+                    backgroundColor: KnowledgeGraphColors.testPoint.primary,
+                    border: 'none',
+                    color: '#ffffff',
+                    fontSize: '10px',
+                    fontWeight: 'bold'
+                  }}
+                  overflowCount={999}
+                />
+              </Space>
+            </div>
+          </div>
         </div>
 
-        {/* 统计数据 - 玻璃拟态样式 */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-          {/* 项目统计 */}
-          <div
-            style={{
-              backdropFilter: 'blur(8px)',
-              background: 'rgba(255, 255, 255, 0.15)',
-              padding: '8px',
-              borderRadius: '8px',
-              border: '1px solid rgba(255, 255, 255, 0.3)',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-            }}
-          >
-            <Space direction="vertical" size={2} align="center">
-              <ProjectOutlined
-                style={{
-                  fontSize: '16px',
-                  color: 'rgba(255, 255, 255, 0.9)',
-                  textShadow: '0 2px 4px rgba(0, 0, 0, 0.2)'
-                }}
-              />
-              <Text style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.8)' }}>项目</Text>
-              <Badge
-                count={finalStats.projectCount}
-                style={{
-                  backgroundColor: 'rgba(37, 99, 235, 0.8)',
-                  border: 'none',
-                  color: 'rgba(255, 255, 255, 0.9)'
-                }}
-                overflowCount={99}
-              />
-            </Space>
-          </div>
-
-          {/* 测试用例统计 */}
-          <div
-            style={{
-              backdropFilter: 'blur(8px)',
-              background: 'rgba(255, 255, 255, 0.15)',
-              padding: '8px',
-              borderRadius: '8px',
-              border: '1px solid rgba(255, 255, 255, 0.3)',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-            }}
-          >
-            <Space direction="vertical" size={2} align="center">
-              <FileTextOutlined
-                style={{
-                  fontSize: '16px',
-                  color: 'rgba(255, 255, 255, 0.9)',
-                  textShadow: '0 2px 4px rgba(0, 0, 0, 0.2)'
-                }}
-              />
-              <Text style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.8)' }}>测试</Text>
-              <Badge
-                count={finalStats.testCaseCount}
-                style={{
-                  backgroundColor: 'rgba(34, 197, 94, 0.8)',
-                  border: 'none',
-                  color: 'rgba(255, 255, 255, 0.9)'
-                }}
-                overflowCount={999}
-              />
-            </Space>
-          </div>
-
-          {/* 业务类型统计 */}
-          <div
-            style={{
-              backdropFilter: 'blur(8px)',
-              background: 'rgba(255, 255, 255, 0.15)',
-              padding: '8px',
-              borderRadius: '8px',
-              border: '1px solid rgba(255, 255, 255, 0.3)',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-            }}
-          >
-            <Space direction="vertical" size={2} align="center">
-              <div
-                style={{
-                  width: '16px',
-                  height: '16px',
-                  borderRadius: '50%',
-                  background: 'rgba(147, 51, 234, 0.8)',
-                }}
-              />
-              <Text style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.8)' }}>业务</Text>
-              <Badge
-                count={finalStats.businessTypeCount}
-                style={{
-                  backgroundColor: 'rgba(147, 51, 234, 0.8)',
-                  border: 'none',
-                  color: 'rgba(255, 255, 255, 0.9)'
-                }}
-                overflowCount={99}
-              />
-            </Space>
-          </div>
-
-          {/* 测试点统计 */}
-          <div
-            style={{
-              backdropFilter: 'blur(8px)',
-              background: 'rgba(255, 255, 255, 0.15)',
-              padding: '8px',
-              borderRadius: '8px',
-              border: '1px solid rgba(255, 255, 255, 0.3)',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-            }}
-          >
-            <Space direction="vertical" size={2} align="center">
-              <div
-                style={{
-                  width: '16px',
-                  height: '16px',
-                  borderRadius: '4px',
-                  background: 'rgba(14, 165, 233, 0.8)',
-                }}
-              />
-              <Text style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.8)' }}>测试点</Text>
-              <Badge
-                count={finalStats.testPointCount}
-                style={{
-                  backgroundColor: 'rgba(14, 165, 233, 0.8)',
-                  border: 'none',
-                  color: 'rgba(255, 255, 255, 0.9)'
-                }}
-                overflowCount={999}
-              />
-            </Space>
-          </div>
-        </div>
-
-        {/* 底部装饰 */}
-        <div
-          style={{
-            marginTop: '12px',
-            height: '3px',
-            background: `linear-gradient(90deg, transparent 0%, ${colors.primary} 50%, transparent 100%)`,
-            borderRadius: '2px',
-          }}
-        />
+        {/* 移除底部装饰条，保持简洁的白色背景设计 */}
       </div>
     </>
   );
