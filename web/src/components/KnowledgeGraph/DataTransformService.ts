@@ -20,13 +20,13 @@ const businessTypeColors: Record<string, string> = {
   // 添加更多业务类型...
 };
 
-// 节点类型颜色映射 - 新5色设计系统
+// 节点类型颜色映射 - 统一配色系统（与KnowledgeGraphStyles.ts保持一致）
 const nodeTypeColors = {
   tsp: '#1e40af',        // 深蓝色 - TSP根节点
-  project: '#2563eb',    // 蓝色 - 项目节点
+  project: '#16a34a',    // 绿色 - 项目节点（修正为绿色）
   business_type: '#9333ea', // 紫色 - 业务类型节点
   test_point: '#0ea5e9',   // 浅蓝色 - 测试点节点
-  test_case: '#16a34a',    // 深绿色 - 测试用例节点
+  test_case: '#06b6d4',    // 青色 - 测试用例节点（修正为青色）
 };
 
 /**

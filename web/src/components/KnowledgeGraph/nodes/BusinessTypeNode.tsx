@@ -10,7 +10,9 @@ import {
   NodeSpecificStyles,
   TextTruncation,
   StatusColors,
-  KnowledgeGraphColors
+  KnowledgeGraphColors,
+  getSemanticColors,
+  ShadowLevels
 } from '../styles/KnowledgeGraphStyles';
 
 const { Title, Text } = Typography;
@@ -197,20 +199,21 @@ const BusinessTypeNode: React.FC<BusinessTypeNodeProps> = ({ id, data, selected 
             </Typography.Text>
           )}
 
-          {/* 统计信息网格 */}
+          {/* 统计信息网格 - 使用统一的语义化颜色 */}
           <div style={{
             display: 'flex',
             justifyContent: 'center',
             gap: '8px',
             marginTop: '6px'
           }}>
+            {/* 测试点统计 */}
             <div
               style={{
-                background: isActive ? 'rgba(14, 165, 233, 0.08)' : '#f9fafb',
+                background: isActive ? getSemanticColors('testPoint').background : '#f9fafb',
                 padding: '4px 6px',
                 borderRadius: '6px',
-                border: isActive ? '1px solid rgba(14, 165, 233, 0.15)' : '1px solid #e5e7eb',
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)',
+                border: isActive ? `1px solid ${getSemanticColors('testPoint').primary}20` : '1px solid #e5e7eb',
+                boxShadow: ShadowLevels.small,
                 textAlign: 'center',
                 minWidth: '50px',
               }}
@@ -219,14 +222,14 @@ const BusinessTypeNode: React.FC<BusinessTypeNodeProps> = ({ id, data, selected 
                 style={{
                   ...ModernCardStyles.icon,
                   fontSize: '12px',
-                  color: isActive ? KnowledgeGraphColors.testPoint.primary : '#9ca3af',
+                  color: isActive ? getSemanticColors('testPoint').icon : '#9ca3af',
                   display: 'block',
                   marginBottom: '2px'
                 }}
               />
               <Typography.Text style={{
                 fontSize: '8px',
-                color: isActive ? '#374151' : '#9ca3af',
+                color: isActive ? getSemanticColors('testPoint').text : '#9ca3af',
                 fontWeight: '500',
                 display: 'block'
               }}>
@@ -235,7 +238,7 @@ const BusinessTypeNode: React.FC<BusinessTypeNodeProps> = ({ id, data, selected 
               <Badge
                 count={testPointCount}
                 style={{
-                  backgroundColor: isActive ? KnowledgeGraphColors.testPoint.primary : '#9ca3af',
+                  backgroundColor: isActive ? getSemanticColors('testPoint').primary : '#9ca3af',
                   fontSize: '9px',
                   height: '16px',
                   lineHeight: '16px',
@@ -246,13 +249,14 @@ const BusinessTypeNode: React.FC<BusinessTypeNodeProps> = ({ id, data, selected 
               />
             </div>
 
+            {/* 测试用例统计 */}
             <div
               style={{
-                background: isActive ? 'rgba(22, 163, 74, 0.08)' : '#f9fafb',
+                background: isActive ? getSemanticColors('testCase').background : '#f9fafb',
                 padding: '4px 6px',
                 borderRadius: '6px',
-                border: isActive ? '1px solid rgba(22, 163, 74, 0.15)' : '1px solid #e5e7eb',
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)',
+                border: isActive ? `1px solid ${getSemanticColors('testCase').primary}20` : '1px solid #e5e7eb',
+                boxShadow: ShadowLevels.small,
                 textAlign: 'center',
                 minWidth: '50px',
               }}
@@ -261,14 +265,14 @@ const BusinessTypeNode: React.FC<BusinessTypeNodeProps> = ({ id, data, selected 
                 style={{
                   ...ModernCardStyles.icon,
                   fontSize: '12px',
-                  color: isActive ? KnowledgeGraphColors.testCase.primary : '#9ca3af',
+                  color: isActive ? getSemanticColors('testCase').icon : '#9ca3af',
                   display: 'block',
                   marginBottom: '2px'
                 }}
               />
               <Typography.Text style={{
                 fontSize: '8px',
-                color: isActive ? '#374151' : '#9ca3af',
+                color: isActive ? getSemanticColors('testCase').text : '#9ca3af',
                 fontWeight: '500',
                 display: 'block'
               }}>
@@ -277,7 +281,7 @@ const BusinessTypeNode: React.FC<BusinessTypeNodeProps> = ({ id, data, selected 
               <Badge
                 count={testCaseCount}
                 style={{
-                  backgroundColor: isActive ? KnowledgeGraphColors.testCase.primary : '#9ca3af',
+                  backgroundColor: isActive ? getSemanticColors('testCase').primary : '#9ca3af',
                   fontSize: '9px',
                   height: '16px',
                   lineHeight: '16px',

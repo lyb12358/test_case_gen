@@ -11,7 +11,9 @@ import {
   TextTruncation,
   StatusColors,
   PriorityColors,
-  KnowledgeGraphColors
+  KnowledgeGraphColors,
+  getSemanticColors,
+  ShadowLevels
 } from '../styles/KnowledgeGraphStyles';
 
 const { Title, Text } = Typography;
@@ -59,10 +61,22 @@ const TestCaseNode: React.FC<TestCaseNodeProps> = ({ id, data, selected }) => {
   const getStatusInfo = () => {
     switch (status) {
       case 'approved':
-        return { color: '#3b82f6', icon: <CheckCircleOutlined />, text: '已审批' };
+        return {
+          color: '#3b82f6',
+          icon: <CheckCircleOutlined />,
+          text: '已审批',
+          bg: '#eff6ff',
+          border: '#bfdbfe'
+        };
       case 'draft':
       default:
-        return { color: '#6b7280', icon: <ClockCircleOutlined />, text: '草稿' };
+        return {
+          color: '#6b7280',
+          icon: <ClockCircleOutlined />,
+          text: '草稿',
+          bg: '#f8fafc',
+          border: '#e2e8f0'
+        };
     }
   };
 
@@ -148,15 +162,23 @@ const TestCaseNode: React.FC<TestCaseNodeProps> = ({ id, data, selected }) => {
             </Typography.Title>
           </div>
 
-          {/* 阶段和状态标签 */}
+          {/* 阶段和状态标签 - 使用新的配色系统 */}
           <div style={{ textAlign: 'center', marginBottom: '4px' }}>
             <Space size={2}>
               <div
                 style={{
                   ...ModernCardStyles.statusTag,
                   ...(stage === 'test_point'
-                    ? createStatusStyle(KnowledgeGraphColors.testPoint.primary, 0.1)
-                    : createStatusStyle(KnowledgeGraphColors.testCase.primary, 0.1)
+                    ? {
+                        background: getSemanticColors('testPoint').background,
+                        color: getSemanticColors('testPoint').text,
+                        border: `1px solid ${getSemanticColors('testPoint').primary}40`,
+                      }
+                    : {
+                        background: getSemanticColors('testCase').background,
+                        color: getSemanticColors('testCase').text,
+                        border: `1px solid ${getSemanticColors('testCase').primary}40`,
+                      }
                   ),
                 }}
               >
@@ -165,7 +187,9 @@ const TestCaseNode: React.FC<TestCaseNodeProps> = ({ id, data, selected }) => {
               <div
                 style={{
                   ...ModernCardStyles.statusTag,
-                  ...createStatusStyle(statusInfo.color, 0.1),
+                  background: statusInfo.bg,
+                  color: statusInfo.text,
+                  border: `1px solid ${statusInfo.border}`,
                 }}
               >
                 {statusInfo.text}

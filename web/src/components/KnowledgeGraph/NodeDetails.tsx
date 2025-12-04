@@ -1,5 +1,6 @@
 import React from 'react';
 import { Typography, Divider, Space, Tag } from 'antd';
+import { KnowledgeGraphColors } from './styles/KnowledgeGraphStyles';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -39,20 +40,23 @@ const NodeDetails: React.FC<NodeDetailsProps> = React.memo(({
   // Helper function to get node color
   const getNodeColor = (type: string): string => {
     switch (type) {
-      case 'scenario':
-        return '#722ed1';
-      case 'business':
-        return '#1890ff';
-      case 'interface':
-        return '#fa8c16';
-      case 'test_case':
-        return '#13c2c2';
       case 'tsp':
-        return '#667eea';
+        return KnowledgeGraphColors.tsp.primary;
       case 'project':
-        return '#f093fb';
+        return KnowledgeGraphColors.project.primary;
+      case 'business':
+      case 'business_type':
+        return KnowledgeGraphColors.business.primary;
+      case 'test_point':
+        return KnowledgeGraphColors.testPoint.primary;
+      case 'test_case':
+        return KnowledgeGraphColors.testCase.primary;
+      case 'scenario':
+        return KnowledgeGraphColors.business.primary;
+      case 'interface':
+        return KnowledgeGraphColors.testCase.primary;
       default:
-        return '#999';
+        return '#999999';
     }
   };
 

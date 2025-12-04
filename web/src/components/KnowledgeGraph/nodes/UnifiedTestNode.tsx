@@ -23,6 +23,7 @@ import {
   ExpandOutlined,
   CompressOutlined
 } from '@ant-design/icons';
+import { KnowledgeGraphColors, getSemanticColors } from '../styles/KnowledgeGraphStyles';
 
 const { Text } = Typography;
 const { Panel } = Collapse;
@@ -87,16 +88,18 @@ const UnifiedTestNode: React.FC<UnifiedTestNodeProps> = ({ data, density = 'spac
   // 获取状态信息
   const getStatusInfo = () => {
     if (stage === 'test_point') {
+      const testPointColors = getSemanticColors('testPoint');
       return {
         icon: <BookOutlined />,
         text: '测试点',
-        color: '#faad14'
+        color: testPointColors.primary
       };
     } else {
+      const testCaseColors = getSemanticColors('testCase');
       return {
         icon: <FormOutlined />,
         text: '测试用例',
-        color: '#52c41a'
+        color: testCaseColors.primary
       };
     }
   };
@@ -106,24 +109,26 @@ const UnifiedTestNode: React.FC<UnifiedTestNodeProps> = ({ data, density = 'spac
     const statusInfo = getStatusInfo();
 
     if (stage === 'test_point') {
-      // 测试点：黄色背景
+      const testPointColors = getSemanticColors('testPoint');
+      // 测试点：浅蓝色背景
       return {
-        border: `2px solid ${data.selected ? '#faad14' : '#ffc53d'}`,
+        border: `2px solid ${data.selected ? testPointColors.primary : KnowledgeGraphColors.testPoint.light}`,
         boxShadow: data.selected
-          ? '0 4px 12px rgba(250, 173, 20, 0.2)'
-          : '0 2px 8px rgba(250, 173, 20, 0.1)',
-        backgroundColor: '#fffbe6',
-        headerBg: '#fff7e6'
+          ? `0 4px 12px ${testPointColors.primary}33`
+          : `0 2px 8px ${testPointColors.primary}1a`,
+        backgroundColor: testPointColors.background,
+        headerBg: `${testPointColors.primary}08`
       };
     } else {
-      // 测试用例：绿色背景
+      const testCaseColors = getSemanticColors('testCase');
+      // 测试用例：青色背景
       return {
-        border: `2px solid ${data.selected ? '#52c41a' : '#73d13d'}`,
+        border: `2px solid ${data.selected ? testCaseColors.primary : KnowledgeGraphColors.testCase.light}`,
         boxShadow: data.selected
-          ? '0 4px 12px rgba(82, 196, 26, 0.2)'
-          : '0 2px 8px rgba(82, 196, 26, 0.1)',
-        backgroundColor: '#f6ffed',
-        headerBg: '#f0f9e8'
+          ? `0 4px 12px ${testCaseColors.primary}33`
+          : `0 2px 8px ${testCaseColors.primary}1a`,
+        backgroundColor: testCaseColors.background,
+        headerBg: `${testCaseColors.primary}08`
       };
     }
   };
@@ -132,9 +137,11 @@ const UnifiedTestNode: React.FC<UnifiedTestNodeProps> = ({ data, density = 'spac
   const getStatusIcon = () => {
     const statusInfo = getStatusInfo();
     if (stage === 'test_point') {
-      return <BookOutlined style={{ color: '#fa8c16' }} />;
+      const testPointColors = getSemanticColors('testPoint');
+      return <BookOutlined style={{ color: testPointColors.icon }} />;
     } else {
-      return <FormOutlined style={{ color: '#52c41a' }} />;
+      const testCaseColors = getSemanticColors('testCase');
+      return <FormOutlined style={{ color: testCaseColors.icon }} />;
     }
   };
 
@@ -244,8 +251,21 @@ const UnifiedTestNode: React.FC<UnifiedTestNodeProps> = ({ data, density = 'spac
         {/* 状态和业务类型标签 */}
         <Space size={4}>
           <Tag
-            color={stage === 'test_point' ? 'orange' : 'green'}
-            style={{ margin: 0, fontSize: '12px' }}
+            style={{
+              margin: 0,
+              fontSize: '12px',
+              ...(stage === 'test_point'
+                ? {
+                    background: getSemanticColors('testPoint').background,
+                    color: getSemanticColors('testPoint').text,
+                    border: `1px solid ${getSemanticColors('testPoint').primary}40`
+                  }
+                : {
+                    background: getSemanticColors('testCase').background,
+                    color: getSemanticColors('testCase').text,
+                    border: `1px solid ${getSemanticColors('testCase').primary}40`
+                  })
+            }}
           >
             {stage === 'test_point' ? '测试点' : '测试用例'}
           </Tag>
@@ -326,13 +346,13 @@ const UnifiedTestNode: React.FC<UnifiedTestNodeProps> = ({ data, density = 'spac
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                     {module && (
                       <Space size={4}>
-                        <BookOutlined style={{ fontSize: '12px', color: '#1890ff' }} />
+                        <BookOutlined style={{ fontSize: '12px', color: getSemanticColors('testPoint').icon }} />
                         <Text style={{ fontSize: '11px' }}>模块: {module}</Text>
                       </Space>
                     )}
                     {functional_module && (
                       <Space size={4}>
-                        <FormOutlined style={{ fontSize: '12px', color: '#52c41a' }} />
+                        <FormOutlined style={{ fontSize: '12px', color: getSemanticColors('testCase').icon }} />
                         <Text style={{ fontSize: '11px' }}>功能域: {functional_module}</Text>
                       </Space>
                     )}

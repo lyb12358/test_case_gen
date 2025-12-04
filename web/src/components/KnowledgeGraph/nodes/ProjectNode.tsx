@@ -9,7 +9,9 @@ import {
   WhiteBackgroundNodeStyles,
   NodeSpecificStyles,
   TextTruncation,
-  StatusColors
+  StatusColors,
+  getSemanticColors,
+  ShadowLevels
 } from '../styles/KnowledgeGraphStyles';
 
 const { Title, Text } = Typography;
@@ -144,12 +146,12 @@ const ProjectNode: React.FC<ProjectNodeProps> = ({ id, data, selected }) => {
             </div>
           </div>
 
-          {/* 描述信息 - 使用智能文字截断 */}
+          {/* 描述信息 - 修复可读性问题 */}
           {description && (
             <Typography.Text
               style={{
                 ...ModernCardStyles.multilineText,
-                color: isActive ? 'rgba(255, 255, 255, 0.8)' : '#6b7280',
+                color: isActive ? '#4b5563' : '#6b7280', // 使用深灰色确保可读性
                 textAlign: 'center',
                 fontSize: '11px',
                 height: '32px',
@@ -159,15 +161,16 @@ const ProjectNode: React.FC<ProjectNodeProps> = ({ id, data, selected }) => {
             </Typography.Text>
           )}
 
-          {/* 统计信息网格 */}
+          {/* 统计信息网格 - 使用统一的语义化颜色 */}
           <div style={ModernCardStyles.statsContainer}>
+            {/* 业务类型统计 */}
             <div
               style={{
-                background: isActive ? 'rgba(59, 130, 246, 0.08)' : '#f9fafb',
+                background: isActive ? getSemanticColors('businessType').background : '#f9fafb',
                 padding: '6px 8px',
                 borderRadius: '8px',
-                border: isActive ? '1px solid rgba(59, 130, 246, 0.15)' : '1px solid #e5e7eb',
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)',
+                border: isActive ? `1px solid ${getSemanticColors('businessType').primary}20` : '1px solid #e5e7eb',
+                boxShadow: ShadowLevels.small,
                 textAlign: 'center',
                 minWidth: '60px',
               }}
@@ -175,7 +178,7 @@ const ProjectNode: React.FC<ProjectNodeProps> = ({ id, data, selected }) => {
               <BranchesOutlined
                 style={{
                   ...ModernCardStyles.icon,
-                  color: isActive ? colors.primary : '#9ca3af',
+                  color: isActive ? getSemanticColors('businessType').icon : '#9ca3af',
                   display: 'block',
                   marginBottom: '2px',
                   fontSize: '14px'
@@ -183,7 +186,7 @@ const ProjectNode: React.FC<ProjectNodeProps> = ({ id, data, selected }) => {
               />
               <Typography.Text style={{
                 fontSize: '10px',
-                color: isActive ? '#374151' : '#6b7280',
+                color: isActive ? getSemanticColors('businessType').text : '#6b7280',
                 fontWeight: '500'
               }}>
                 业务
@@ -199,13 +202,14 @@ const ProjectNode: React.FC<ProjectNodeProps> = ({ id, data, selected }) => {
               </div>
             </div>
 
+            {/* 测试用例统计 */}
             <div
               style={{
-                background: isActive ? 'rgba(59, 130, 246, 0.08)' : '#f9fafb',
+                background: isActive ? getSemanticColors('testCase').background : '#f9fafb',
                 padding: '6px 8px',
                 borderRadius: '8px',
-                border: isActive ? '1px solid rgba(59, 130, 246, 0.15)' : '1px solid #e5e7eb',
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)',
+                border: isActive ? `1px solid ${getSemanticColors('testCase').primary}20` : '1px solid #e5e7eb',
+                boxShadow: ShadowLevels.small,
                 textAlign: 'center',
                 minWidth: '60px',
               }}
@@ -213,7 +217,7 @@ const ProjectNode: React.FC<ProjectNodeProps> = ({ id, data, selected }) => {
               <SettingOutlined
                 style={{
                   ...ModernCardStyles.icon,
-                  color: isActive ? colors.primary : '#9ca3af',
+                  color: isActive ? getSemanticColors('testCase').icon : '#9ca3af',
                   display: 'block',
                   marginBottom: '2px',
                   fontSize: '14px'
@@ -221,7 +225,7 @@ const ProjectNode: React.FC<ProjectNodeProps> = ({ id, data, selected }) => {
               />
               <Typography.Text style={{
                 fontSize: '10px',
-                color: isActive ? '#374151' : '#6b7280',
+                color: isActive ? getSemanticColors('testCase').text : '#6b7280',
                 fontWeight: '500'
               }}>
                 测试
@@ -251,7 +255,7 @@ const ProjectNode: React.FC<ProjectNodeProps> = ({ id, data, selected }) => {
               <Typography.Text
                 style={{
                   fontSize: '9px',
-                  color: isActive ? 'rgba(255, 255, 255, 0.8)' : '#6b7280',
+                  color: isActive ? '#4b5563' : '#6b7280', // 修复可读性，使用深灰色
                   textAlign: 'center',
                   display: 'block',
                   fontWeight: '500',

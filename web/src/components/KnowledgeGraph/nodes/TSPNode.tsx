@@ -9,7 +9,9 @@ import {
   WhiteBackgroundNodeStyles,
   NodeSpecificStyles,
   TextTruncation,
-  KnowledgeGraphColors
+  KnowledgeGraphColors,
+  getSemanticColors,
+  ShadowLevels
 } from '../styles/KnowledgeGraphStyles';
 
 const { Title, Text } = Typography;
