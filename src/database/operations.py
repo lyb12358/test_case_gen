@@ -458,7 +458,7 @@ class DatabaseOperations:
                             "priority": test_case.priority,
                             "preconditions": test_case.preconditions,
                             "steps": test_case.steps,
-                            "expected_results": test_case.expected_results,
+                            "expected_results": test_case.expected_result,
                             "module": test_case.module,
                             "functional_module": test_case.functional_module
                         }

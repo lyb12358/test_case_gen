@@ -256,10 +256,14 @@ class GenerationJob(Base):
 
 class EntityType(enum.Enum):
     """Knowledge graph entity types."""
-    SCENARIO = "scenario"      # 场景 (TSP远控场景)
-    BUSINESS = "business"      # 业务类型 (RCC, RFD, etc.)
-    INTERFACE = "interface"    # 接口 (/v1.0/remoteControl/control, etc.)
-    TEST_CASE = "test_case"    # 测试用例
+    # Legacy entity types removed: SCENARIO, BUSINESS, INTERFACE
+    TEST_CASE = "TEST_CASE"    # 测试用例
+
+    # New entity types for knowledge graph
+    TSP = "tsp"                # TSP根节点 (TSP测试用例生成平台)
+    PROJECT = "project"        # 项目节点 (测试项目管理)
+    BUSINESS_TYPE = "business_type"  # 业务类型节点 (TSP业务类型)
+    TEST_POINT = "test_point"  # 测试点节点 (测试点场景)
 
 
 class KnowledgeEntity(Base):
