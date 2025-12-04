@@ -213,13 +213,14 @@ const TSPRootNode = createNodeComponent<TSPRootNodeData>(
   getNodeTypeStyle('tsp')
 );
 
+// Temporarily commented out registration to investigate React rendering issue
 // Register the component with the node registry
-registerNode('tsp', 'TSP Root Node', {
-  displayName: 'TSP Root Node',
-  description: 'TSP system root node with statistics',
-  defaultSize: { width: 320, height: 280 },
-  minSize: { width: 200, height: 160 },
-  maxSize: { width: 400, height: 320 }
-})(TSPRootNode);
+// registerNode('tsp', 'TSP Root Node', {
+//   displayName: 'TSP Root Node',
+//   description: 'TSP system root node with statistics',
+//   defaultSize: { width: 320, height: 280 },
+//   minSize: { width: 200, height: 160 },
+//   maxSize: { width: 400, height: 320 }
+// })(TSPRootNode);
 
 export default TSPRootNode;

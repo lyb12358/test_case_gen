@@ -2,7 +2,7 @@ export interface GraphNode {
   id: string;
   name: string;
   label: string;
-  type: 'tsp' | 'project' | 'business' | 'interface' | 'test_case';
+  type: 'tsp' | 'project' | 'business' | 'test_point' | 'test_case';
   description?: string;
   businessType?: string;
   projectId?: number;

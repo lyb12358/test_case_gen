@@ -2,7 +2,7 @@ import React, { useState, useEffect, startTransition } from 'react';
 import { Card, Row, Col, Statistic, Button, Select, Space, Spin, Alert, message } from 'antd';
 import { ReloadOutlined, ClearOutlined, BarChartOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
-import OptimizedKnowledgeGraph from '../../components/KnowledgeGraph/OptimizedKnowledgeGraph';
+import { OptimizedKnowledgeGraph } from '../../components/KnowledgeGraph';
 import { knowledgeGraphService } from '../../services/knowledgeGraphService';
 import { businessService } from '../../services/businessService';
 import unifiedGenerationService from '../../services/unifiedGenerationService';

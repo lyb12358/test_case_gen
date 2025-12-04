@@ -12,6 +12,7 @@ import {
   DownOutlined,
   UpOutlined
 } from '@ant-design/icons';
+import { KnowledgeGraphColors, GlassStyles } from './styles/KnowledgeGraphStyles';
 
 const { Text } = Typography;
 
@@ -24,6 +25,7 @@ interface NodeTypeInfo {
   type: string;
   name: string;
   color: string;
+  gradient: string;
   icon: React.ReactNode;
   description: string;
 }
@@ -39,49 +41,51 @@ const NodeLegend: React.FC<NodeLegendProps> = ({
   // 确定最终的可见性状态
   const visible = externalVisible !== undefined ? externalVisible : internalVisible;
 
-  // 新架构节点类型信息配置 - 与实际节点组件保持一致
+  // 新架构节点类型信息配置 - 使用统一的颜色系统
   const nodeTypes: NodeTypeInfo[] = [
     {
       type: 'tsp',
-      name: 'TSP服务',
-      color: '#8c8c8c',
+      name: 'TSP根节点',
+      color: KnowledgeGraphColors.tsp.primary,
+      gradient: KnowledgeGraphColors.tsp.gradient,
       icon: <CloudOutlined />,
-      description: 'TSP远程控制服务根节点（灰色背景）'
+      description: 'TSP测试用例生成平台（深蓝色主题）'
     },
     {
       type: 'project',
-      name: '项目',
-      color: '#1890ff',
+      name: '项目节点',
+      color: KnowledgeGraphColors.project.primary,
+      gradient: KnowledgeGraphColors.project.gradient,
       icon: <ProjectOutlined />,
-      description: '测试项目管理节点（蓝色背景）'
+      description: '测试项目管理节点（绿色主题）'
     },
     {
-      type: 'business',
+      type: 'business_type',
       name: '业务类型',
-      color: '#722ed1',
+      color: KnowledgeGraphColors.business.primary,
+      gradient: KnowledgeGraphColors.business.gradient,
       icon: <AppstoreOutlined />,
-      description: 'TSP业务类型（紫色背景）'
-    }
-  ];
-
-  // 统一测试节点的状态信息 - 与UnifiedTestNode组件保持一致
-  const testNodeStates = [
+      description: 'TSP业务类型（紫色主题）'
+    },
     {
       type: 'test_point',
       name: '测试点',
-      color: '#faad14',
+      color: KnowledgeGraphColors.testPoint.primary,
+      gradient: KnowledgeGraphColors.testPoint.gradient,
       icon: <PlayCircleOutlined />,
-      description: '测试点（黄色背景，仅名称+描述）'
+      description: '测试点场景（浅蓝色主题）'
     },
     {
       type: 'test_case',
       name: '测试用例',
-      color: '#52c41a',
+      color: KnowledgeGraphColors.testCase.primary,
+      gradient: KnowledgeGraphColors.testCase.gradient,
       icon: <CheckCircleOutlined />,
-      description: '测试用例（绿色背景，详细信息）'
+      description: '测试用例（深绿色主题）'
     }
   ];
 
+  
   // 从本地存储加载状态
   useEffect(() => {
     const savedVisible = localStorage.getItem('knowledge-graph-legend-visible');
@@ -159,11 +163,12 @@ const NodeLegend: React.FC<NodeLegendProps> = ({
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            fontSize: '14px'
+            fontSize: '14px',
+            ...GlassStyles.glassLabel,
           }}>
             <Space size={4}>
-              <InfoCircleOutlined />
-              <span>节点图例</span>
+              <InfoCircleOutlined style={{ color: 'rgba(255, 255, 255, 0.9)' }} />
+              <span style={{ color: 'rgba(255, 255, 255, 0.95)', fontWeight: '600' }}>节点图例</span>
             </Space>
             <Space size={2}>
               <Button
@@ -171,24 +176,43 @@ const NodeLegend: React.FC<NodeLegendProps> = ({
                 size="small"
                 icon={expanded ? <UpOutlined /> : <DownOutlined />}
                 onClick={() => handleExpandedChange(!expanded)}
-                style={{ padding: '0 4px', minWidth: 'auto', height: '20px' }}
+                style={{
+                  padding: '0 4px',
+                  minWidth: 'auto',
+                  height: '20px',
+                  color: 'rgba(255, 255, 255, 0.8)',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '4px',
+                  backdropFilter: 'blur(8px)',
+                }}
               />
               <Button
                 type="text"
                 size="small"
                 icon={<EyeInvisibleOutlined />}
                 onClick={() => handleVisibilityChange(false)}
-                style={{ padding: '0 4px', minWidth: 'auto', height: '20px' }}
+                style={{
+                  padding: '0 4px',
+                  minWidth: 'auto',
+                  height: '20px',
+                  color: 'rgba(255, 255, 255, 0.8)',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '4px',
+                  backdropFilter: 'blur(8px)',
+                }}
               />
             </Space>
           </div>
         }
         style={{
-          backgroundColor: 'rgba(255, 255, 255, 0.95)',
-          backdropFilter: 'blur(8px)',
-          border: '1px solid rgba(24, 144, 255, 0.2)',
-          borderRadius: '8px',
-          boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)'
+          ...GlassStyles.glassCard,
+          background: 'rgba(255, 255, 255, 0.12)',
+          backdropFilter: 'blur(12px)',
+          border: '1px solid rgba(255, 255, 255, 0.25)',
+          borderRadius: '16px',
+          boxShadow: '0 12px 48px rgba(0, 0, 0, 0.15)',
         }}
         styles={{
           body: {
@@ -226,15 +250,25 @@ const NodeLegend: React.FC<NodeLegendProps> = ({
                 e.currentTarget.style.backgroundColor = expanded ? 'rgba(24, 144, 255, 0.05)' : 'transparent';
               }}
             >
-              <Avatar
-                size={expanded ? 'small' : 20}
-                icon={nodeType.icon}
+              <div
                 style={{
-                  backgroundColor: nodeType.color,
-                  border: 'none',
-                  marginRight: expanded ? '8px' : '6px'
+                  width: expanded ? '24px' : '20px',
+                  height: expanded ? '24px' : '20px',
+                  background: nodeType.gradient,
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginRight: expanded ? '8px' : '6px',
+                  border: '2px solid rgba(255, 255, 255, 0.3)',
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
+                  color: 'rgba(255, 255, 255, 0.9)',
+                  backdropFilter: 'blur(4px)',
+                  fontSize: expanded ? '12px' : '10px',
                 }}
-              />
+              >
+                {nodeType.icon}
+              </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{
                   display: 'flex',
@@ -282,113 +316,7 @@ const NodeLegend: React.FC<NodeLegendProps> = ({
             </div>
           ))}
 
-          {/* 分隔线 */}
-          {expanded && (
-            <div style={{
-              height: '1px',
-              background: 'linear-gradient(to right, transparent, rgba(24, 144, 255, 0.2), transparent)',
-              margin: '8px 0'
-            }} />
-          )}
-
-          {/* 测试节点状态 */}
-          {expanded && (
-            <div style={{ marginBottom: '4px' }}>
-              <Text
-                strong
-                style={{
-                  fontSize: '12px',
-                  color: '#595959',
-                  display: 'block',
-                  marginBottom: '6px'
-                }}
-              >
-                测试节点状态
-              </Text>
-            </div>
-          )}
-
-          {testNodeStates.map((testState) => (
-            <div
-              key={testState.type}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                padding: expanded ? '6px 8px' : '4px 6px',
-                borderRadius: '6px',
-                backgroundColor: expanded ? 'rgba(24, 144, 255, 0.03)' : 'transparent',
-                transition: 'all 0.2s ease',
-                cursor: 'default',
-                border: expanded ? `1px solid ${testState.color}20` : 'none'
-              }}
-              onMouseEnter={(e) => {
-                if (expanded) {
-                  e.currentTarget.style.backgroundColor = `${testState.color}10`;
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = expanded ? 'rgba(24, 144, 255, 0.03)' : 'transparent';
-              }}
-            >
-              <div
-                style={{
-                  width: expanded ? '24px' : '20px',
-                  height: expanded ? '24px' : '20px',
-                  borderRadius: '50%',
-                  background: testState.type === 'test_point'
-                    ? 'linear-gradient(135deg, #fffbe6 0%, #fff7e6 100%)'
-                    : 'linear-gradient(135deg, #f6ffed 0%, #e6f7d2 100%)',
-                  border: `2px solid ${testState.color}`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  marginRight: expanded ? '8px' : '6px'
-                }}
-              >
-                {testState.icon}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: expanded ? '6px' : '4px'
-                }}>
-                  <Text
-                    strong
-                    style={{
-                      fontSize: expanded ? '13px' : '12px',
-                      color: '#262626',
-                      whiteSpace: 'nowrap'
-                    }}
-                  >
-                    {testState.name}
-                  </Text>
-                  <Badge
-                    color={testState.color}
-                    text={testState.type}
-                    style={{
-                      fontSize: '10px',
-                      lineHeight: '14px'
-                    }}
-                  />
-                </div>
-                {expanded && (
-                  <Text
-                    type="secondary"
-                    style={{
-                      fontSize: '11px',
-                      lineHeight: '1.3',
-                      display: 'block',
-                      marginTop: '2px'
-                    }}
-                  >
-                    {testState.description}
-                  </Text>
-                )}
-              </div>
-            </div>
-          ))}
-
+          
           {!expanded && (
             <div style={{
               textAlign: 'center',

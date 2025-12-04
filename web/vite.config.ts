@@ -33,8 +33,11 @@ export default defineConfig({
       'react-dnd-html5-backend',
       'react-markdown',
       'antd',
-      '@tanstack/react-query'
+      '@tanstack/react-query',
+      '@xyflow/react'
     ],
+    exclude: ['elkjs'], // Exclude ELK.js from optimization to avoid web-worker issues
+    force: true, // Force re-bundling to clear stale cache
   },
   build: {
     rollupOptions: {
@@ -46,7 +49,8 @@ export default defineConfig({
           dnd: ['react-dnd', 'react-dnd-html5-backend'],
           markdown: ['react-markdown'],
           antd: ['antd'],
-          query: ['@tanstack/react-query']
+          query: ['@tanstack/react-query'],
+          reactFlow: ['@xyflow/react']
         }
       }
     }

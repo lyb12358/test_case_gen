@@ -1,8 +1,12 @@
-// Core components - React 19 compatible
-export { default as Graph } from './Graph';
+// Core components - React Flow based
+export { default as ReactFlowKnowledgeGraph } from './ReactFlowKnowledgeGraph';
+export { elkLayoutService } from './ELKLayoutService';
+export { dataTransformService } from './DataTransformService';
 export { default as BaseNode } from './BaseNode';
 export { default as ErrorBoundary } from './ErrorBoundary';
-export { default as OptimizedKnowledgeGraph } from './OptimizedKnowledgeGraph';
+
+// 向后兼容 - 重命名为默认导出
+export { default as OptimizedKnowledgeGraph } from './ReactFlowKnowledgeGraph';
 
 // Node system
 export { nodeRegistry, useNodeRegistry, registerNode } from './NodeRegistry';
