@@ -54,6 +54,7 @@ import {
   UnifiedTestCaseFormData
 } from '../../types/unifiedTestCase';
 import { debounce } from '../../utils/debounce';
+import { downloadFile, generateExportFilename } from '../../utils/fileUtils';
 import type { components } from '../../types/api';
 import { useBusinessTypeMapping } from '../../hooks';
 
@@ -105,6 +106,9 @@ const UnifiedTestCaseManager: React.FC = () => {
   const [pageSize, setPageSize] = useState(20);
   const [stageFilter, setStageFilter] = useState<StageFilter>('all');
   const [creationMode, setCreationMode] = useState<CreationMode>('test_point');
+
+  // 导出状态
+  const [isExporting, setIsExporting] = useState(false);
 
   // AI生成状态
   const [aiForm] = Form.useForm();
@@ -529,6 +533,10 @@ const UnifiedTestCaseManager: React.FC = () => {
 
   // 处理函数
   const handleCreate = useCallback((mode: CreationMode) => {
+    // 只允许创建测试点，如果不是test_point则忽略
+    if (mode !== 'test_point') {
+      return;
+    }
     resetFormAndState();
     setCreationMode(mode);
     setCreateModalVisible(true);
@@ -593,6 +601,46 @@ const UnifiedTestCaseManager: React.FC = () => {
   const handleDelete = useCallback((id: number) => {
     deleteMutation.mutate(id);
   }, [deleteMutation]);
+
+  // 导出处理函数
+  const handleExport = useCallback(async () => {
+    if (isExporting) return;
+
+    setIsExporting(true);
+    try {
+      // 获取当前筛选的条件
+      const businessType = selectedBusinessType || undefined;
+
+      // 构建描述性文件名，包含筛选信息
+      let filenamePrefix = 'test-cases';
+      if (businessType) {
+        filenamePrefix += `-${businessType}`;
+      }
+      if (stageFilter !== 'all') {
+        filenamePrefix += `-${stageFilter}`;
+      }
+
+      // 调用导出服务
+      const blob = await unifiedGenerationService.exportTestCasesToExcel(
+        businessType,
+        currentProject.id
+      );
+
+      // 生成文件名并下载
+      const filename = generateExportFilename(filenamePrefix, 'xlsx');
+      downloadFile(blob, filename);
+
+      message.success('导出成功！');
+    } catch (error: any) {
+      console.error('导出失败:', error);
+      const errorMessage = error?.response?.data?.detail ||
+                          error?.message ||
+                          '导出失败，请稍后重试';
+      message.error(`导出失败: ${errorMessage}`);
+    } finally {
+      setIsExporting(false);
+    }
+  }, [isExporting, selectedBusinessType, stageFilter, currentProject.id]);
 
   // 表格列定义
   const columns: ColumnsType<UnifiedTestCaseResponse> = [
@@ -941,7 +989,18 @@ const UnifiedTestCaseManager: React.FC = () => {
                   刷新
                 </Button>
 
-                {/* 创建按钮组 */}
+                {/* 导出按钮 */}
+                <Button
+                  type="default"
+                  icon={<ExportOutlined />}
+                  loading={isExporting}
+                  onClick={handleExport}
+                  disabled={isLoading || !testCases?.items?.length}
+                >
+                  导出
+                </Button>
+
+                {/* 创建按钮组 - 只保留创建测试点按钮 */}
                 <Button.Group>
                   <Button
                     type="primary"
@@ -949,13 +1008,6 @@ const UnifiedTestCaseManager: React.FC = () => {
                     onClick={() => handleCreate('test_point')}
                   >
                     创建测试点
-                  </Button>
-                  <Button
-                    type="default"
-                    icon={<FileTextOutlined />}
-                    onClick={() => handleCreate('test_case')}
-                  >
-                    创建测试用例
                   </Button>
                 </Button.Group>
 
@@ -1016,9 +1068,9 @@ const UnifiedTestCaseManager: React.FC = () => {
         width={1000}
         destroyOnHidden
       >
+        {/* 创建标签页 - 只保留创建测试点 */}
         <Tabs
-          activeKey={creationMode}
-          onChange={(key) => setCreationMode(key as CreationMode)}
+          activeKey="test_point"
           items={[
             {
               key: 'test_point',
@@ -1026,16 +1078,6 @@ const UnifiedTestCaseManager: React.FC = () => {
                 <span>
                   <ExperimentOutlined />
                   创建测试点
-                </span>
-              ),
-              children: renderForm()
-            },
-            {
-              key: 'test_case',
-              label: (
-                <span>
-                  <FileTextOutlined />
-                  创建测试用例
                 </span>
               ),
               children: renderForm()

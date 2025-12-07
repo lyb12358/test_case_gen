@@ -677,6 +677,138 @@ async def get_task_status(task_id: str):
         )
 
 
+def _convert_steps_to_simple_list(steps_data):
+    """
+    Convert complex step objects to simple string list for export.
+
+    Handles multiple formats:
+    1. Complex objects: [{"step_number": 1, "action": "...", "expected": "..."}, ...]
+    2. Simple string arrays: ["step1", "step2", ...]
+    3. JSON strings
+    4. Single values
+    """
+    if not steps_data:
+        return []
+
+    try:
+        # If it's a string, try to parse as JSON first
+        if isinstance(steps_data, str):
+            try:
+                steps = json.loads(steps_data)
+            except json.JSONDecodeError:
+                # If not valid JSON, treat as single step
+                return [steps_data]
+        else:
+            steps = steps_data
+
+        if not isinstance(steps, list):
+            # Single value
+            return [str(steps)]
+
+        simple_steps = []
+        for step in steps:
+            if isinstance(step, dict):
+                # Complex object - extract action or create formatted string
+                if 'action' in step:
+                    action = step['action']
+                    expected = step.get('expected', '')
+                    if expected:
+                        simple_steps.append(f"{action} (期望: {expected})")
+                    else:
+                        simple_steps.append(action)
+                elif 'step' in step:
+                    simple_steps.append(str(step['step']))
+                elif 'description' in step:
+                    simple_steps.append(str(step['description']))
+                else:
+                    # Fallback: convert whole dict to string
+                    simple_steps.append(str(step))
+            else:
+                # Simple string or number
+                simple_steps.append(str(step))
+
+        return simple_steps
+    except Exception as e:
+        logger.warning(f"Error converting steps to simple list: {e}, data: {steps_data}")
+        # Return as single item list as fallback
+        return [str(steps_data)]
+
+def _convert_expected_to_simple_format(expected_data):
+    """
+    Convert complex expected result data to simple string for export.
+
+    Handles multiple formats:
+    1. Lists: ["result1", "result2", ...]
+    2. Single values: "result"
+    3. JSON strings
+    """
+    if not expected_data:
+        return ""
+
+    try:
+        # If it's a string, try to parse as JSON first
+        if isinstance(expected_data, str):
+            try:
+                expected = json.loads(expected_data)
+            except json.JSONDecodeError:
+                # If not valid JSON, treat as single result
+                return expected_data
+        else:
+            expected = expected_data
+
+        if isinstance(expected, list):
+            # Join multiple results with newlines
+            return "\n".join(str(item) for item in expected if item)
+        else:
+            # Single result
+            return str(expected)
+    except Exception as e:
+        logger.warning(f"Error converting expected to simple format: {e}, data: {expected_data}")
+        # Return as string as fallback
+        return str(expected_data)
+
+def _convert_preconditions_to_simple_format(preconditions_data):
+    """
+    Convert preconditions data to simple string or list for export.
+
+    Handles multiple formats:
+    1. JSON arrays: ["cond1", "cond2", ...]
+    2. Comma-separated strings: "cond1, cond2, cond3"
+    3. Single strings
+    4. JSON strings
+    """
+    if not preconditions_data:
+        return []
+
+    try:
+        # If it's a string, try to parse as JSON first
+        if isinstance(preconditions_data, str):
+            try:
+                preconditions = json.loads(preconditions_data)
+                # If successfully parsed and it's a list, return as is
+                if isinstance(preconditions, list):
+                    return preconditions
+                else:
+                    # Single value in JSON
+                    return [str(preconditions)]
+            except json.JSONDecodeError:
+                # Not valid JSON - check if comma-separated
+                if ',' in preconditions_data:
+                    return [item.strip() for item in preconditions_data.split(',') if item.strip()]
+                else:
+                    # Single string
+                    return [preconditions_data] if preconditions_data.strip() else []
+        elif isinstance(preconditions_data, list):
+            # Already a list - ensure all items are strings
+            return [str(item) for item in preconditions_data if item]
+        else:
+            # Single value
+            return [str(preconditions_data)]
+    except Exception as e:
+        logger.warning(f"Error converting preconditions to simple format: {e}, data: {preconditions_data}")
+        # Return as single item list as fallback
+        return [str(preconditions_data)]
+
 @main_router.get("/test-cases/export", tags=["test-cases"])
 async def export_test_cases_to_excel(
     business_type: Optional[str] = None,
@@ -714,7 +846,7 @@ async def export_test_cases_to_excel(
             if business_enum:
                 query = query.filter(Project.business_type == business_enum)
             if project_id:
-                query = query.filter(Project.project_id == project_id)
+                query = query.filter(Project.id == project_id)
 
             groups = query.order_by(Project.created_at.desc()).all()
 
@@ -732,23 +864,60 @@ async def export_test_cases_to_excel(
                 ).order_by(UnifiedTestCase.entity_order.asc()).all()
 
                 for item in items:
-                    # Parse JSON fields
-                    preconditions = json.loads(item.preconditions) if item.preconditions else []
-                    steps = json.loads(item.steps) if item.steps else []
-                    expected_result = json.loads(item.expected_result) if item.expected_result else []
+                    # 简单粗暴的数据转换，避免复杂的验证
+                    steps = []
+                    if item.steps:
+                        try:
+                            # 尝试解析JSON
+                            step_data = json.loads(item.steps)
+                            for step in step_data:
+                                if isinstance(step, dict) and 'action' in step:
+                                    steps.append(step['action'])
+                                else:
+                                    steps.append(str(step))
+                        except:
+                            # 如果解析失败，直接转为字符串
+                            steps = [str(item.steps)]
 
-                    # Create TestCase object
-                    test_case = TestCase(
-                        id=item.test_case_id,
-                        name=item.name,
-                        module=item.module or "",
-                        preconditions=preconditions if isinstance(preconditions, list) else str(preconditions),
-                        remarks=item.remarks or "",
-                        steps=steps if isinstance(steps, list) else [str(steps)],
-                        expected_result=expected_result if isinstance(expected_result, list) else str(expected_result),
-                        functional_module=item.functional_module or "",
-                        functional_domain=item.functional_domain or ""
-                    )
+                    # 简化expected_result处理
+                    expected_result = ""
+                    if item.expected_result:
+                        try:
+                            exp_data = json.loads(item.expected_result)
+                            if isinstance(exp_data, list):
+                                expected_result = "\n".join(str(x) for x in exp_data)
+                            else:
+                                expected_result = str(exp_data)
+                        except:
+                            expected_result = str(item.expected_result)
+
+                    # 简化preconditions处理
+                    preconditions = []
+                    if item.preconditions:
+                        try:
+                            pre_data = json.loads(item.preconditions)
+                            if isinstance(pre_data, list):
+                                preconditions = [str(x) for x in pre_data]
+                            else:
+                                preconditions = [str(pre_data)]
+                        except:
+                            if ',' in str(item.preconditions):
+                                preconditions = [x.strip() for x in str(item.preconditions).split(',')]
+                            else:
+                                preconditions = [str(item.preconditions)]
+
+                    # 创建简单的字典对象，不使用TestCase模型
+                    test_case = {
+                        'id': item.test_case_id or "",
+                        'name': item.name or "",
+                        'module': item.module or "",
+                        'preconditions': preconditions,
+                        'remarks': item.remarks or "",
+                        'steps': steps,
+                        'expected_result': expected_result,
+                        'functional_module': item.functional_module or "",
+                        'functional_domain': item.functional_domain or ""
+                    }
                     test_cases.append(test_case)
 
         if not test_cases:
@@ -757,12 +926,28 @@ async def export_test_cases_to_excel(
                 detail=f"No test case items found" + (f" for business type {business_enum.value}" if business_enum else "")
             )
 
-        # Convert to Excel rows using existing ExcelConverter
-        excel_rows = ExcelConverter.test_cases_to_excel_rows(test_cases)
+        # 直接创建Excel数据，不依赖ExcelConverter
+        excel_data = []
+        for test_case in test_cases:
+            # 将steps和preconditions列表转换为字符串
+            steps_str = "\n".join(test_case['steps']) if test_case['steps'] else ""
+            preconditions_str = "\n".join(test_case['preconditions']) if test_case['preconditions'] else ""
+
+            excel_data.append({
+                'ID': test_case['id'],
+                'Test Case Name': test_case['name'],
+                'Module': test_case['module'],
+                'Functional Module': test_case['functional_module'],
+                'Functional Domain': test_case['functional_domain'],
+                'Preconditions': preconditions_str,
+                'Test Steps': steps_str,
+                'Expected Result': test_case['expected_result'],
+                'Remarks': test_case['remarks']
+            })
 
         # Create Excel file in memory
         output = io.BytesIO()
-        data = [row.model_dump() for row in excel_rows]
+        data = excel_data
 
         import pandas as pd
         import xlsxwriter

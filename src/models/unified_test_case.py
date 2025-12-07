@@ -51,7 +51,7 @@ class UnifiedTestCaseCreate(UnifiedTestCaseBase):
     functional_domain: Optional[str] = Field(None, max_length=100, description="功能域")
 
     # Execution details (JSON format, optional for test point stage)
-    preconditions: Optional[str] = Field(None, max_length=5000, description="前置条件")
+    preconditions: Optional[str] = Field(None, max_length=5000, description="前置条件（JSON字符串格式）")
     steps: Optional[List[Dict[str, Any]]] = Field(None, description="执行步骤")
     expected_result: Optional[str] = Field(None, max_length=5000, description="期望结果（JSON字符串格式）")
     remarks: Optional[str] = Field(None, max_length=2000, description="备注")
@@ -60,6 +60,11 @@ class UnifiedTestCaseCreate(UnifiedTestCaseBase):
     entity_order: Optional[float] = Field(None, description="排序顺序")
 
     
+    @field_validator('preconditions')
+    @classmethod
+    def validate_preconditions(cls, v):
+        return JSONFieldValidator.validate_preconditions(v)
+
     @field_validator('steps')
     @classmethod
     def validate_steps(cls, v):
@@ -83,7 +88,7 @@ class UnifiedTestCaseUpdate(BaseModel):
     functional_domain: Optional[str] = Field(None, max_length=100, description="功能域")
 
     # Execution details
-    preconditions: Optional[str] = Field(None, max_length=5000, description="前置条件")
+    preconditions: Optional[str] = Field(None, max_length=5000, description="前置条件（JSON字符串格式）")
     steps: Optional[List[Dict[str, Any]]] = Field(None, description="执行步骤")
     expected_result: Optional[str] = Field(None, max_length=5000, description="期望结果（JSON字符串格式）")
     remarks: Optional[str] = Field(None, max_length=2000, description="备注")
@@ -92,6 +97,11 @@ class UnifiedTestCaseUpdate(BaseModel):
     entity_order: Optional[float] = Field(None, description="排序顺序")
 
     
+    @field_validator('preconditions')
+    @classmethod
+    def validate_preconditions(cls, v):
+        return JSONFieldValidator.validate_preconditions(v)
+
     @field_validator('steps')
     @classmethod
     def validate_steps(cls, v):
@@ -118,7 +128,7 @@ class UnifiedTestCaseResponse(UnifiedTestCaseBase):
     functional_domain: Optional[str] = Field(None, description="功能域")
 
     # Execution details
-    preconditions: Optional[str] = Field(None, max_length=5000, description="前置条件")
+    preconditions: Optional[str] = Field(None, max_length=5000, description="前置条件（JSON字符串格式）")
     steps: Optional[List[Dict[str, Any]]] = Field(None, description="执行步骤")
     expected_result: Optional[str] = Field(None, max_length=5000, description="期望结果（JSON字符串格式）")
     remarks: Optional[str] = Field(None, description="备注")

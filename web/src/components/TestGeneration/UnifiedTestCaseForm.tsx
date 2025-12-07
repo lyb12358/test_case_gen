@@ -65,15 +65,57 @@ const UnifiedTestCaseForm: React.FC<UnifiedTestCaseFormProps> = ({
   const [showValidationDetails, setShowValidationDetails] = useState(false);
   const [preconditions, setPreconditions] = useState<string[]>([]);
   const [steps, setSteps] = useState<any[]>([]);
-  const [expectedResult, setExpectedResult] = useState<string[]>([]);
 
   // 初始化表单数据
   useEffect(() => {
     if (initialValues) {
       form.setFieldsValue(initialValues);
-      setPreconditions(initialValues.preconditions || []);
-      setSteps(initialValues.steps || []);
-      setExpectedResult(initialValues.expected_result || []);
+      // 处理后端返回的preconditions字符串格式，转换为数组
+      let parsedPreconditions: string[] = [];
+      if (initialValues.preconditions) {
+        try {
+          if (typeof initialValues.preconditions === 'string') {
+            const str = initialValues.preconditions.trim();
+            if (!str) {
+              parsedPreconditions = [];
+            } else if (str.startsWith('[') && str.endsWith(']')) {
+              // JSON数组格式
+              parsedPreconditions = JSON.parse(str);
+            } else if (str.includes(',')) {
+              // 逗号分隔的字符串，转为数组
+              parsedPreconditions = str.split(',').map(item => item.trim()).filter(item => item);
+            } else {
+              // 单个字符串，转为单元素数组
+              parsedPreconditions = [str];
+            }
+          } else if (Array.isArray(initialValues.preconditions)) {
+            parsedPreconditions = initialValues.preconditions;
+          }
+        } catch (error) {
+          console.error('Failed to parse preconditions:', error, 'Input:', initialValues.preconditions);
+          // 解析失败时的安全处理
+          const str = initialValues.preconditions.toString().trim();
+          if (str.includes(',')) {
+            parsedPreconditions = str.split(',').map(item => item.trim()).filter(item => item);
+          } else if (str) {
+            parsedPreconditions = [str];
+          } else {
+            parsedPreconditions = [];
+          }
+        }
+      }
+      setPreconditions(parsedPreconditions);
+
+      // 后端返回的steps已经包含expected字段，直接使用
+      const normalizedSteps = (initialValues.steps || []).map(step => ({
+        id: step.id || Date.now() + Math.random(),
+        step_number: step.step_number || 1,
+        action: step.action || '',
+        expected: step.expected || ''
+      }));
+      setSteps(normalizedSteps);
+
+      console.log('Form initialized with steps:', normalizedSteps);
     }
   }, [initialValues, form]);
 
@@ -95,14 +137,13 @@ const UnifiedTestCaseForm: React.FC<UnifiedTestCaseFormProps> = ({
         step_number: step.step_number || index + 1,
         action: step.action || '',
         expected: step.expected || ''
-      })),
-      expectedResult
+      }))
     };
 
     const validationResult = validateTestCaseData(validationData);
     setValidation(validationResult);
     return validationResult;
-  }, [form, businessType, preconditions, steps, expectedResult, autoValidate]);
+  }, [form, businessType, preconditions, steps, autoValidate]);
 
   // 表单字段变化时触发验证
   const handleFieldsChange = useCallback(() => {
@@ -137,19 +178,14 @@ const UnifiedTestCaseForm: React.FC<UnifiedTestCaseFormProps> = ({
     }
   }, [autoValidate, validateFormData]);
 
-  // 预期结果变化
-  const handleExpectedResultChange = useCallback((newExpectedResult: string[]) => {
-    setExpectedResult(newExpectedResult);
-    if (autoValidate && showValidation) {
-      const validation = validateExpectedResults(newExpectedResult);
-      if (!validation.isValid && validation.errors.length > 0) {
-        message.error('预期结果验证失败');
-      }
-    }
-  }, [autoValidate, showValidation]);
-
+  
   // 提交表单
   const handleSubmit = useCallback(async () => {
+    // 🔍 立即输出调试日志 - 确保用户能看到
+    console.log('🚀 [UnifiedTestCaseForm] handleSubmit 开始执行');
+    console.log('📋 [UnifiedTestCaseForm] 当前 steps 状态:', steps);
+    console.log('📋 [UnifiedTestCaseForm] 当前 preconditions:', preconditions);
+
     try {
       // 执行最终验证
       const finalValidation = validateFormData();
@@ -162,30 +198,38 @@ const UnifiedTestCaseForm: React.FC<UnifiedTestCaseFormProps> = ({
       }
 
       const values = await form.validateFields();
+      console.log('✅ [UnifiedTestCaseForm] 表单验证通过，values:', values);
+
       const submitData: UnifiedTestCaseFormData = {
         ...values,
-        preconditions,
+        preconditions: JSON.stringify(preconditions),  // 将数组转换为JSON字符串发送给后端
         steps: steps.map((step, index) => ({
           step_number: step.step_number || index + 1,
           action: step.action || '',
           expected: step.expected || ''
         })),
-        expected_result: expectedResult
+        // 不再发送单独的expected_result字段，因为预期结果已经包含在steps中
+        // 这样避免了数据重复和不一致的问题
       };
 
+      console.log('📤 [UnifiedTestCaseForm] 准备提交的完整数据:', submitData);
+      console.log('📤 [UnifiedTestCaseForm] steps 数组:', submitData.steps);
+      console.log('📤 [UnifiedTestCaseForm] 步骤中包含预期结果的数量:', steps.filter(s => s.expected?.trim()).length);
+      console.log('🎯 [UnifiedTestCaseForm] 调用 onSubmit 提交数据...');
+
       onSubmit(submitData);
+      console.log('✅ [UnifiedTestCaseForm] onSubmit 调用完成');
     } catch (error) {
       console.error('Form validation failed:', error);
       message.error('请检查表单填写是否正确');
     }
-  }, [form, validateFormData, onSubmit, preconditions, steps, expectedResult]);
+  }, [form, validateFormData, onSubmit, preconditions, steps]);
 
   // 重置表单
   const handleReset = useCallback(() => {
     form.resetFields();
     setPreconditions([]);
     setSteps([{ id: 1, step_number: 1, action: '', expected: '' }]);
-    setExpectedResult([]);
     setValidation({ isValid: true, errors: [], warnings: [] });
     setShowValidationDetails(false);
   }, [form]);
@@ -394,24 +438,7 @@ const UnifiedTestCaseForm: React.FC<UnifiedTestCaseFormProps> = ({
           maxSteps={50}
         />
 
-        {/* 预期结果 */}
-        <Card title="预期结果" size="small" style={{ marginBottom: 16 }}>
-          <Form.Item label="预期结果列表">
-            <Input.Tag
-              value={expectedResult}
-              onChange={handleExpectedResultChange}
-              placeholder="输入预期结果后按回车添加"
-              style={{ width: '100%' }}
-              max={20}
-            />
-            <div style={{ marginTop: 8 }}>
-              <Text type="secondary">
-                已添加 {expectedResult.length}/20 个预期结果
-              </Text>
-            </div>
-          </Form.Item>
-        </Card>
-
+        
         {/* 备注 */}
         <Card title="备注" size="small" style={{ marginBottom: 24 }}>
           <Form.Item

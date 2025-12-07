@@ -19,13 +19,13 @@ class JSONFieldValidator:
     @staticmethod
     def validate_preconditions(v: Optional[str]) -> Optional[str]:
         """
-        Validate preconditions field with comprehensive checks.
+        Validate preconditions field as JSON string with enhanced compatibility.
 
         Args:
-            v: Precondition string or None
+            v: Precondition JSON string or None
 
         Returns:
-            Validated precondition string or None
+            Validated precondition JSON string or None
 
         Raises:
             ValueError: If validation fails
@@ -33,19 +33,64 @@ class JSONFieldValidator:
         if v is None:
             return None
 
-        if not isinstance(v, str):
+        # Handle string type
+        if isinstance(v, str):
+            # Remove leading/trailing whitespace
+            v = v.strip()
+
+            if not v:
+                return None  # Return None for empty strings
+
+            if len(v) > 5000:
+                raise ValueError("前置条件长度不能超过5000字符")
+
+            import json
+
+            # Enhanced format validation and conversion
+            try:
+                # Try to parse as JSON array first
+                parsed = json.loads(v)
+                if not isinstance(parsed, list):
+                    raise ValueError("前置条件必须是JSON数组格式")
+
+                # Validate each item in the array
+                validated_items = []
+                for i, item in enumerate(parsed):
+                    if not isinstance(item, str):
+                        raise ValueError(f"前置条件数组中的第{i+1}项必须是字符串")
+                    item = str(item).strip()
+                    if item and len(item) <= 500:
+                        validated_items.append(item)
+                    elif len(item) > 500:
+                        raise ValueError(f"前置条件数组中的第{i+1}项长度不能超过500字符")
+
+                return json.dumps(validated_items, ensure_ascii=False)
+
+            except json.JSONDecodeError:
+                # Handle non-JSON formats with intelligent conversion
+                if v.startswith('[') and v.endswith(']'):
+                    # Looks like JSON but failed to parse
+                    raise ValueError("前置条件必须是有效的JSON数组格式")
+
+                # Try to convert from common formats
+                if ',' in v:
+                    # Comma-separated format
+                    items = [item.strip() for item in v.split(',') if item.strip()]
+                    if len(items) > 50:
+                        raise ValueError("前置条件数量不能超过50个")
+                    for i, item in enumerate(items):
+                        if len(item) > 500:
+                            raise ValueError(f"前置条件第{i+1}项长度不能超过500字符")
+                    return json.dumps(items, ensure_ascii=False)
+                else:
+                    # Single item format
+                    item = v.strip()
+                    if len(item) > 500:
+                        raise ValueError("前置条件长度不能超过500字符")
+                    return json.dumps([item], ensure_ascii=False)
+
+        else:
             raise ValueError("前置条件必须是字符串类型")
-
-        # Remove leading/trailing whitespace
-        v = v.strip()
-
-        if not v:
-            return None  # Return None for empty strings
-
-        if len(v) > 5000:
-            raise ValueError("前置条件长度不能超过5000字符")
-
-        return v
 
     @staticmethod
     def validate_steps(v: Optional[List[Dict[str, Any]]]) -> Optional[List[Dict[str, Any]]]:

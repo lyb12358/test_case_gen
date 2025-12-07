@@ -2,9 +2,12 @@
 Data models for test case representation.
 """
 
-from typing import List, Optional, Union
-from pydantic import BaseModel, Field
+from typing import List, Optional, Union, Any
+from pydantic import BaseModel, Field, field_validator
+import json
 
+
+print("=== TestCase MODULE LOADED ===")
 
 class TestCase(BaseModel):
     """Test case model representing a single test case."""
@@ -13,7 +16,7 @@ class TestCase(BaseModel):
     name: str = Field(..., description="Test case name/title")
     description: Optional[str] = Field(default=None, description="Test case description")
     module: str = Field(..., description="Module to which this test case belongs")
-    preconditions: Union[str, List[str]] = Field(default="", description="Preconditions for the test")
+    preconditions: List[str] = Field(default_factory=list, description="Preconditions for the test")
     remarks: str = Field(default="", description="Additional remarks or notes")
     steps: List[str] = Field(default_factory=list, description="Test execution steps")
     expected_result: Union[str, List[str]] = Field(default="", description="Expected test results")
@@ -21,6 +24,103 @@ class TestCase(BaseModel):
     functional_domain: str = Field(default="", description="Functional domain category")
     test_case_id: Optional[str] = Field(default=None, description="Test case identifier like TC001")
     entity_order: Optional[float] = Field(default=None, description="Entity order for sorting")
+
+    @field_validator('steps', mode='before')
+    @classmethod
+    def convert_steps_to_list(cls, v: Any) -> List[str]:
+        """Convert various step formats to List[str]."""
+        if not v:
+            return []
+
+        if isinstance(v, list):
+            result = []
+            for item in v:
+                if isinstance(item, dict):
+                    # Extract action from complex step objects
+                    if 'action' in item:
+                        action = item['action']
+                        expected = item.get('expected', '')
+                        if expected:
+                            result.append(f"{action} (期望: {expected})")
+                        else:
+                            result.append(action)
+                    elif 'step' in item:
+                        result.append(str(item['step']))
+                    elif 'description' in item:
+                        result.append(str(item['description']))
+                    else:
+                        # Fallback: convert dict to string
+                        result.append(str(item))
+                else:
+                    result.append(str(item))
+            return result
+        elif isinstance(v, str):
+            try:
+                # Try to parse as JSON
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    # Recursively process the parsed list
+                    return cls.convert_steps_to_list(parsed)
+                else:
+                    return [str(parsed)]
+            except json.JSONDecodeError:
+                # Treat as single step if not valid JSON
+                return [v]
+        else:
+            # Single value
+            return [str(v)]
+
+    @field_validator('expected_result', mode='before')
+    @classmethod
+    def convert_expected_result_to_string(cls, v: Any) -> str:
+        """Convert various expected result formats to string."""
+        if not v:
+            return ""
+
+        if isinstance(v, list):
+            # Join multiple results with newlines
+            return "\n".join(str(item) for item in v if item)
+        elif isinstance(v, str):
+            try:
+                # Try to parse as JSON
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return "\n".join(str(item) for item in parsed if item)
+                else:
+                    return str(parsed)
+            except json.JSONDecodeError:
+                return v
+        else:
+            # Single value
+            return str(v)
+
+    @field_validator('preconditions', mode='before')
+    @classmethod
+    def convert_preconditions_to_list(cls, v: Any) -> List[str]:
+        """Convert various precondition formats to List[str]."""
+        if not v:
+            return []
+
+        if isinstance(v, list):
+            # Ensure all items are strings
+            return [str(item) for item in v if item]
+        elif isinstance(v, str):
+            try:
+                # Try to parse as JSON
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return [str(item) for item in parsed if item]
+                else:
+                    return [str(parsed)]
+            except json.JSONDecodeError:
+                # Check if comma-separated
+                if ',' in v:
+                    return [item.strip() for item in v.split(',') if item.strip()]
+                else:
+                    return [v] if v.strip() else []
+        else:
+            # Single value
+            return [str(v)]
 
 
 class TestCaseCollection(BaseModel):

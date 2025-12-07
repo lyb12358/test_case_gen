@@ -44,13 +44,13 @@ export interface UnifiedTestCaseCreate extends UnifiedTestCaseBase {
   module?: string;
   functional_module?: string;
   functional_domain?: string;
-  preconditions?: string[];
+  preconditions?: string;  // 发送给后端时需要JSON字符串格式
   steps?: Array<{
     step_number: number;
     action: string;
     expected?: string;
   }>;
-  expected_result?: string[];
+  expected_result?: string;
   remarks?: string;
   entity_order?: number;
 }
@@ -66,13 +66,13 @@ export interface UnifiedTestCaseUpdate {
   module?: string;
   functional_module?: string;
   functional_domain?: string;
-  preconditions?: string[];
+  preconditions?: string;  // 发送给后端时需要JSON字符串格式
   steps?: Array<{
     step_number: number;
     action: string;
     expected?: string;
   }>;
-  expected_result?: string[];
+  expected_result?: string;
   remarks?: string;
   entity_order?: number;
 }
@@ -87,13 +87,13 @@ export interface UnifiedTestCaseResponse extends UnifiedTestCaseBase {
   module?: string;
   functional_module?: string;
   functional_domain?: string;
-  preconditions: string[] | null;
+  preconditions: string | null;  // 后端返回JSON字符串格式
   steps: Array<{
     step_number: number;
     action: string;
     expected?: string;
   }> | null;
-  expected_result: string[] | null;
+  expected_result: string | null;
   remarks?: string;
   generation_job_id?: string;
   entity_order?: number;
@@ -175,13 +175,13 @@ export interface UnifiedTestCaseFormData extends Omit<UnifiedTestCaseCreate, 'pr
   functional_domain?: string;
 
   // 执行步骤
-  preconditions?: string[];
+  preconditions?: string;  // 发送给后端时需要JSON字符串格式
   steps: Array<{
     step_number: number;
     action: string;
     expected: string;
   }>;
-  expected_result?: string[];
+  expected_result?: string;
   remarks?: string;
 }
 

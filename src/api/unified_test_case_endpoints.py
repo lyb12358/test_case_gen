@@ -139,6 +139,8 @@ async def get_unified_test_cases_impl(
                 else SchemaUnifiedTestCaseStage.TEST_CASE
             )
 
+            # 前置条件现在直接返回字符串格式，由前端负责解析
+
             response_data = UnifiedTestCaseResponse(
                 id=test_case.id,
                 project_id=test_case.project_id,
@@ -153,7 +155,7 @@ async def get_unified_test_cases_impl(
                 module=test_case.module,
                 functional_module=test_case.functional_module,
                 functional_domain=test_case.functional_domain,
-                preconditions=test_case.preconditions,
+                preconditions=test_case.preconditions,  # 直接返回字符串格式
                 steps=_parse_steps_field(test_case.steps),
                 expected_result=test_case.expected_result,
                 remarks=test_case.remarks,
@@ -343,10 +345,16 @@ async def get_unified_test_case(
 ):
     """获取单个统一测试用例详情"""
     try:
+        logger.info(f"🔍 GET request for test_case_id: {test_case_id}")
         test_case = db.query(UnifiedTestCase).filter(UnifiedTestCase.id == test_case_id).first()
 
         if not test_case:
             raise HTTPException(status_code=404, detail="测试用例不存在")
+
+        # 记录数据库中的原始数据
+        logger.info(f"📋 Database raw steps: {test_case.steps}")
+        logger.info(f"🎯 Database raw expected_result: {test_case.expected_result}")
+        logger.info(f"📋 Database raw preconditions: {test_case.preconditions}")
 
         # Convert database stage enum to schema stage enum
         stage = (
@@ -354,6 +362,40 @@ async def get_unified_test_case(
             if test_case.is_test_point_stage()
             else SchemaUnifiedTestCaseStage.TEST_CASE
         )
+
+        # 解析steps字段，优先使用嵌入的预期结果
+        parsed_steps = _parse_steps_field(test_case.steps)
+        logger.info(f"📋 Parsed steps: {parsed_steps}")
+        logger.info(f"📋 Parsed steps count: {len(parsed_steps) if isinstance(parsed_steps, list) else 'N/A'}")
+
+        # 合并步骤和预期结果（如果steps中没有expected字段）
+        merged_steps = _merge_steps_with_expected_results(parsed_steps, test_case.expected_result)
+
+        # 解析preconditions为数组格式
+        if test_case.preconditions:
+            try:
+                final_preconditions = json.loads(test_case.preconditions)
+                if not isinstance(final_preconditions, list):
+                    final_preconditions = [test_case.preconditions]
+            except (json.JSONDecodeError, Exception):
+                final_preconditions = [test_case.preconditions]
+        else:
+            final_preconditions = []
+
+        # 记录最终返回的数据
+        logger.info(f"📤 Final steps being returned: {merged_steps}")
+        logger.info(f"📤 Final steps count: {len(merged_steps) if isinstance(merged_steps, list) else 'N/A'}")
+        logger.info(f"🎯 Database expected_result: {test_case.expected_result}")
+
+        # 详细检查steps中每个步骤的expected字段
+        if isinstance(merged_steps, list):
+            for i, step in enumerate(merged_steps):
+                if isinstance(step, dict) and 'expected' in step:
+                    logger.info(f"📋 Step {i+1} expected: {step['expected']}")
+                else:
+                    logger.warning(f"⚠️ Step {i+1} missing expected field: {step}")
+
+        logger.info(f"✅ GET request completed for test_case_id: {test_case_id}")
 
         return UnifiedTestCaseResponse(
             id=test_case.id,
@@ -369,8 +411,8 @@ async def get_unified_test_case(
             module=test_case.module,
             functional_module=test_case.functional_module,
             functional_domain=test_case.functional_domain,
-            preconditions=test_case.preconditions,
-            steps=_parse_json_field(test_case.steps),
+            preconditions=test_case.preconditions,  # 直接返回字符串格式
+            steps=merged_steps,
             expected_result=test_case.expected_result,
                         remarks=test_case.remarks,
             generation_job_id=test_case.generation_job_id,
@@ -448,7 +490,7 @@ async def create_unified_test_case(
             module=test_case_data.module,
             functional_module=test_case_data.functional_module,
             functional_domain=test_case_data.functional_domain,
-            preconditions=test_case_data.preconditions if test_case_data.preconditions and test_case_data.preconditions.strip() else None,
+            preconditions=test_case_data.preconditions,  # 现在直接是字符串，不需要JSON序列化
             steps=json.dumps(test_case_data.steps, ensure_ascii=False) if test_case_data.steps else None,
             remarks=test_case_data.remarks,
             entity_order=test_case_data.entity_order,
@@ -467,6 +509,8 @@ async def create_unified_test_case(
             else SchemaUnifiedTestCaseStage.TEST_CASE
         )
 
+        # 前置条件现在直接返回字符串格式，由前端负责解析
+
         return UnifiedTestCaseResponse(
             id=db_test_case.id,
             project_id=db_test_case.project_id,
@@ -481,7 +525,7 @@ async def create_unified_test_case(
             module=db_test_case.module,
             functional_module=db_test_case.functional_module,
             functional_domain=db_test_case.functional_domain,
-            preconditions=db_test_case.preconditions,
+            preconditions=test_case.preconditions,  # 直接返回字符串格式
             steps=_parse_json_field(db_test_case.steps),
             remarks=db_test_case.remarks,
             generation_job_id=db_test_case.generation_job_id,
@@ -505,6 +549,25 @@ async def update_unified_test_case(
 ):
     """更新统一测试用例"""
     try:
+        # 添加请求入口调试日志
+        logger.info(f"🚀 PUT request received for test_case_id: {test_case_id}")
+        raw_data = test_case_data.dict(exclude_unset=True)
+        logger.info(f"📋 Raw update data keys: {list(raw_data.keys())}")
+
+        # 详细记录steps和expected_result字段
+        if 'steps' in raw_data:
+            logger.info(f"📋 Steps in raw data: type={type(raw_data['steps'])}, count={len(raw_data['steps']) if isinstance(raw_data['steps'], list) else 'N/A'}")
+            if isinstance(raw_data['steps'], list) and len(raw_data['steps']) > 0:
+                logger.info(f"📋 First step sample: {raw_data['steps'][0]}")
+
+        if 'expected_result' in raw_data:
+            logger.info(f"🎯 Expected_result in raw data: type={type(raw_data['expected_result'])}, value={raw_data['expected_result']}")
+        else:
+            logger.warning("⚠️ Expected_result NOT found in raw update data!")
+
+        if 'preconditions' in raw_data:
+            logger.info(f"📋 Preconditions in raw data: type={type(raw_data['preconditions'])}, value={raw_data['preconditions']}")
+
         test_case = db.query(UnifiedTestCase).filter(UnifiedTestCase.id == test_case_id).first()
 
         if not test_case:
@@ -512,6 +575,10 @@ async def update_unified_test_case(
 
         # 更新字段
         update_data = test_case_data.dict(exclude_unset=True)
+
+        # 🔍 Debug: Log preconditions after validation processing
+        if 'preconditions' in update_data:
+            logger.info(f"🔍 Debug: preconditions processed in update_data: {update_data.get('preconditions', 'NOT_FOUND')}")
 
         # 处理枚举值
         if 'status' in update_data:
@@ -540,13 +607,45 @@ async def update_unified_test_case(
                     detail=f"Invalid business_type '{update_data['business_type']}'. Must be one of: {[bt.value for bt in BusinessType]}"
                 )
 
-        # 处理JSON字段
-        json_fields = ['preconditions', 'steps']
+        # 处理JSON字段 - 简化处理
+        json_fields = ['steps', 'expected_result']  # 移除preconditions，因为现在是简单的字符串字段
         for field in json_fields:
             if field in update_data:
-                update_data[field] = _serialize_json_field(update_data[field])
+                original_value = update_data[field]
 
-    
+                # 特殊处理steps字段，确保预期结果正确嵌入
+                if field == 'steps' and isinstance(original_value, list):
+                    # 验证steps中的expected字段
+                    processed_steps = []
+                    for i, step in enumerate(original_value):
+                        if isinstance(step, dict):
+                            processed_step = {
+                                'step_number': step.get('step_number', i + 1),
+                                'action': step.get('action', step.get('description', '')),
+                                'expected': step.get('expected', '')
+                            }
+                            processed_steps.append(processed_step)
+                            logger.info(f"📋 Processed step {i+1}: action='{processed_step['action'][:50]}...', expected='{processed_step['expected'][:50]}...'")
+                        else:
+                            logger.warning(f"⚠️ Invalid step format at index {i}: {step}")
+
+                    # 使用处理后的steps
+                    update_data[field] = _serialize_json_field(processed_steps)
+                    logger.info(f"📋 Steps processed and serialized: {len(processed_steps)} steps")
+
+                    # 当steps包含expected字段时，移除单独的expected_result字段，避免数据重复
+                    if 'expected_result' in update_data and any(step.get('expected') for step in processed_steps):
+                        logger.info("🗑️ Removing duplicate expected_result field since steps contain expected data")
+                        del update_data['expected_result']
+                else:
+                    # 其他JSON字段正常处理
+                    update_data[field] = _serialize_json_field(update_data[field])
+
+                logger.info(f"🔧 JSON field {field} serialized: {type(original_value)} -> {type(update_data.get(field))}")
+                logger.info(f"🔧 {field} length: {len(str(update_data.get(field)))}")
+
+        logger.info(f"Final update_data keys: {list(update_data.keys())}")
+
         # 更新时间戳
         update_data['updated_at'] = datetime.now()
 
@@ -578,7 +677,12 @@ async def update_unified_test_case(
 
         # Apply updates to the test case
         for field, value in update_data.items():
-            setattr(test_case, field, value)
+            # 特殊处理preconditions字段，将数组转换为JSON字符串存储到数据库
+            if field == 'preconditions' and isinstance(value, list):
+                setattr(test_case, field, json.dumps(value, ensure_ascii=False))
+                logger.info(f"📋 Preconditions array converted to JSON string for database storage: {len(value)} items")
+            else:
+                setattr(test_case, field, value)
 
         # 添加数据库操作的错误处理
         try:
@@ -600,6 +704,21 @@ async def update_unified_test_case(
             else SchemaUnifiedTestCaseStage.TEST_CASE
         )
 
+        # 解析并合并步骤和预期结果用于返回
+        parsed_steps = _parse_steps_field(test_case.steps)
+        merged_steps_for_return = _merge_steps_with_expected_results(parsed_steps, test_case.expected_result)
+
+        # 解析preconditions为数组格式用于返回
+        if test_case.preconditions:
+            try:
+                final_preconditions = json.loads(test_case.preconditions)
+                if not isinstance(final_preconditions, list):
+                    final_preconditions = [test_case.preconditions]
+            except (json.JSONDecodeError, Exception):
+                final_preconditions = [test_case.preconditions]
+        else:
+            final_preconditions = []
+
         return UnifiedTestCaseResponse(
             id=test_case.id,
             project_id=test_case.project_id,
@@ -614,8 +733,8 @@ async def update_unified_test_case(
             module=test_case.module,
             functional_module=test_case.functional_module,
             functional_domain=test_case.functional_domain,
-            preconditions=test_case.preconditions,
-            steps=_parse_json_field(test_case.steps),
+            preconditions=test_case.preconditions,  # 直接返回字符串格式
+            steps=merged_steps_for_return,  # 使用合并后的步骤数据
             expected_result=test_case.expected_result,
                         remarks=test_case.remarks,
             generation_job_id=test_case.generation_job_id,
@@ -1154,6 +1273,8 @@ async def _generate_test_points_sync_unified(
                 else SchemaUnifiedTestCaseStage.TEST_CASE
             )
 
+            # 前置条件现在直接返回字符串格式，由前端负责解析
+
             response_data = UnifiedTestCaseResponse(
                 id=test_case.id,
                 project_id=test_case.project_id,
@@ -1168,8 +1289,8 @@ async def _generate_test_points_sync_unified(
                 module=test_case.module,
                 functional_module=test_case.functional_module,
                 functional_domain=test_case.functional_domain,
-                preconditions=test_case.preconditions,
-                steps=_parse_json_field(test_case.steps),
+                preconditions=test_case.preconditions,  # 直接返回字符串格式
+                steps=_parse_steps_field(test_case.steps),
                 expected_result=test_case.expected_result,
                 remarks=test_case.remarks,
                 generation_job_id=test_case.generation_job_id,
@@ -1906,6 +2027,91 @@ def _parse_steps_field(field_value: Optional[str]) -> Optional[List[Dict[str, An
     return None
 
 
+def _merge_steps_with_expected_results(
+    steps: Optional[List[Dict[str, Any]]],
+    expected_result: Optional[str]
+) -> List[Dict[str, Any]]:
+    """
+    智能合并步骤和预期结果
+
+    Args:
+        steps: 解析后的步骤列表
+        expected_result: 预期结果字符串（换行分隔）
+
+    Returns:
+        List[Dict[str, Any]]: 合并后的步骤列表，每个步骤包含action和expected字段
+    """
+    if not steps:
+        return []
+
+    # 解析预期结果
+    expected_results = []
+    if expected_result:
+        try:
+            # 如果expected_result是JSON字符串数组
+            if expected_result.startswith('[') and expected_result.endswith(']'):
+                parsed_expected = json.loads(expected_result)
+                if isinstance(parsed_expected, list):
+                    expected_results = [str(item).strip() for item in parsed_expected if str(item).strip()]
+            else:
+                # 如果是普通字符串，按换行符分割
+                expected_results = [item.strip() for item in expected_result.split('\n') if item.strip()]
+        except (json.JSONDecodeError, Exception):
+            # 解析失败时按换行符分割
+            expected_results = [item.strip() for item in str(expected_result).split('\n') if item.strip()]
+
+    # 合并步骤和预期结果
+    merged_steps = []
+    expected_count = len(expected_results)
+
+    for i, step in enumerate(steps):
+        step_data = {
+            "step_number": step.get("step_number", i + 1),
+            "action": step.get("action", step.get("description", "")),
+            "expected": ""  # 默认为空字符串
+        }
+
+        # 只有在数量范围内才设置预期结果
+        if i < expected_count:
+            step_data["expected"] = expected_results[i]
+
+        merged_steps.append(step_data)
+
+    logger.debug(f"Merged {len(steps)} steps with {expected_count} expected results")
+    return merged_steps
+
+
+def _extract_action_and_expected_from_description(description: str) -> tuple[str, str]:
+    """
+    从描述中提取动作和预期结果
+
+    Args:
+        description: 步骤描述文本
+
+    Returns:
+        tuple: (action, expected) 动作和预期结果的元组
+    """
+    if not description:
+        return "", ""
+
+    # 尝试按常见的分隔符分离动作和预期结果
+    separators = ["预期结果:", "期望:", "预期:", "期望结果:", "Expected:", "Result:"]
+
+    for sep in separators:
+        if sep in description:
+            parts = description.split(sep, 1)
+            if len(parts) == 2:
+                action = parts[0].strip()
+                expected = parts[1].strip()
+                if action and expected:
+                    logger.debug(f"Extracted action: '{action}', expected: '{expected}'")
+                    return action, expected
+
+    # 如果没有找到分隔符，整个作为动作，预期结果为空
+    logger.debug(f"No separator found, using full description as action: '{description}'")
+    return description, ""
+
+
 def _parse_single_step_string(step_str: str) -> Optional[Dict[str, Any]]:
     """解析单个步骤字符串"""
     if not isinstance(step_str, str):
@@ -1914,6 +2120,27 @@ def _parse_single_step_string(step_str: str) -> Optional[Dict[str, Any]]:
     step_str = step_str.strip()
     if not step_str:
         return None
+
+    # 首先尝试直接解析为JSON
+    try:
+        parsed_data = json.loads(step_str)
+        if isinstance(parsed_data, dict):
+            # 确保返回的字典包含必要的字段
+            result = {
+                "step_number": parsed_data.get("step_number", 1),
+                "description": parsed_data.get("description", parsed_data.get("action", "")),
+                "action": parsed_data.get("action", parsed_data.get("description", "")),
+                "expected": parsed_data.get("expected", "")
+            }
+            # 保留其他字段
+            for key, value in parsed_data.items():
+                if key not in result:
+                    result[key] = value
+            # 添加调试日志
+            logger.debug(f"Parsed JSON step: {result}")
+            return result
+    except (json.JSONDecodeError, Exception):
+        pass
 
     # 处理带编号的步骤格式，如 "1. 步骤描述" 或 "1.{\"key\":\"value\"}..."
     if step_str[0].isdigit() and ('.' in step_str or step_str[1:3].isspace() or (len(step_str) > 1 and step_str[1] == '.')):
@@ -1947,51 +2174,60 @@ def _parse_single_step_string(step_str: str) -> Optional[Dict[str, Any]]:
                             except json.JSONDecodeError:
                                 pass
 
-                    return {
+                    # 从步骤描述中提取动作和预期结果
+                    action, expected = _extract_action_and_expected_from_description(step_desc)
+                    result = {
                         "step_number": int(step_num),
-                        "description": step_desc,
-                        "action": step_desc,
-                        "expected": None
+                        "description": action,
+                        "action": action,
+                        "expected": expected
                     }
+                    logger.debug(f"Parsed numbered step: {result}")
+                    return result
                 except ValueError:
                     # 如果数字转换失败，作为简单步骤处理
+                    action, expected = _extract_action_and_expected_from_description(step_str)
                     return {
                         "step_number": len(step_str.split()) + 1,
-                        "description": step_str,
-                        "action": step_str,
-                        "expected": None
+                        "description": action,
+                        "action": action,
+                        "expected": expected
                     }
             else:
                 # 没有分割符，整个作为步骤描述
                 try:
+                    action, expected = _extract_action_and_expected_from_description(step_str)
                     return {
                         "step_number": int(step_str),
-                        "description": step_str,
-                        "action": step_str,
-                        "expected": None
+                        "description": action,
+                        "action": action,
+                        "expected": expected
                     }
                 except ValueError:
+                    action, expected = _extract_action_and_expected_from_description(step_str)
                     return {
                         "step_number": 1,
-                        "description": step_str,
-                        "action": step_str,
-                        "expected": None
+                        "description": action,
+                        "action": action,
+                        "expected": expected
                     }
         else:
             # 第一个字符不是数字，作为简单步骤处理
+            action, expected = _extract_action_and_expected_from_description(step_str)
             return {
                 "step_number": 1,
-                "description": step_str,
-                "action": step_str,
-                "expected": None
+                "description": action,
+                "action": action,
+                "expected": expected
             }
     else:
         # 不以数字开头，作为简单步骤处理
+        action, expected = _extract_action_and_expected_from_description(step_str)
         return {
             "step_number": 1,
-            "description": step_str,
-            "action": step_str,
-            "expected": None
+            "description": action,
+            "action": action,
+            "expected": expected
         }
 
 

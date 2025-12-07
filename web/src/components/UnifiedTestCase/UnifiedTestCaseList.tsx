@@ -571,10 +571,77 @@ const UnifiedTestCaseList: React.FC<UnifiedTestCaseListProps> = ({
         {currentItem && (
           <div>
             {/* 详情内容 */}
-            <p>ID: {currentItem.case_id}</p>
-            <p>名称: {currentItem.name}</p>
-            <p>描述: {currentItem.description}</p>
-            {/* 更多详情... */}
+            <p><strong>ID:</strong> {currentItem.case_id}</p>
+            <p><strong>名称:</strong> {currentItem.name}</p>
+            <p><strong>描述:</strong> {currentItem.description}</p>
+            <p><strong>业务类型:</strong> {currentItem.business_type}</p>
+            <p><strong>模块:</strong> {currentItem.module || '-'}</p>
+            <p><strong>优先级:</strong> {currentItem.priority}</p>
+            <p><strong>状态:</strong> {currentItem.status}</p>
+
+            {/* 整体预期结果 */}
+            {(currentItem.expected_result || currentItem.steps?.some(step => step.expected)) && (
+              <div style={{ marginTop: 16, padding: '12px', backgroundColor: '#f5f5f5', borderRadius: '6px' }}>
+                <h4 style={{ marginTop: 0, marginBottom: 12 }}>预期结果</h4>
+
+                {/* 显示整体预期结果 */}
+                {currentItem.expected_result && (
+                  <div style={{ marginBottom: 12 }}>
+                    <strong>整体预期结果:</strong>
+                    <div style={{ marginLeft: 8, marginTop: 4, whiteSpace: 'pre-wrap' }}>
+                      {currentItem.expected_result}
+                    </div>
+                  </div>
+                )}
+
+                {/* 显示步骤级预期结果 */}
+                {currentItem.steps && currentItem.steps.length > 0 && (
+                  <div>
+                    <strong>步骤预期结果:</strong>
+                    {currentItem.steps.map((step, index) => (
+                      <div key={index} style={{ marginLeft: 8, marginTop: 8 }}>
+                        <div style={{ fontWeight: 500 }}>
+                          步骤 {step.step_number}: {step.action}
+                        </div>
+                        <div style={{ marginLeft: 16, marginTop: 4, color: '#666' }}>
+                          预期结果: {step.expected || '(无)'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 添加调试信息 */}
+            {process.env.NODE_ENV === 'development' && (
+              <div style={{ marginTop: 16, padding: '12px', backgroundColor: '#fff3cd', borderRadius: '6px', fontSize: '12px' }}>
+                <strong>调试信息:</strong>
+                <div style={{ marginLeft: 8, marginTop: 4 }}>
+                  <div>Steps: {JSON.stringify(currentItem.steps, null, 2)}</div>
+                  <div>Expected Result: {currentItem.expected_result}</div>
+                </div>
+              </div>
+            )}
+
+            {/* 前置条件 */}
+            {currentItem.preconditions && currentItem.preconditions.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <strong>前置条件:</strong>
+                <ul style={{ marginLeft: 16, marginTop: 4 }}>
+                  {currentItem.preconditions.map((condition, index) => (
+                    <li key={index}>{condition}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* 备注 */}
+            {currentItem.remarks && (
+              <div style={{ marginTop: 16 }}>
+                <strong>备注:</strong> {currentItem.remarks}
+              </div>
+            )}
           </div>
         )}
       </Modal>

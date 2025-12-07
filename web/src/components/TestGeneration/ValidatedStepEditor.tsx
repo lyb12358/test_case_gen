@@ -374,7 +374,7 @@ const ValidatedStepEditor: React.FC<ValidatedStepEditorProps> = ({
                 <div style={{ position: 'relative' }}>
                   <TextArea
                     placeholder={placeholder.expected}
-                    value={step.expected}
+                    value={step.expected || ''}
                     onChange={(e) => updateStep(index, 'expected', e.target.value)}
                     disabled={disabled}
                     rows={2}
