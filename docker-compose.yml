@@ -27,7 +27,7 @@ services:
     restart: unless-stopped
 
   tsp-nginx:
-    image: nginx:alpine
+    image: docker.1ms.run/library/nginx:latest 
     ports:
       - "8476:80"
     volumes:
