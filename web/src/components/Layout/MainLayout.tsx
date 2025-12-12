@@ -26,6 +26,7 @@ import {
   ThunderboltOutlined,
   DeploymentUnitOutlined,
   ExperimentOutlined,
+  HomeOutlined,
 } from '@ant-design/icons';
 import { useTask } from '@/contexts/TaskContext';
 import { useProject } from '@/contexts/ProjectContext';
@@ -52,6 +53,11 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
   } = theme.useToken();
 
   const menuItems = [
+    {
+      key: '/landing',
+      icon: <HomeOutlined />,
+      label: '产品首页',
+    },
     {
       key: '/dashboard',
       icon: <DashboardOutlined />,
@@ -111,6 +117,9 @@ const MainLayout: React.FC<MainLayoutProps> = () => {
 
   const getSelectedKeys = () => {
     const pathname = location.pathname;
+    if (pathname === '/landing') {
+      return ['/landing'];
+    }
     if (pathname === '/' || pathname === '/dashboard') {
       return ['/dashboard'];
     }

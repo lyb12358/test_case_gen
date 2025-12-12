@@ -525,7 +525,7 @@ async def create_unified_test_case(
             module=db_test_case.module,
             functional_module=db_test_case.functional_module,
             functional_domain=db_test_case.functional_domain,
-            preconditions=test_case.preconditions,  # 直接返回字符串格式
+            preconditions=db_test_case.preconditions,  # 直接返回字符串格式
             steps=_parse_json_field(db_test_case.steps),
             remarks=db_test_case.remarks,
             generation_job_id=db_test_case.generation_job_id,

@@ -10,6 +10,7 @@ import UnifiedTestCaseList from '@/components/UnifiedTestCase/UnifiedTestCaseLis
 import TaskList from '@/pages/Tasks/TaskList';
 import TaskDetail from '@/pages/Tasks/TaskDetail';
 import KnowledgeGraph from '@/pages/KnowledgeGraph';
+import LandingPage from '@/pages/LandingPage/LandingPage';
 import ProjectManager from '@/pages/Projects/ProjectManager';
 import { PromptList, PromptEditor, PromptDetail } from '@/pages/Prompts';
 // TestPoints components removed - using unified TestManagement
@@ -86,6 +87,9 @@ const App: React.FC = () => {
             <TaskProvider>
               <Router>
                 <Routes>
+                  {/* Landing Page - 独立布局 */}
+                  <Route path="/landing" element={<LandingPage />} />
+
                   <Route path="/" element={<MainLayout />}>
                     {/* ================================================ */}
                     {/* 公共页面 - 不需要项目上下文 */}
