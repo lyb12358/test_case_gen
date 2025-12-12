@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Modal,
   Card,
@@ -33,8 +33,8 @@ import {
   DownOutlined,
   UpOutlined
 } from '@ant-design/icons';
-import { DndProvider, useDrag, useDrop } from 'react-dnd';
-import { HTML5Backend } from 'react-dnd-html5-backend';
+import { DragDropProvider, SortableItem } from '../drag-drop';
+import { useDragDrop } from '../../hooks/useDragDrop';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { businessService, Prompt, PromptCombination } from '@/services/businessService';
 import CombinationPreview from './CombinationPreview';
@@ -116,31 +116,10 @@ const DraggablePromptItem: React.FC<DraggablePromptItemProps> = ({
   moveItem,
   removeItem
 }) => {
-  const ref = React.useRef<HTMLDivElement>(null);
   const { expandedItems, toggleExpanded } = useExpandedState();
   const isExpanded = expandedItems.has(item.id);
 
   const isLongContent = (item.prompt_content || '').length > 150;
-
-  const [{ isDragging }, drag] = useDrag({
-    type: 'prompt-item',
-    item: { index },
-    collect: (monitor) => ({
-      isDragging: monitor.isDragging(),
-    }),
-  });
-
-  const [, drop] = useDrop({
-    accept: 'prompt-item',
-    hover: (draggedItem: { index: number }) => {
-      if (draggedItem.index !== index) {
-        moveItem(draggedItem.index, index);
-        draggedItem.index = index;
-      }
-    },
-  });
-
-  drag(drop(ref));
 
   const getPromptTypeColor = (type: string) => {
     switch (type) {
@@ -161,13 +140,11 @@ const DraggablePromptItem: React.FC<DraggablePromptItemProps> = ({
   };
 
   return (
-    <div
-      ref={ref}
+    <SortableItem
+      id={item.id}
       style={{
-        opacity: isDragging ? 0.5 : 1,
-        cursor: 'move',
         marginBottom: '6px',
-        transition: 'opacity 0.2s ease'
+        cursor: 'move'
       }}
     >
       <Card
@@ -277,7 +254,7 @@ const DraggablePromptItem: React.FC<DraggablePromptItemProps> = ({
           </div>
         </div>
       </Card>
-    </div>
+    </SortableItem>
   );
 };
 
@@ -295,6 +272,8 @@ const InlinePromptBuilder: React.FC<InlinePromptBuilderProps> = ({
   const queryClient = useQueryClient();
   const [form] = Form.useForm();
 
+  const getItemId = useCallback((item: any) => item.id, []);
+
   // 状态管理
   const [selectedItems, setSelectedItems] = useState<Array<{
     id: string;
@@ -308,6 +287,12 @@ const InlinePromptBuilder: React.FC<InlinePromptBuilderProps> = ({
   const [showPreview, setShowPreview] = useState(false);
   const [combinationName, setCombinationName] = useState('');
   const [combinationDescription, setCombinationDescription] = useState('');
+
+  const {
+    items,
+    setItems,
+    handleDragEnd
+  } = useDragDrop(selectedItems, getItemId);
 
   // 获取可用提示词
   const { data: availablePrompts, isLoading: promptsLoading } = useQuery({
@@ -347,16 +332,19 @@ const InlinePromptBuilder: React.FC<InlinePromptBuilderProps> = ({
             order: item.order
           }));
           setSelectedItems(transformedItems);
+          setItems(transformedItems);
         }
       } else {
         // 创建模式：使用默认值
         const defaultName = `${businessTypeName} - ${stage === 'test_point' ? '测试点' : '测试用例'}生成组合`;
         setCombinationName(defaultName);
         setCombinationDescription(`为${businessTypeName}业务类型生成的${stage === 'test_point' ? '测试点' : '测试用例'}专用提示词组合`);
-        setSelectedItems([]);
+        const emptyItems = [];
+        setSelectedItems(emptyItems);
+        setItems(emptyItems);
       }
     }
-  }, [visible, businessTypeName, stage, existingCombination, existingCombinationId, tempCombinationData]);
+  }, [visible, businessTypeName, stage, existingCombination, existingCombinationId, tempCombinationData, setItems]);
 
   // 自动生成组合名称
   const generateCombinationName = () => {
@@ -365,9 +353,9 @@ const InlinePromptBuilder: React.FC<InlinePromptBuilderProps> = ({
   };
 
   // 添加提示词到组合
-  const addPromptToCombination = (prompt: Prompt) => {
+  const addPromptToCombination = useCallback((prompt: Prompt) => {
     // 检查是否已经添加
-    if (selectedItems.some(item => item.prompt_id === prompt.id)) {
+    if (items.some(item => item.prompt_id === prompt.id)) {
       message.warning('该提示词已经在组合中');
       return;
     }
@@ -378,39 +366,49 @@ const InlinePromptBuilder: React.FC<InlinePromptBuilderProps> = ({
       prompt_name: prompt.name,
       prompt_type: prompt.type,
       prompt_content: prompt.content,
-      order: selectedItems.length + 1
+      order: items.length + 1
     };
 
-    setSelectedItems([...selectedItems, newItem]);
-  };
+    const newItems = [...items, newItem];
+    setSelectedItems(newItems);
+    setItems(newItems);
+  }, [items, setSelectedItems, setItems]);
 
   // 从组合中移除提示词
-  const removePromptFromCombination = (itemId: string) => {
-    const newItems = selectedItems
+  const removePromptFromCombination = useCallback((itemId: string) => {
+    const newItems = items
       .filter(item => item.id !== itemId)
       .map((item, index) => ({ ...item, order: index + 1 }));
     setSelectedItems(newItems);
-  };
+    setItems(newItems);
+  }, [items, setSelectedItems, setItems]);
 
-  // 拖拽排序
-  const moveItem = (dragIndex: number, hoverIndex: number) => {
-    const dragItem = selectedItems[dragIndex];
-    const newItems = [...selectedItems];
-    newItems.splice(dragIndex, 1);
-    newItems.splice(hoverIndex, 0, dragItem);
+  // 拖拽排序处理
+  const handleDragEndWithOrderUpdate = useCallback((event: any) => {
+    handleDragEnd(event);
 
-    // 更新顺序
-    const reorderedItems = newItems.map((item, index) => ({
-      ...item,
-      order: index + 1
-    }));
+    // 如果拖拽改变了顺序，重新计算order
+    if (event.items) {
+      const reorderedItems = event.items.map((id: string, index: number) => {
+        const item = items.find(item => item.id === id);
+        return item ? { ...item, order: index + 1 } : null;
+      }).filter(Boolean) as Array<{
+        id: string;
+        prompt_id: number;
+        prompt_name: string;
+        prompt_type: string;
+        prompt_content: string;
+        order: number;
+      }>;
 
-    setSelectedItems(reorderedItems);
-  };
+      setItems(reorderedItems);
+      setSelectedItems(reorderedItems);
+    }
+  }, [handleDragEnd, items, setItems, setSelectedItems]);
 
   // 确认组合配置
-  const handleConfirm = () => {
-    if (selectedItems.length === 0) {
+  const handleConfirm = useCallback(() => {
+    if (items.length === 0) {
       message.error('请至少选择一个提示词');
       return;
     }
@@ -421,8 +419,8 @@ const InlinePromptBuilder: React.FC<InlinePromptBuilderProps> = ({
     }
 
     // 验证组合是否包含系统提示词
-    const hasSystemPrompt = selectedItems.some(item => item.prompt_type === 'system');
-    const hasBusinessDescription = selectedItems.some(item => item.prompt_type === 'business_description');
+    const hasSystemPrompt = items.some(item => item.prompt_type === 'system');
+    const hasBusinessDescription = items.some(item => item.prompt_type === 'business_description');
 
     if (!hasSystemPrompt) {
       message.warning('建议添加系统提示词以确保生成质量');
@@ -436,7 +434,7 @@ const InlinePromptBuilder: React.FC<InlinePromptBuilderProps> = ({
     const combinationData = {
       name: combinationName.trim(),
       description: combinationDescription.trim() || undefined,
-      items: selectedItems.map(item => ({
+      items: items.map(item => ({
         prompt_id: item.prompt_id,
         order: item.order,
         variable_name: undefined,
@@ -445,16 +443,16 @@ const InlinePromptBuilder: React.FC<InlinePromptBuilderProps> = ({
     };
 
     onSuccess(combinationData);
-  };
+  }, [items, combinationName, combinationDescription, stage, onSuccess]);
 
   // 预览组合
-  const handlePreview = () => {
-    if (selectedItems.length === 0) {
+  const handlePreview = useCallback(() => {
+    if (items.length === 0) {
       message.warning('请先添加提示词');
       return;
     }
     setShowPreview(true);
-  };
+  }, [items]);
 
   // 获取提示词类型颜色
   const getPromptTypeColor = (type: string) => {
@@ -492,7 +490,10 @@ const InlinePromptBuilder: React.FC<InlinePromptBuilderProps> = ({
   if (!visible) return null;
 
   return (
-    <DndProvider backend={HTML5Backend}>
+    <DragDropProvider
+      items={items.map(item => item.id)}
+      onDragEnd={handleDragEndWithOrderUpdate}
+    >
       <Modal
         title={
           <Space>
@@ -512,7 +513,7 @@ const InlinePromptBuilder: React.FC<InlinePromptBuilderProps> = ({
             key="preview"
             icon={<EyeOutlined />}
             onClick={handlePreview}
-            disabled={selectedItems.length === 0}
+            disabled={items.length === 0}
           >
             预览组合
           </Button>,
@@ -521,7 +522,7 @@ const InlinePromptBuilder: React.FC<InlinePromptBuilderProps> = ({
             type="primary"
             icon={<CheckCircleOutlined />}
             onClick={handleConfirm}
-            disabled={selectedItems.length === 0}
+            disabled={items.length === 0}
           >
             确认配置
           </Button>
@@ -575,9 +576,9 @@ const InlinePromptBuilder: React.FC<InlinePromptBuilderProps> = ({
                                 size="small"
                                 icon={<PlusOutlined />}
                                 onClick={() => addPromptToCombination(prompt)}
-                                disabled={selectedItems.some(item => item.prompt_id === prompt.id)}
+                                disabled={items.some(item => item.prompt_id === prompt.id)}
                               >
-                                {selectedItems.some(item => item.prompt_id === prompt.id) ? '已添加' : '添加'}
+                                {items.some(item => item.prompt_id === prompt.id) ? '已添加' : '添加'}
                               </Button>
                             ]}
                           >
@@ -616,9 +617,9 @@ const InlinePromptBuilder: React.FC<InlinePromptBuilderProps> = ({
                               size="small"
                               icon={<PlusOutlined />}
                               onClick={() => addPromptToCombination(prompt)}
-                              disabled={selectedItems.some(item => item.prompt_id === prompt.id)}
+                              disabled={items.some(item => item.prompt_id === prompt.id)}
                             >
-                              {selectedItems.some(item => item.prompt_id === prompt.id) ? '已添加' : '添加'}
+                              {items.some(item => item.prompt_id === prompt.id) ? '已添加' : '添加'}
                             </Button>
                           ]}
                         >
@@ -682,7 +683,7 @@ const InlinePromptBuilder: React.FC<InlinePromptBuilderProps> = ({
                   padding: '8px'
                 }}
               >
-                {selectedItems.length === 0 ? (
+                {items.length === 0 ? (
                   <div style={{
                     textAlign: 'center',
                     padding: '32px 20px',
@@ -748,7 +749,7 @@ const InlinePromptBuilder: React.FC<InlinePromptBuilderProps> = ({
                           minWidth: '20px',
                           textAlign: 'center'
                         }}>
-                          {selectedItems.length}
+                          {items.length}
                         </div>
                         <Text
                           strong
@@ -783,12 +784,12 @@ const InlinePromptBuilder: React.FC<InlinePromptBuilderProps> = ({
                       </div>
                     </div>
 
-                    {selectedItems.map((item, index) => (
+                    {items.map((item, index) => (
                       <DraggablePromptItem
                         key={item.id}
                         item={item}
                         index={index}
-                        moveItem={moveItem}
+                        moveItem={() => {}} // 不再需要，@dnd-kit 处理
                         removeItem={removePromptFromCombination}
                       />
                     ))}
@@ -813,7 +814,7 @@ const InlinePromptBuilder: React.FC<InlinePromptBuilderProps> = ({
           ]}
         >
           <CombinationPreview
-            items={selectedItems.map(item => ({
+            items={items.map(item => ({
               id: parseInt(item.id) || item.prompt_id,
               combination_id: 0,
               prompt_id: item.prompt_id,
@@ -832,7 +833,7 @@ const InlinePromptBuilder: React.FC<InlinePromptBuilderProps> = ({
             onClose={() => setShowPreview(false)}
           />
         </Modal>
-    </DndProvider>
+    </DragDropProvider>
   );
 };
 

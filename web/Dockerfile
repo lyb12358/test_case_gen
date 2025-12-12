@@ -6,7 +6,7 @@ RUN npm config set registry https://registry.npmmirror.com
 
 FROM base as deps
 COPY package*.json ./
-RUN npm ci
+RUN npm cache clean --force && npm ci --legacy-peer-deps
 
 FROM base as builder
 # 硬编码相对路径 API 地址（支持外网访问）
