@@ -189,7 +189,7 @@ class ConfigurationService {
 
     try {
       const response = await apiClient.get<Record<string, ConfigurationItem>>(
-        API_ENDPOINTS.CONFIG.SYSTEM_INFO,
+        API_ENDPOINTS.CONFIG.SYSTEM_INFO, // 使用SYSTEM_INFO端点，直接映射到/config/all
         { params: { refresh: refresh || false } }
       );
 
@@ -208,7 +208,7 @@ class ConfigurationService {
   async getGenerationStage(generationStage: string): Promise<ConfigurationItem> {
     try {
       const response = await apiClient.get<ConfigurationItem>(
-        `${API_ENDPOINTS.CONFIG.SYSTEM_INFO}/${generationStage}`
+        `${API_ENDPOINTS.CONFIG.SYSTEM_INFO}/generation-stages/${generationStage}` // 映射到system-info下的generation-stages端点
       );
       return response.data;
     } catch (error) {
@@ -227,7 +227,7 @@ class ConfigurationService {
 
     try {
       const response = await apiClient.get<AllConfigurationResponse>(
-        API_ENDPOINTS.CONFIG.SYSTEM_INFO,
+        API_ENDPOINTS.CONFIG.SYSTEM_INFO, // 使用SYSTEM_INFO端点，直接映射到/config/all
         { params: { refresh: refresh || false } }
       );
 
@@ -248,7 +248,7 @@ class ConfigurationService {
    */
   async refreshCache(): Promise<void> {
     try {
-      await apiClient.post(API_ENDPOINTS.CONFIG.SYSTEM_INFO + '/refresh-cache');
+      await apiClient.post(API_ENDPOINTS.CONFIG.SYSTEM_INFO + '/refresh-cache'); // 使用正确的refresh-cache端点
       this.clearCache();
     } catch (error) {
       console.error('Failed to refresh cache:', error);
@@ -262,7 +262,7 @@ class ConfigurationService {
   async validateBusinessType(businessType: string): Promise<boolean> {
     try {
       const response = await apiClient.get<ValidationResult>(
-        `${API_ENDPOINTS.CONFIG.SYSTEM_INFO}/validate/business-type/${businessType}`
+        `${API_ENDPOINTS.CONFIG.VALIDATE.BUSINESS_TYPE}/${businessType}`
       );
       return response.data.valid;
     } catch (error) {
@@ -277,7 +277,7 @@ class ConfigurationService {
   async validatePromptType(promptType: string): Promise<boolean> {
     try {
       const response = await apiClient.get<ValidationResult>(
-        `${API_ENDPOINTS.CONFIG.SYSTEM_INFO}/validate/prompt-type/${promptType}`
+        `${API_ENDPOINTS.CONFIG.VALIDATE.PROMPT_TYPE}/${promptType}`
       );
       return response.data.valid;
     } catch (error) {
@@ -292,7 +292,7 @@ class ConfigurationService {
   async validatePromptStatus(promptStatus: string): Promise<boolean> {
     try {
       const response = await apiClient.get<ValidationResult>(
-        `${API_ENDPOINTS.CONFIG.SYSTEM_INFO}/validate/prompt-status/${promptStatus}`
+        `${API_ENDPOINTS.CONFIG.VALIDATE.PROMPT_STATUS}/${promptStatus}`
       );
       return response.data.valid;
     } catch (error) {

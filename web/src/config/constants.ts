@@ -39,16 +39,16 @@ export const API_ENDPOINTS = {
 
   // 统一测试用例相关 (两阶段统一系统)
   UNIFIED_TEST_CASES: {
-    LIST: '/v1/unified-test-cases',
-    DETAIL: '/v1/unified-test-cases',
-    CREATE: '/v1/unified-test-cases',
-    UPDATE: '/v1/unified-test-cases',
-    DELETE: '/v1/unified-test-cases',
-    BATCH: '/v1/unified-test-cases/batch',
-    STATISTICS: '/v1/unified-test-cases/statistics/overview',
-    GENERATE_TEST_CASES: '/v1/unified-test-cases/generate',
-    GENERATE_FULL_TWO_STAGE: '/v1/unified-test-cases/generate/full-two-stage',
-    GENERATE_STATUS: '/v1/unified-test-cases/generate/status'
+    LIST: '/v1/unified-test-cases/',
+    DETAIL: '/v1/unified-test-cases/',
+    CREATE: '/v1/unified-test-cases/',
+    UPDATE: '/v1/unified-test-cases/',
+    DELETE: '/v1/unified-test-cases/',
+    BATCH: '/v1/unified-test-cases/batch/',
+    STATISTICS: '/v1/unified-test-cases/statistics/overview/',
+    GENERATE_TEST_CASES: '/v1/unified-test-cases/generate/',
+    GENERATE_FULL_TWO_STAGE: '/v1/unified-test-cases/generate/full-two-stage/',
+    GENERATE_STATUS: '/v1/unified-test-cases/generate/status/'
   },
 
   // 测试用例相关 (已弃用，请使用UNIFIED_TEST_CASES)
@@ -95,25 +95,31 @@ export const API_ENDPOINTS = {
 
   // 提示词相关
   PROMPTS: {
-    LIST: '/v1/prompts',
-    DETAIL: '/v1/prompts',
-    CREATE: '/v1/prompts',
-    UPDATE: '/v1/prompts',
-    DELETE: '/v1/prompts',
-    CATEGORIES: '/v1/prompts/categories',
-    TEMPLATES: '/v1/prompts/templates',
-    SEARCH: '/v1/prompts/search',
-    VALIDATE: '/v1/prompts/validate',
-    BUILD: '/v1/prompts/build',
-    STATS: '/v1/prompts/stats/overview'
+    LIST: '/v1/prompts/',
+    DETAIL: '/v1/prompts/',
+    CREATE: '/v1/prompts/',
+    UPDATE: '/v1/prompts/',
+    DELETE: '/v1/prompts/',
+    CATEGORIES: '/v1/prompts/categories/',
+    TEMPLATES: '/v1/prompts/templates/',
+    SEARCH: '/v1/prompts/search/',
+    VALIDATE: '/v1/prompts/validate/',
+    BUILD: '/v1/prompts/build/',
+    STATS: '/v1/prompts/stats/overview/'
   },
 
   // 配置相关
   CONFIG: {
     BUSINESS_TYPES: '/v1/config/business-types',
     PROMPT_TYPES: '/v1/config/prompt-types',
-    SYSTEM_INFO: '/v1/config/system-info',
-    TEMPLATE_VARIABLES: '/v1/config/template-variables'
+    SYSTEM_INFO: '/v1/config/all',  // 指向后端/all端点，获取所有配置数据
+    TEMPLATE_VARIABLES: '/v1/config/template-variables',
+    VALIDATE: {  // 验证相关端点
+      BUSINESS_TYPE: '/v1/config/validate/business-type',
+      PROMPT_TYPE: '/v1/config/validate/prompt-type',
+      PROMPT_STATUS: '/v1/config/validate/prompt-status',
+      GENERATION_STAGE: '/v1/config/validate/generation-stage'
+    }
   }
 } as const;
 
