@@ -9,7 +9,7 @@ services:
       - "8475:8000"
     environment:
       # Docker 环境数据库配置（覆盖 .env）
-      - HOST=172.17.0.1:3306  # Docker默认网关，替代host.docker.internal
+      - HOST=172.17.0.1:8474  # Docker默认网关，使用正确的MySQL端口8474
       - USER=tsp
       - PASSWORD=2222
       - DATABASE=testcase_gen
