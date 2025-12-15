@@ -49,8 +49,8 @@ def get_db() -> Generator[Session, None, None]:
     FastAPI dependency for database session management.
 
     This function follows FastAPI and SQLAlchemy best practices:
-    - Uses context managers for proper resource cleanup
-    - Implements connection pooling through the DatabaseManager
+    - Creates a new session for each request
+    - Implements proper session lifecycle management
     - Handles transaction management automatically
     - Ensures sessions are properly closed even on exceptions
 
@@ -65,18 +65,22 @@ def get_db() -> Generator[Session, None, None]:
     """
     db_manager = get_database_manager()
 
-    # Use DatabaseManager's context manager for proper session lifecycle
-    with db_manager.get_session() as db:
-        try:
-            yield db
-        except SQLAlchemyError as e:
-            logger.error(f"Database session error: {str(e)}")
-            # Session will be automatically rolled back and closed by context manager
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error in database session: {str(e)}")
-            # Session will be automatically rolled back and closed by context manager
-            raise
+    # Create a new session for this request
+    db = db_manager.SessionLocal()
+
+    try:
+        yield db
+    except SQLAlchemyError as e:
+        logger.error(f"Database session error: {str(e)}")
+        db.rollback()
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in database session: {str(e)}")
+        db.rollback()
+        raise
+    finally:
+        # Ensure session is always closed
+        db.close()
 
 
 # Additional convenience dependencies
@@ -87,17 +91,24 @@ def get_db_with_transaction() -> Generator[Session, None, None]:
     """
     db_manager = get_database_manager()
 
-    with db_manager.get_session() as db:
-        try:
-            # Begin transaction explicitly
-            with db.begin():
-                yield db
-        except SQLAlchemyError as e:
-            logger.error(f"Transaction error: {str(e)}")
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected transaction error: {str(e)}")
-            raise
+    # Create a new session for this request
+    db = db_manager.SessionLocal()
+
+    try:
+        # Begin transaction explicitly
+        with db.begin():
+            yield db
+    except SQLAlchemyError as e:
+        logger.error(f"Transaction error: {str(e)}")
+        db.rollback()
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected transaction error: {str(e)}")
+        db.rollback()
+        raise
+    finally:
+        # Ensure session is always closed
+        db.close()
 
 
 def get_db_readonly() -> Generator[Session, None, None]:
@@ -107,17 +118,24 @@ def get_db_readonly() -> Generator[Session, None, None]:
     """
     db_manager = get_database_manager()
 
-    with db_manager.get_session() as db:
-        try:
-            # Set read-only isolation level if supported
-            db.execute(text("SET TRANSACTION READ ONLY"))
-            yield db
-        except SQLAlchemyError as e:
-            logger.error(f"Read-only database session error: {str(e)}")
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error in read-only session: {str(e)}")
-            raise
+    # Create a new session for this request
+    db = db_manager.SessionLocal()
+
+    try:
+        # Set read-only isolation level if supported
+        db.execute(text("SET TRANSACTION READ ONLY"))
+        yield db
+    except SQLAlchemyError as e:
+        logger.error(f"Read-only database session error: {str(e)}")
+        db.rollback()
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in read-only session: {str(e)}")
+        db.rollback()
+        raise
+    finally:
+        # Ensure session is always closed
+        db.close()
 
 
 def get_db_for_background() -> DatabaseManager:

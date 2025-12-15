@@ -77,6 +77,146 @@ const UnifiedTestCaseList: React.FC<UnifiedTestCaseListProps> = ({
   showActions = true,
   selectable = true
 }) => {
+  // 预期结果渲染函数
+  const renderExpectedResults = (currentItem: UnifiedTestCaseResponse) => {
+    // 检查是否有任何预期结果数据
+    const hasGlobalExpectedResult = !!currentItem.expected_result;
+    const hasStepExpectedResults = currentItem.steps?.some(step => step.expected);
+
+    if (!hasGlobalExpectedResult && !hasStepExpectedResults) {
+      return null;
+    }
+
+    // 尝试解析全局预期结果
+    let parsedGlobalExpected: string[] = [];
+    if (hasGlobalExpectedResult && currentItem.expected_result) {
+      try {
+        // 尝试解析为JSON数组
+        if (currentItem.expected_result.startsWith('[') && currentItem.expected_result.endsWith(']')) {
+          parsedGlobalExpected = JSON.parse(currentItem.expected_result);
+        } else {
+          // 按换行符分割
+          parsedGlobalExpected = currentItem.expected_result.split('\n').filter(line => line.trim());
+        }
+      } catch (error) {
+        console.warn('Failed to parse expected_result:', error);
+        // 解析失败时按换行符分割
+        parsedGlobalExpected = currentItem.expected_result.split('\n').filter(line => line.trim());
+      }
+    }
+
+    // 统计有效预期结果数量
+    const validStepsWithExpected = currentItem.steps?.filter(step => step.expected) || [];
+    const validStepsWithoutExpected = currentItem.steps?.filter(step => !step.expected) || [];
+
+    return (
+      <div style={{ marginTop: 16, padding: '12px', backgroundColor: '#f5f5f5', borderRadius: '6px' }}>
+        <h4 style={{ marginTop: 0, marginBottom: 12 }}>
+          预期结果
+          <span style={{ fontSize: '12px', color: '#666', marginLeft: 8 }}>
+            ({validStepsWithExpected.length}/{currentItem.steps?.length || 0} 步骤有预期结果)
+          </span>
+        </h4>
+
+        {/* 显示整体预期结果 */}
+        {hasGlobalExpectedResult && (
+          <div style={{ marginBottom: 12 }}>
+            <strong>整体预期结果:</strong>
+            <div style={{ marginLeft: 8, marginTop: 4, whiteSpace: 'pre-wrap', fontSize: '12px', color: '#333' }}>
+              {Array.isArray(parsedGlobalExpected) ? (
+                parsedGlobalExpected.map((item, index) => (
+                  <div key={index} style={{ marginBottom: 2 }}>
+                    {index + 1}. {item}
+                  </div>
+                ))
+              ) : (
+                currentItem.expected_result
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 显示步骤级预期结果 */}
+        {currentItem.steps && currentItem.steps.length > 0 && (
+          <div>
+            <strong>步骤预期结果:</strong>
+            {currentItem.steps.map((step, index) => (
+              <div key={index} style={{
+                marginLeft: 8,
+                marginTop: 8,
+                padding: '8px',
+                backgroundColor: step.expected ? '#e6f7ff' : '#fff1f0',
+                borderRadius: '4px',
+                border: step.expected ? '1px solid #91d5ff' : '1px solid #ffccc7'
+              }}>
+                <div style={{ fontWeight: 500, fontSize: '13px' }}>
+                  <span style={{
+                    color: step.expected ? '#1890ff' : '#ff4d4f',
+                    marginRight: 8
+                  }}>
+                    ●
+                  </span>
+                  步骤 {step.step_number}: {step.action}
+                </div>
+                <div style={{
+                  marginLeft: 16,
+                  marginTop: 4,
+                  color: step.expected ? '#333' : '#999',
+                  fontSize: '12px'
+                }}>
+                  <span style={{ fontWeight: 500 }}>
+                    预期结果:
+                  </span>
+                  {step.expected ? (
+                    <span style={{ color: '#52c41a' }}>
+                      {step.expected}
+                    </span>
+                  ) : (
+                    <span style={{ color: '#ff4d4f', fontStyle: 'italic' }}>
+                      (无预期结果 - 系统未正确分配)
+                    </span>
+                  )}
+                </div>
+                {process.env.NODE_ENV === 'development' && (
+                  <div style={{
+                    marginLeft: 16,
+                    marginTop: 4,
+                    fontSize: '10px',
+                    color: '#999',
+                    fontFamily: 'monospace'
+                  }}>
+                    Debug: expected="{String(step.expected)}" | stepNumber={step.step_number}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {/* 显示未分配预期结果的步骤统计 */}
+            {validStepsWithoutExpected.length > 0 && (
+              <div style={{
+                marginLeft: 8,
+                marginTop: 12,
+                padding: '8px',
+                backgroundColor: '#fff7e6',
+                borderRadius: '4px',
+                border: '1px solid #ffd591'
+              }}>
+                <span style={{ color: '#fa8c16', fontSize: '12px', fontWeight: 500 }}>
+                  ⚠️ {validStepsWithoutExpected.length} 个步骤未分配预期结果
+                </span>
+                {hasGlobalExpectedResult && (
+                  <span style={{ color: '#666', fontSize: '11px', marginLeft: 8 }}>
+                    系统检测到 {parsedGlobalExpected.length} 个全局预期结果可用
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // 状态管理
   const [loading, setLoading] = useState(false);
   const [testCases, setTestCases] = useState<UnifiedTestCaseResponse[]>([]);
@@ -579,39 +719,8 @@ const UnifiedTestCaseList: React.FC<UnifiedTestCaseListProps> = ({
             <p><strong>优先级:</strong> {currentItem.priority}</p>
             <p><strong>状态:</strong> {currentItem.status}</p>
 
-            {/* 整体预期结果 */}
-            {(currentItem.expected_result || currentItem.steps?.some(step => step.expected)) && (
-              <div style={{ marginTop: 16, padding: '12px', backgroundColor: '#f5f5f5', borderRadius: '6px' }}>
-                <h4 style={{ marginTop: 0, marginBottom: 12 }}>预期结果</h4>
-
-                {/* 显示整体预期结果 */}
-                {currentItem.expected_result && (
-                  <div style={{ marginBottom: 12 }}>
-                    <strong>整体预期结果:</strong>
-                    <div style={{ marginLeft: 8, marginTop: 4, whiteSpace: 'pre-wrap' }}>
-                      {currentItem.expected_result}
-                    </div>
-                  </div>
-                )}
-
-                {/* 显示步骤级预期结果 */}
-                {currentItem.steps && currentItem.steps.length > 0 && (
-                  <div>
-                    <strong>步骤预期结果:</strong>
-                    {currentItem.steps.map((step, index) => (
-                      <div key={index} style={{ marginLeft: 8, marginTop: 8 }}>
-                        <div style={{ fontWeight: 500 }}>
-                          步骤 {step.step_number}: {step.action}
-                        </div>
-                        <div style={{ marginLeft: 16, marginTop: 4, color: '#666' }}>
-                          预期结果: {step.expected || '(无)'}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+            {/* 整体预期结果和步骤预期结果 */}
+            {renderExpectedResults(currentItem)}
 
             {/* 添加调试信息 */}
             {process.env.NODE_ENV === 'development' && (

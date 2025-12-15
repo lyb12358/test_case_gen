@@ -68,6 +68,10 @@ def _get_business_type_value(business_type):
         return business_type.value
     return business_type
 
+
+
+
+
 # Implementation function
 async def get_unified_test_cases_impl(
     filter_params: UnifiedTestCaseFilter,
@@ -156,7 +160,7 @@ async def get_unified_test_cases_impl(
                 functional_module=test_case.functional_module,
                 functional_domain=test_case.functional_domain,
                 preconditions=test_case.preconditions,  # 直接返回字符串格式
-                steps=_parse_steps_field(test_case.steps),
+                steps=_merge_steps_with_expected_results(_parse_steps_field(test_case.steps), test_case.expected_result),
                 expected_result=test_case.expected_result,
                 remarks=test_case.remarks,
                 generation_job_id=test_case.generation_job_id,
@@ -440,6 +444,7 @@ async def create_unified_test_case(
         if not project:
             raise HTTPException(status_code=400, detail="项目不存在")
 
+  
         # 检查test_case_id在项目内的唯一性
         existing_case = db.query(UnifiedTestCase).filter(
             and_(
@@ -563,11 +568,12 @@ async def update_unified_test_case(
         if 'expected_result' in raw_data:
             logger.info(f"🎯 Expected_result in raw data: type={type(raw_data['expected_result'])}, value={raw_data['expected_result']}")
         else:
-            logger.warning("⚠️ Expected_result NOT found in raw update data!")
+            logger.info("ℹ️ Expected_result not provided in update (will keep existing value)")
 
         if 'preconditions' in raw_data:
             logger.info(f"📋 Preconditions in raw data: type={type(raw_data['preconditions'])}, value={raw_data['preconditions']}")
 
+  
         test_case = db.query(UnifiedTestCase).filter(UnifiedTestCase.id == test_case_id).first()
 
         if not test_case:
@@ -1981,49 +1987,95 @@ def _serialize_json_field(field_value: Optional[Any]) -> Optional[str]:
 
 def _parse_steps_field(field_value: Optional[str]) -> Optional[List[Dict[str, Any]]]:
     """解析steps字段，处理JSON和旧格式"""
+    logger.info(f"🔍 Parsing steps field, input length: {len(str(field_value)) if field_value else 0}")
+
     if field_value is None:
+        logger.info("📋 Steps field is None")
         return None
 
     # 首先尝试解析为JSON
     try:
         parsed = json.loads(field_value)
+        logger.info(f"✅ JSON parsing successful, type: {type(parsed)}")
+
         if isinstance(parsed, list):
+            logger.info(f"📋 Parsed list with {len(parsed)} items")
+
             # 检查是否是字符串列表（旧格式）
             if all(isinstance(item, str) for item in parsed):
+                logger.info("🔄 Converting string list to step objects")
                 # 处理字符串列表格式
                 steps = []
-                for item in parsed:
+                for i, item in enumerate(parsed):
                     step_dict = _parse_single_step_string(item)
                     if step_dict:
+                        # 确保step_number正确设置
+                        step_dict['step_number'] = i + 1
+                        logger.debug(f"📋 Converted string {i+1} to step: {step_dict.get('action', '')[:50]}...")
                         steps.append(step_dict)
+                    else:
+                        logger.warning(f"⚠️ Failed to parse step string: {item[:50]}...")
+
+                logger.info(f"✅ Converted {len(steps)} strings to step objects")
                 return steps if steps else None
             else:
-                # 已经是正确的字典列表格式
-                return parsed
-    except (json.JSONDecodeError, TypeError):
+                # 已经是字典列表格式，验证并完善
+                logger.info("📋 Processing existing dictionary list")
+                validated_steps = []
+                for i, step in enumerate(parsed):
+                    if isinstance(step, dict):
+                        # 确保必要字段存在
+                        validated_step = {
+                            "step_number": step.get("step_number", i + 1),
+                            "action": step.get("action", step.get("description", "")),
+                            "expected": step.get("expected", "")
+                        }
+                        # 保留其他字段
+                        for key, value in step.items():
+                            if key not in validated_step:
+                                validated_step[key] = value
+                        validated_steps.append(validated_step)
+                        logger.debug(f"📋 Validated step {i+1}: {validated_step.get('action', '')[:50]}...")
+                    else:
+                        logger.warning(f"⚠️ Step {i} is not a dictionary: {step}")
+
+                logger.info(f"✅ Validated {len(validated_steps)} step objects")
+                return validated_steps if validated_steps else None
+        else:
+            logger.warning(f"⚠️ Parsed JSON is not a list: {type(parsed)}")
+
+    except (json.JSONDecodeError, TypeError) as e:
+        logger.error(f"❌ JSON parsing failed: {str(e)}")
         pass
 
     # 如果JSON解析失败，处理旧格式字符串
     if isinstance(field_value, str):
+        logger.info("🔄 Processing as plain text string")
         try:
             # 按行分割步骤
             lines = field_value.strip().split('\n')
             steps = []
 
-            for line in lines:
+            for i, line in enumerate(lines):
                 line = line.strip()
                 if not line:
                     continue
 
                 step_dict = _parse_single_step_string(line)
                 if step_dict:
+                    # 确保step_number正确设置
+                    step_dict['step_number'] = i + 1
                     steps.append(step_dict)
+                    logger.debug(f"📋 Parsed line {i+1}: {step_dict.get('action', '')[:50]}...")
 
+            logger.info(f"✅ Parsed {len(steps)} steps from plain text")
             return steps if steps else None
-        except Exception:
+        except Exception as e:
+            logger.error(f"❌ Plain text parsing failed: {str(e)}")
             # 如果所有解析都失败，返回None
             return None
 
+    logger.warning("⚠️ No parsing method succeeded")
     return None
 
 
@@ -2041,43 +2093,76 @@ def _merge_steps_with_expected_results(
     Returns:
         List[Dict[str, Any]]: 合并后的步骤列表，每个步骤包含action和expected字段
     """
+    logger.info(f"🔍 Starting merge process with {len(steps) if steps else 0} steps")
+    logger.info(f"🎯 Expected result type: {type(expected_result)}, length: {len(str(expected_result)) if expected_result else 0}")
+
     if not steps:
+        logger.info("ℹ️ No steps provided for merging (returning empty list)")
         return []
 
     # 解析预期结果
     expected_results = []
     if expected_result:
+        logger.info(f"📋 Parsing expected_result: {expected_result[:100]}...")
         try:
             # 如果expected_result是JSON字符串数组
             if expected_result.startswith('[') and expected_result.endswith(']'):
                 parsed_expected = json.loads(expected_result)
                 if isinstance(parsed_expected, list):
                     expected_results = [str(item).strip() for item in parsed_expected if str(item).strip()]
+                    logger.info(f"✅ Parsed JSON expected results: {len(expected_results)} items")
+                else:
+                    logger.warning(f"⚠️ Parsed JSON is not a list: {type(parsed_expected)}")
             else:
                 # 如果是普通字符串，按换行符分割
                 expected_results = [item.strip() for item in expected_result.split('\n') if item.strip()]
-        except (json.JSONDecodeError, Exception):
+                logger.info(f"✅ Parsed text expected results: {len(expected_results)} items")
+        except (json.JSONDecodeError, Exception) as e:
             # 解析失败时按换行符分割
+            logger.error(f"❌ Failed to parse expected_result: {str(e)}")
             expected_results = [item.strip() for item in str(expected_result).split('\n') if item.strip()]
+            logger.info(f"🔄 Fallback parsed: {len(expected_results)} items")
+    else:
+        logger.info("📋 No expected_result provided")
 
     # 合并步骤和预期结果
     merged_steps = []
     expected_count = len(expected_results)
+    steps_with_expected = 0
+    steps_without_expected = 0
 
     for i, step in enumerate(steps):
+        # 优先使用步骤自身的expected字段
+        step_expected = step.get("expected", "")
+        if step_expected:
+            steps_with_expected += 1
+            logger.debug(f"📋 Step {i+1} already has expected: {step_expected[:50]}...")
+
+        # 如果步骤没有expected字段，尝试从expected_result中获取
+        if not step_expected and i < expected_count:
+            step_expected = expected_results[i]
+            steps_with_expected += 1
+            logger.debug(f"🎯 Assigned expected result to step {i+1}: {step_expected[:50]}...")
+        elif not step_expected:
+            steps_without_expected += 1
+            logger.debug(f"⚠️ No expected result for step {i+1}")
+
         step_data = {
             "step_number": step.get("step_number", i + 1),
             "action": step.get("action", step.get("description", "")),
-            "expected": ""  # 默认为空字符串
+            "expected": step_expected
         }
 
-        # 只有在数量范围内才设置预期结果
-        if i < expected_count:
-            step_data["expected"] = expected_results[i]
+        # 保留步骤的其他字段
+        for key, value in step.items():
+            if key not in step_data:
+                step_data[key] = value
 
         merged_steps.append(step_data)
 
-    logger.debug(f"Merged {len(steps)} steps with {expected_count} expected results")
+    logger.info(f"✅ Merged {len(steps)} steps with {expected_count} expected results")
+    logger.info(f"📊 Steps with expected: {steps_with_expected}, without expected: {steps_without_expected}")
+
     return merged_steps
 
 
