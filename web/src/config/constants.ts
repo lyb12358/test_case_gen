@@ -33,8 +33,8 @@ export const API_ENDPOINTS = {
     INITIALIZE: '/v1/knowledge-graph/initialize',
     CLEAR: '/v1/knowledge-graph/clear',
     ENTITY_DETAILS: '/v1/knowledge-graph/entities',
-    BUSINESS_DESCRIPTION: '/v1/knowledge-graph/entities',
-    TEST_CASES: '/v1/knowledge-graph/entities'
+    BUSINESS_DESCRIPTION: '/v1/knowledge-graph/business-description',
+    TEST_CASES: '/v1/knowledge-graph/test-cases'
   },
 
   // 统一测试用例相关 (两阶段统一系统)
@@ -46,7 +46,7 @@ export const API_ENDPOINTS = {
     DELETE: '/v1/unified-test-cases',
     BATCH: '/v1/unified-test-cases/batch',
     STATISTICS: '/v1/unified-test-cases/statistics/overview',
-    GENERATE_TEST_CASES: '/v1/unified-test-cases/generate/test-cases',
+    GENERATE_TEST_CASES: '/v1/unified-test-cases/generate',
     GENERATE_FULL_TWO_STAGE: '/v1/unified-test-cases/generate/full-two-stage',
     GENERATE_STATUS: '/v1/unified-test-cases/generate/status'
   },
@@ -71,7 +71,9 @@ export const API_ENDPOINTS = {
   // 业务类型相关
   BUSINESS_TYPES: {
     LIST: '/v1/business/business-types',
-    CONFIG: '/v1/business-types/config'
+    CONFIG: '/v1/business-types/config',
+    PROMPT_COMBINATIONS: '/v1/business/prompt-combinations',
+    AVAILABLE_PROMPTS: '/v1/business/available-prompts'
   },
 
   // 项目相关
@@ -110,7 +112,8 @@ export const API_ENDPOINTS = {
   CONFIG: {
     BUSINESS_TYPES: '/v1/config/business-types',
     PROMPT_TYPES: '/v1/config/prompt-types',
-    SYSTEM_INFO: '/v1/config/system-info'
+    SYSTEM_INFO: '/v1/config/system-info',
+    TEMPLATE_VARIABLES: '/v1/config/template-variables'
   }
 } as const;
 

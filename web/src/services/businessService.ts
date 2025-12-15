@@ -3,6 +3,7 @@
  */
 
 import apiClient from './api';
+import { API_ENDPOINTS } from '@/config/constants';
 
 // Types for business management
 
@@ -224,7 +225,7 @@ class BusinessService {
     }
 
     // Use the real API endpoint
-    const url = `/api/v1/business/business-types${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    const url = `${API_ENDPOINTS.BUSINESS_TYPES.LIST}${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
     const response = await apiClient.get(url);
 
     // The API already returns the correct format with all fields needed
@@ -240,26 +241,26 @@ class BusinessService {
   }
 
   async getBusinessType(id: number): Promise<BusinessType> {
-    const response = await apiClient.get(`/api/v1/business/business-types/${id}`);
+    const response = await apiClient.get(`${API_ENDPOINTS.BUSINESS_TYPES.LIST}/${id}`);
     return response.data;
   }
 
   async createBusinessType(data: BusinessTypeCreate): Promise<BusinessType> {
-    const response = await apiClient.post('/api/v1/business/business-types', data);
+    const response = await apiClient.post(API_ENDPOINTS.BUSINESS_TYPES.LIST, data);
     return response.data;
   }
 
   async updateBusinessType(id: number, data: BusinessTypeUpdate): Promise<BusinessType> {
-    const response = await apiClient.put(`/api/v1/business/business-types/${id}`, data);
+    const response = await apiClient.put(`${API_ENDPOINTS.BUSINESS_TYPES.LIST}/${id}`, data);
     return response.data;
   }
 
   async deleteBusinessType(id: number): Promise<void> {
-    await apiClient.delete(`/api/v1/business/business-types/${id}`);
+    await apiClient.delete(`${API_ENDPOINTS.BUSINESS_TYPES.LIST}/${id}`);
   }
 
   async activateBusinessType(id: number, data: BusinessTypeActivationRequest): Promise<BusinessType> {
-    const response = await apiClient.put(`/api/v1/business/business-types/${id}/activate`, data);
+    const response = await apiClient.put(`${API_ENDPOINTS.BUSINESS_TYPES.LIST}/${id}/activate`, data);
     return response.data;
   }
 
@@ -269,7 +270,7 @@ class BusinessService {
       queryParams.append('project_id', project_id.toString());
     }
 
-    const url = `/api/v1/business/business-types/stats/overview${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    const url = `${API_ENDPOINTS.BUSINESS_TYPES.LIST}/stats/overview${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
     const response = await apiClient.get(url);
     return response.data;
   }
@@ -297,37 +298,37 @@ class BusinessService {
       queryParams.append('size', params.size.toString());
     }
 
-    const url = `/api/v1/business/prompt-combinations${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    const url = `${API_ENDPOINTS.BUSINESS_TYPES.PROMPT_COMBINATIONS}${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
     const response = await apiClient.get(url);
     return response.data;
   }
 
   async getPromptCombination(id: number): Promise<PromptCombination> {
-    const response = await apiClient.get(`/api/v1/business/prompt-combinations/${id}`);
+    const response = await apiClient.get(`${API_ENDPOINTS.BUSINESS_TYPES.PROMPT_COMBINATIONS}/${id}`);
     return response.data;
   }
 
   async createPromptCombination(data: PromptCombinationCreate): Promise<PromptCombination> {
-    const response = await apiClient.post('/api/v1/business/prompt-combinations', data);
+    const response = await apiClient.post(API_ENDPOINTS.BUSINESS_TYPES.PROMPT_COMBINATIONS, data);
     return response.data;
   }
 
   async updatePromptCombination(id: number, data: PromptCombinationUpdate): Promise<PromptCombination> {
-    const response = await apiClient.put(`/api/v1/business/prompt-combinations/${id}`, data);
+    const response = await apiClient.put(`${API_ENDPOINTS.BUSINESS_TYPES.PROMPT_COMBINATIONS}/${id}`, data);
     return response.data;
   }
 
   async deletePromptCombination(id: number): Promise<void> {
-    await apiClient.delete(`/api/v1/business/prompt-combinations/${id}`);
+    await apiClient.delete(`${API_ENDPOINTS.BUSINESS_TYPES.PROMPT_COMBINATIONS}/${id}`);
   }
 
   async previewPromptCombination(data: PromptCombinationPreviewRequest): Promise<PromptCombinationPreviewResponse> {
-    const response = await apiClient.post('/api/v1/business/prompt-combinations/preview', data);
+    const response = await apiClient.post(API_ENDPOINTS.BUSINESS_TYPES.PROMPT_COMBINATIONS + '/preview', data);
     return response.data;
   }
 
   async getAvailablePrompts(): Promise<PromptsResponse> {
-    const response = await apiClient.get('/api/v1/business/available-prompts');
+    const response = await apiClient.get(API_ENDPOINTS.BUSINESS_TYPES.AVAILABLE_PROMPTS);
     return {
       prompts: response.data,
       total: response.data.length

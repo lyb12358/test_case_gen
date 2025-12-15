@@ -1,4 +1,5 @@
 import apiClient from './api';
+import { API_ENDPOINTS } from '@/config/constants';
 
 export interface BusinessTypeConfig {
   id: number;
@@ -52,7 +53,7 @@ export interface ProjectStatsResponse {
 }
 
 class ProjectService {
-  private baseUrl = '/api/v1/projects';
+  private baseUrl = API_ENDPOINTS.PROJECTS.LIST;
 
   // Get all projects
   async getProjects(activeOnly: boolean = true): Promise<ProjectListResponse> {
@@ -95,7 +96,7 @@ class ProjectService {
 
   // Get business type configs for a project
   async getProjectBusinessTypes(projectId: number): Promise<BusinessTypeConfig[]> {
-    const response = await apiClient.get<{items: BusinessTypeConfig[]}>('/api/v1/business/business-types', {
+    const response = await apiClient.get<{items: BusinessTypeConfig[]}>(API_ENDPOINTS.BUSINESS_TYPES.LIST, {
       params: {
         project_id: projectId,
         is_active: true,

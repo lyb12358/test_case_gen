@@ -3,6 +3,7 @@
  */
 
 import apiClient from './api';
+import { API_ENDPOINTS } from '@/config/constants';
 import {
   Prompt,
   PromptSummary,
@@ -30,25 +31,25 @@ import {
 export const categoryService = {
   // Get all categories
   getCategories: async (): Promise<PromptCategory[]> => {
-    const response = await apiClient.get('/api/v1/prompts/categories');
+    const response = await apiClient.get(API_ENDPOINTS.PROMPTS.CATEGORIES);
     return response.data;
   },
 
   // Create category
   createCategory: async (category: PromptCategoryCreate): Promise<PromptCategory> => {
-    const response = await apiClient.post('/api/v1/prompts/categories', category);
+    const response = await apiClient.post(API_ENDPOINTS.PROMPTS.CATEGORIES, category);
     return response.data;
   },
 
   // Update category
   updateCategory: async (id: number, category: PromptCategoryUpdate): Promise<PromptCategory> => {
-    const response = await apiClient.put(`/api/v1/prompts/categories/${id}`, category);
+    const response = await apiClient.put(`${API_ENDPOINTS.PROMPTS.CATEGORIES}/${id}`, category);
     return response.data;
   },
 
   // Delete category
   deleteCategory: async (id: number): Promise<void> => {
-    await apiClient.delete(`/api/v1/prompts/categories/${id}`);
+    await apiClient.delete(`${API_ENDPOINTS.PROMPTS.CATEGORIES}/${id}`);
   },
 };
 
@@ -66,48 +67,48 @@ export const promptService = {
     search?: string;
     project_id?: number;
   }): Promise<PromptListResponse> => {
-    const response = await apiClient.get('/api/v1/prompts', { params });
+    const response = await apiClient.get(API_ENDPOINTS.PROMPTS.LIST, { params });
     return response.data;
   },
 
   // Get specific prompt
   getPrompt: async (id: number): Promise<Prompt> => {
-    const response = await apiClient.get(`/api/v1/prompts/${id}`);
+    const response = await apiClient.get(`${API_ENDPOINTS.PROMPTS.LIST}/${id}`);
     return response.data;
   },
 
   // Create prompt
   createPrompt: async (prompt: PromptCreate): Promise<Prompt> => {
-    const response = await apiClient.post('/api/v1/prompts', prompt);
+    const response = await apiClient.post(API_ENDPOINTS.PROMPTS.LIST, prompt);
     return response.data;
   },
 
   // Update prompt
   updatePrompt: async (id: number, prompt: PromptUpdate): Promise<Prompt> => {
-    const response = await apiClient.put(`/api/v1/prompts/${id}`, prompt);
+    const response = await apiClient.put(`${API_ENDPOINTS.PROMPTS.LIST}/${id}`, prompt);
     return response.data;
   },
 
   // Get delete preview for single prompt
   getDeletePreview: async (id: number): Promise<any> => {
-    const response = await apiClient.get(`/api/v1/prompts/${id}/delete-preview`);
+    const response = await apiClient.get(`${API_ENDPOINTS.PROMPTS.LIST}/${id}/delete-preview`);
     return response.data;
   },
 
   // Get delete preview for batch prompts
   getBatchDeletePreview: async (ids: number[]): Promise<any> => {
-    const response = await apiClient.post('/api/v1/prompts/batch-delete-preview', ids);
+    const response = await apiClient.post(API_ENDPOINTS.PROMPTS.LIST + '/batch-delete-preview', ids);
     return response.data;
   },
 
   // Delete prompt
   deletePrompt: async (id: number): Promise<void> => {
-    await apiClient.delete(`/api/v1/prompts/${id}`);
+    await apiClient.delete(`${API_ENDPOINTS.PROMPTS.LIST}/${id}`);
   },
 
   // Clone prompt
   clonePrompt: async (id: number): Promise<Prompt> => {
-    const response = await apiClient.post(`/api/v1/prompts/${id}/clone`);
+    const response = await apiClient.post(`${API_ENDPOINTS.PROMPTS.LIST}/${id}/clone`);
     return response.data;
   },
 };
@@ -116,19 +117,19 @@ export const promptService = {
 export const searchService = {
   // Advanced search
   searchPrompts: async (searchRequest: PromptSearchRequest): Promise<PromptListResponse> => {
-    const response = await apiClient.post('/api/v1/prompts/search', searchRequest);
+    const response = await apiClient.post(API_ENDPOINTS.PROMPTS.SEARCH, searchRequest);
     return response.data;
   },
 
   // Preview prompt
   previewPrompt: async (request: PromptPreviewRequest): Promise<PromptPreviewResponse> => {
-    const response = await apiClient.post('/api/v1/prompts/preview', request);
+    const response = await apiClient.post(API_ENDPOINTS.PROMPTS.LIST + '/preview', request);
     return response.data;
   },
 
   // Validate prompt
   validatePrompt: async (id: number): Promise<PromptValidationResponse> => {
-    const response = await apiClient.post(`/api/v1/prompts/${id}/validate`);
+    const response = await apiClient.post(`${API_ENDPOINTS.PROMPTS.LIST}/${id}/validate`);
     return response.data;
   },
 };
@@ -137,7 +138,7 @@ export const searchService = {
 export const buildService = {
   // Build prompt for business type
   buildPromptForBusiness: async (businessType: string): Promise<{ content: string; business_type: string }> => {
-    const response = await apiClient.get(`/api/v1/prompts/build/${businessType}`);
+    const response = await apiClient.get(`${API_ENDPOINTS.PROMPTS.BUILD}/${businessType}`);
     return response.data;
   },
 };
@@ -147,7 +148,7 @@ export const statsService = {
   // Get overview statistics
   getOverviewStats: async (projectId?: number): Promise<PromptStatistics> => {
     const params = projectId ? { project_id: projectId } : {};
-    const response = await apiClient.get('/api/v1/prompts/stats/overview', { params });
+    const response = await apiClient.get(API_ENDPOINTS.PROMPTS.STATS, { params });
     return response.data;
   },
 };
@@ -156,19 +157,19 @@ export const statsService = {
 export const templateService = {
   // Get all templates
   getTemplates: async (): Promise<PromptTemplate[]> => {
-    const response = await apiClient.get('/api/v1/prompts/templates');
+    const response = await apiClient.get(API_ENDPOINTS.PROMPTS.TEMPLATES);
     return response.data;
   },
 
   // Create template
   createTemplate: async (template: PromptTemplateCreate): Promise<PromptTemplate> => {
-    const response = await apiClient.post('/api/v1/prompts/templates', template);
+    const response = await apiClient.post(API_ENDPOINTS.PROMPTS.TEMPLATES, template);
     return response.data;
   },
 
   // Delete template
   deleteTemplate: async (id: number): Promise<void> => {
-    await apiClient.delete(`/api/v1/prompts/templates/${id}`);
+    await apiClient.delete(`${API_ENDPOINTS.PROMPTS.TEMPLATES}/${id}`);
   },
 };
 

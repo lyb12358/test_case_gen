@@ -17,6 +17,8 @@ import {
   Collapse,
   Divider
 } from 'antd';
+import apiClient from '@/services/api';
+import { API_ENDPOINTS } from '@/config/constants';
 import {
   SearchOutlined,
   CopyOutlined,
@@ -109,13 +111,11 @@ const PromptVariableGuide: React.FC<PromptVariableGuideProps> = ({
         queryParams.append('include_examples', 'true');
       }
 
-      const response = await fetch(`/api/v1/config/template-variables?${queryParams}`);
+      const response = await apiClient.get(API_ENDPOINTS.CONFIG.TEMPLATE_VARIABLES, {
+        params: Object.fromEntries(queryParams)
+      });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data: TemplateVariablesResponse = await response.json();
+      const data: TemplateVariablesResponse = response.data;
       setVariables(data.variables);
       setFilteredVariables(data.variables);
 

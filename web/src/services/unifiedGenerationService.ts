@@ -29,7 +29,7 @@ import {
 import { BusinessType, PriorityLevel } from '../types/common';
 
 class UnifiedGenerationService {
-  private readonly basePath = '/api/v1';
+
 
   // ========== 测试用例管理（原testCaseService功能）==========
 
@@ -38,7 +38,7 @@ class UnifiedGenerationService {
    */
   async getAllTestCases(projectId?: number): Promise<any> {
     const params = projectId ? { project_id: projectId } : {};
-    const response = await apiClient.get('/api/v1/test-cases', { params });
+    const response = await apiClient.get(API_ENDPOINTS.TEST_CASES.LIST, { params });
     return response.data;
   }
 
@@ -47,7 +47,7 @@ class UnifiedGenerationService {
    */
   async getTestCasesByBusinessType(businessType: string, projectId?: number): Promise<any> {
     const params = projectId ? { project_id: projectId } : {};
-    const response = await apiClient.get(`/api/v1/test-cases/${businessType}`, { params });
+    const response = await apiClient.get(`${API_ENDPOINTS.TEST_CASES.LIST}/${businessType}`, { params });
     return response.data;
   }
 
@@ -55,7 +55,7 @@ class UnifiedGenerationService {
    * 根据ID获取单个测试用例
    */
   async getTestCaseById(id: number): Promise<any> {
-    const response = await apiClient.get(`/api/v1/unified-test-cases/${id}`);
+    const response = await apiClient.get(`${API_ENDPOINTS.UNIFIED_TEST_CASES.DETAIL}/${id}`);
     return response.data;
   }
 
@@ -115,7 +115,7 @@ class UnifiedGenerationService {
 
       // 使用统一测试用例端点，通过stage筛选获取测试点
       const paramsWithStage = { ...validatedParams, stage: 'test_point' };
-      const response = await apiClient.get(`${this.basePath}/unified-test-cases`, { params: paramsWithStage });
+      const response = await apiClient.get(API_ENDPOINTS.UNIFIED_TEST_CASES.LIST, { params: paramsWithStage });
       return this.transformTestPointResponse(response.data);
     } catch (error) {
       throw errorHandlerService.handleApiError(error, {
@@ -158,7 +158,7 @@ class UnifiedGenerationService {
     const params = projectId ? { project_id: projectId } : {};
     // 使用统一测试用例端点，通过stage筛选获取测试点
     const paramsWithStage = { ...params, stage: 'test_point' };
-    const response = await apiClient.get(`/api/v1/unified-test-cases/${id}`, { params: paramsWithStage });
+    const response = await apiClient.get(`${API_ENDPOINTS.UNIFIED_TEST_CASES.DETAIL}/${id}`, { params: paramsWithStage });
     return response.data;
   }
 
@@ -172,7 +172,7 @@ class UnifiedGenerationService {
       stage: 'test_point'
     };
 
-    const response = await apiClient.post('/api/v1/unified-test-cases', testPointData);
+    const response = await apiClient.post(API_ENDPOINTS.UNIFIED_TEST_CASES.CREATE, testPointData);
     return response.data;
   }
 
@@ -180,7 +180,7 @@ class UnifiedGenerationService {
    * 更新测试点
    */
   async updateTestPoint(id: number, testPoint: UnifiedTestCaseUpdate): Promise<UnifiedTestCaseResponse> {
-    const response = await apiClient.put(`/api/v1/unified-test-cases/${id}`, testPoint);
+    const response = await apiClient.put(`${API_ENDPOINTS.UNIFIED_TEST_CASES.UPDATE}/${id}`, testPoint);
     return response.data;
   }
 
@@ -188,14 +188,14 @@ class UnifiedGenerationService {
    * 删除测试点
    */
   async deleteTestPoint(id: number): Promise<void> {
-    await apiClient.delete(`/api/v1/unified-test-cases/${id}`);
+    await apiClient.delete(`${API_ENDPOINTS.UNIFIED_TEST_CASES.DELETE}/${id}`);
   }
 
   /**
    * 批量操作测试点
    */
   async batchTestPointOperation(operation: any): Promise<any> {
-    const response = await apiClient.post('/api/v1/test-points/batch', operation);
+    const response = await apiClient.post(API_ENDPOINTS.TEST_POINTS.LIST + '/batch', operation);
     return response.data;
   }
 
@@ -204,7 +204,7 @@ class UnifiedGenerationService {
    */
   async getTestPointsByBusinessType(businessType: string, projectId?: number): Promise<any> {
     const params = projectId ? { project_id: projectId } : {};
-    const response = await apiClient.get(`/api/v1/test-points/by-business/${businessType}`, { params });
+    const response = await apiClient.get(`${API_ENDPOINTS.TEST_POINTS.LIST}/by-business/${businessType}`, { params });
     return response.data;
   }
 
@@ -214,7 +214,7 @@ class UnifiedGenerationService {
   async getTestPointStatistics(projectId?: number): Promise<any> {
     try {
       const params = projectId ? { project_id: projectId } : {};
-      const response = await apiClient.get('/api/v1/test-points/stats/overview', { params });
+      const response = await apiClient.get(API_ENDPOINTS.TEST_POINTS.LIST + '/stats/overview', { params });
       return response.data;
     } catch (error) {
       throw errorHandlerService.handleApiError(error, {
@@ -228,7 +228,7 @@ class UnifiedGenerationService {
    * 验证测试点
    */
   async validateTestPoint(testPoint: UnifiedTestCaseCreate): Promise<any> {
-    const response = await apiClient.post('/api/v1/test-points/validate', testPoint);
+    const response = await apiClient.post(API_ENDPOINTS.TEST_POINTS.LIST + '/validate', testPoint);
     return response.data;
   }
 
@@ -258,7 +258,7 @@ class UnifiedGenerationService {
     params.page = validatedFilter.page;
     params.size = validatedFilter.size;
 
-    const response = await apiClient.get(`${this.basePath}/unified-test-cases`, { params });
+    const response = await apiClient.get(API_ENDPOINTS.UNIFIED_TEST_CASES.LIST, { params });
     return response.data;
   }
 
@@ -267,7 +267,7 @@ class UnifiedGenerationService {
    */
   async getUnifiedTestCaseById(id: number, projectId?: number): Promise<UnifiedTestCaseResponse> {
     const params = projectId ? { project_id: projectId } : {};
-    const response = await apiClient.get(`${this.basePath}/unified-test-cases/${id}`, { params });
+    const response = await apiClient.get(`${API_ENDPOINTS.UNIFIED_TEST_CASES.DETAIL}/${id}`, { params });
     return response.data;
   }
 
@@ -275,7 +275,7 @@ class UnifiedGenerationService {
    * 创建统一测试用例
    */
   async createUnifiedTestCase(testCase: UnifiedTestCaseCreate): Promise<UnifiedTestCaseResponse> {
-    const response = await apiClient.post(`${this.basePath}/unified-test-cases`, testCase);
+    const response = await apiClient.post(API_ENDPOINTS.UNIFIED_TEST_CASES.CREATE, testCase);
     return response.data;
   }
 
@@ -283,7 +283,7 @@ class UnifiedGenerationService {
    * 更新统一测试用例
    */
   async updateUnifiedTestCase(id: number, testCase: UnifiedTestCaseUpdate): Promise<UnifiedTestCaseResponse> {
-    const response = await apiClient.put(`${this.basePath}/unified-test-cases/${id}`, testCase);
+    const response = await apiClient.put(`${API_ENDPOINTS.UNIFIED_TEST_CASES.UPDATE}/${id}`, testCase);
     return response.data;
   }
 
@@ -292,11 +292,9 @@ class UnifiedGenerationService {
    */
   async deleteUnifiedTestCase(id: number): Promise<void> {
     try {
-      if (!this.basePath) {
-        throw new Error('服务实例初始化不完整，basePath 未定义');
-      }
+      // basePath现在是常量，不需要检查
 
-      const deleteUrl = `${this.basePath}/unified-test-cases/${id}`;
+      const deleteUrl = `${API_ENDPOINTS.UNIFIED_TEST_CASES.DELETE}/${id}`;
 
       if (!id || id <= 0) {
         throw new Error(`无效的测试用例ID: ${id}`);
@@ -320,7 +318,7 @@ class UnifiedGenerationService {
    * 批量操作统一测试用例
    */
   async batchUnifiedTestCaseOperation(operation: UnifiedTestCaseBatchOperation): Promise<UnifiedTestCaseBatchResponse> {
-    const response = await apiClient.post(`${this.basePath}/unified-test-cases/batch`, operation);
+    const response = await apiClient.post(API_ENDPOINTS.UNIFIED_TEST_CASES.BATCH, operation);
     return response.data;
   }
 
@@ -329,7 +327,7 @@ class UnifiedGenerationService {
    */
   async getUnifiedTestCaseStatistics(projectId?: number): Promise<UnifiedTestCaseStatistics> {
     const params = projectId ? { project_id: projectId } : {};
-    const response = await apiClient.get(`${this.basePath}/unified-test-cases/statistics/overview`, { params });
+    const response = await apiClient.get(API_ENDPOINTS.UNIFIED_TEST_CASES.STATISTICS, { params });
     return response.data;
   }
 
@@ -341,7 +339,7 @@ class UnifiedGenerationService {
     if (projectId) params.project_id = projectId;
     if (businessType) params.business_type = businessType;
 
-    const response = await apiClient.get(`${this.basePath}/unified-test-cases/statistics`, { params });
+    const response = await apiClient.get(`${API_ENDPOINTS.UNIFIED_TEST_CASES.STATISTICS}`, { params });
     return response.data;
   }
 
@@ -401,7 +399,7 @@ class UnifiedGenerationService {
    * 查询生成任务状态
    */
   async getGenerationStatus(taskId: string): Promise<any> {
-    const response = await apiClient.get(`/api/v1/generation/status/${taskId}`);
+    const response = await apiClient.get(`${API_ENDPOINTS.GENERATION.STATUS}/${taskId}`);
     return response.data;
   }
 
@@ -409,7 +407,7 @@ class UnifiedGenerationService {
    * 取消生成任务
    */
   async cancelGenerationTask(taskId: string): Promise<any> {
-    const response = await apiClient.post(`/api/v1/generation/cancel/${taskId}`);
+    const response = await apiClient.post(`${API_ENDPOINTS.GENERATION.CANCEL}/${taskId}`);
     return response.data;
   }
 
@@ -417,7 +415,7 @@ class UnifiedGenerationService {
    * 健康检查
    */
   async healthCheck(): Promise<any> {
-    const response = await apiClient.get('/api/v1/generation/health');
+    const response = await apiClient.get(API_ENDPOINTS.GENERATION.HEALTH);
     return response.data;
   }
 
@@ -426,7 +424,7 @@ class UnifiedGenerationService {
    */
   async getGenerationStatistics(projectId?: number): Promise<any> {
     const params = projectId ? { project_id: projectId } : {};
-    const response = await apiClient.get('/api/v1/generation/statistics', { params });
+    const response = await apiClient.get(API_ENDPOINTS.GENERATION.STATISTICS, { params });
     return response.data;
   }
 
@@ -526,7 +524,7 @@ class UnifiedGenerationService {
    * 同步单个名称
    */
   async syncName(request: any): Promise<any> {
-    const response = await apiClient.post(`/api/v1/test-points/${request.testPointId}/sync-test-case-names`, request);
+    const response = await apiClient.post(`${API_ENDPOINTS.TEST_POINTS.LIST}/${request.testPointId}/sync-test-case-names`, request);
     return response.data;
   }
 
@@ -534,7 +532,7 @@ class UnifiedGenerationService {
    * 批量同步名称
    */
   async batchSyncNames(request: any): Promise<any[]> {
-    const response = await apiClient.post('/api/v1/test-points/batch-sync-test-case-names', request);
+    const response = await apiClient.post(API_ENDPOINTS.TEST_POINTS.LIST + '/batch-sync-test-case-names', request);
     return response.data;
   }
 
@@ -548,7 +546,7 @@ class UnifiedGenerationService {
       if (projectId) params.project_id = projectId;
       if (businessType) params.business_type = businessType;
 
-      const response = await apiClient.get('/api/v1/test-points/name-sync-preview', { params });
+      const response = await apiClient.get(API_ENDPOINTS.TEST_POINTS.LIST + '/name-sync-preview', { params });
       return response.data;
     } catch (error) {
       console.warn('getNameSyncPreview: API调用失败，返回空数组', error);
@@ -561,7 +559,7 @@ class UnifiedGenerationService {
    * 验证名称
    */
   async validateName(request: any): Promise<any> {
-    const response = await apiClient.post('/api/v1/test-points/validate-name', request);
+    const response = await apiClient.post(API_ENDPOINTS.TEST_POINTS.LIST + '/validate-name', request);
     return response.data;
   }
 
@@ -653,7 +651,7 @@ class UnifiedGenerationService {
     test_point_ids?: number[];
     additional_context?: string;
   }): Promise<any> {
-    const response = await apiClient.post('/api/v1/unified-test-cases/generate', request);
+    const response = await apiClient.post(API_ENDPOINTS.UNIFIED_TEST_CASES.GENERATE_TEST_CASES, request);
     return response.data;
   }
 
@@ -684,7 +682,7 @@ class UnifiedGenerationService {
       params.project_id = projectId;
     }
 
-    const response = await apiClient.get(`/api/v1/generation/variables/preview/${businessType}`, { params });
+    const response = await apiClient.get(`${API_ENDPOINTS.GENERATION.HEALTH}/variables/preview/${businessType}`, { params });
     return response.data;
   }
 
@@ -698,7 +696,7 @@ class UnifiedGenerationService {
     generation_stage?: string;
     project_id?: number;
   }): Promise<any> {
-    const response = await apiClient.post('/api/v1/generation/variables/resolve', requestData);
+    const response = await apiClient.post(API_ENDPOINTS.GENERATION.HEALTH + '/variables/resolve', requestData);
     return response.data;
   }
 
@@ -720,7 +718,7 @@ class UnifiedGenerationService {
     sort_order?: string;
     [key: string]: any;
   }): Promise<any> {
-    const response = await apiClient.get(`${this.basePath}/unified-test-cases`, { params });
+    const response = await apiClient.get(API_ENDPOINTS.UNIFIED_TEST_CASES.LIST, { params });
     return response.data;
   }
 
