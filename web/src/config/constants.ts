@@ -11,105 +11,106 @@ export const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL ||
   `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
 
 // API端点路径
+// 注意：这些路径会与 API_BASE_URL 拼接，所以不包含 /api 前缀
 export const API_ENDPOINTS = {
   // 生成相关
   GENERATION: {
-    TEST_POINTS: '/api/v1/generation/test-points',
-    TEST_CASES: '/api/v1/generation/test-cases',
-    BATCH: '/api/v1/generation/batch',
-    STATUS: '/api/v1/generation/status',
-    CANCEL: '/api/v1/generation/cancel',
-    HEALTH: '/api/v1/generation/health',
-    STATISTICS: '/api/v1/generation/statistics'
+    TEST_POINTS: '/v1/generation/test-points',
+    TEST_CASES: '/v1/generation/test-cases',
+    BATCH: '/v1/generation/batch',
+    STATUS: '/v1/generation/status',
+    CANCEL: '/v1/generation/cancel',
+    HEALTH: '/v1/generation/health',
+    STATISTICS: '/v1/generation/statistics'
   },
 
   // 知识图谱相关
   KNOWLEDGE_GRAPH: {
-    DATA: '/api/v1/knowledge-graph/data',
-    STATS: '/api/v1/knowledge-graph/stats',
-    ENTITIES: '/api/v1/knowledge-graph/entities',
-    RELATIONS: '/api/v1/knowledge-graph/relations',
-    INITIALIZE: '/api/v1/knowledge-graph/initialize',
-    CLEAR: '/api/v1/knowledge-graph/clear',
-    ENTITY_DETAILS: '/api/v1/knowledge-graph/entities',
-    BUSINESS_DESCRIPTION: '/api/v1/knowledge-graph/entities',
-    TEST_CASES: '/api/v1/knowledge-graph/entities'
+    DATA: '/v1/knowledge-graph/data',
+    STATS: '/v1/knowledge-graph/stats',
+    ENTITIES: '/v1/knowledge-graph/entities',
+    RELATIONS: '/v1/knowledge-graph/relations',
+    INITIALIZE: '/v1/knowledge-graph/initialize',
+    CLEAR: '/v1/knowledge-graph/clear',
+    ENTITY_DETAILS: '/v1/knowledge-graph/entities',
+    BUSINESS_DESCRIPTION: '/v1/knowledge-graph/entities',
+    TEST_CASES: '/v1/knowledge-graph/entities'
   },
 
   // 统一测试用例相关 (两阶段统一系统)
   UNIFIED_TEST_CASES: {
-    LIST: '/api/v1/unified-test-cases',
-    DETAIL: '/api/v1/unified-test-cases',
-    CREATE: '/api/v1/unified-test-cases',
-    UPDATE: '/api/v1/unified-test-cases',
-    DELETE: '/api/v1/unified-test-cases',
-    BATCH: '/api/v1/unified-test-cases/batch',
-    STATISTICS: '/api/v1/unified-test-cases/statistics/overview',
-    GENERATE_TEST_CASES: '/api/v1/unified-test-cases/generate/test-cases',
-    GENERATE_FULL_TWO_STAGE: '/api/v1/unified-test-cases/generate/full-two-stage',
-    GENERATE_STATUS: '/api/v1/unified-test-cases/generate/status'
+    LIST: '/v1/unified-test-cases',
+    DETAIL: '/v1/unified-test-cases',
+    CREATE: '/v1/unified-test-cases',
+    UPDATE: '/v1/unified-test-cases',
+    DELETE: '/v1/unified-test-cases',
+    BATCH: '/v1/unified-test-cases/batch',
+    STATISTICS: '/v1/unified-test-cases/statistics/overview',
+    GENERATE_TEST_CASES: '/v1/unified-test-cases/generate/test-cases',
+    GENERATE_FULL_TWO_STAGE: '/v1/unified-test-cases/generate/full-two-stage',
+    GENERATE_STATUS: '/v1/unified-test-cases/generate/status'
   },
 
   // 测试用例相关 (已弃用，请使用UNIFIED_TEST_CASES)
   TEST_CASES: {
-    LIST: '/api/v1/test-cases',
-    DETAIL: '/api/v1/test-cases',
-    GENERATE: '/api/v1/test-cases/generate',
-    EXPORT: '/api/v1/test-cases/export',
-    DELETE: '/api/v1/test-cases'
+    LIST: '/v1/test-cases',
+    DETAIL: '/v1/test-cases',
+    GENERATE: '/v1/test-cases/generate',
+    EXPORT: '/v1/test-cases/export',
+    DELETE: '/v1/test-cases'
   },
 
   // 测试点相关 (已弃用，请使用UNIFIED_TEST_CASES)
   TEST_POINTS: {
-    LIST: '/api/v1/test-points',
-    DETAIL: '/api/v1/test-points',
-    GENERATE: '/api/v1/test-points/generate',
-    DELETE: '/api/v1/test-points'
+    LIST: '/v1/test-points',
+    DETAIL: '/v1/test-points',
+    GENERATE: '/v1/test-points/generate',
+    DELETE: '/v1/test-points'
   },
 
   // 业务类型相关
   BUSINESS_TYPES: {
-    LIST: '/api/v1/business/business-types',
-    CONFIG: '/api/v1/business-types/config'
+    LIST: '/v1/business/business-types',
+    CONFIG: '/v1/business-types/config'
   },
 
   // 项目相关
   PROJECTS: {
-    LIST: '/api/v1/projects',
-    DETAIL: '/api/v1/projects',
-    CREATE: '/api/v1/projects',
-    UPDATE: '/api/v1/projects',
-    DELETE: '/api/v1/projects'
+    LIST: '/v1/projects',
+    DETAIL: '/v1/projects',
+    CREATE: '/v1/projects',
+    UPDATE: '/v1/projects',
+    DELETE: '/v1/projects'
   },
 
   // 任务相关
   TASKS: {
-    LIST: '/api/v1/tasks',
-    DETAIL: '/api/v1/tasks',
-    STATUS: '/api/v1/tasks/status',
-    CANCEL: '/api/v1/tasks/cancel'
+    LIST: '/v1/tasks',
+    DETAIL: '/v1/tasks',
+    STATUS: '/v1/tasks/status',
+    CANCEL: '/v1/tasks/cancel'
   },
 
   // 提示词相关
   PROMPTS: {
-    LIST: '/api/v1/prompts',
-    DETAIL: '/api/v1/prompts',
-    CREATE: '/api/v1/prompts',
-    UPDATE: '/api/v1/prompts',
-    DELETE: '/api/v1/prompts',
-    CATEGORIES: '/api/v1/prompts/categories',
-    TEMPLATES: '/api/v1/prompts/templates',
-    SEARCH: '/api/v1/prompts/search',
-    VALIDATE: '/api/v1/prompts/validate',
-    BUILD: '/api/v1/prompts/build',
-    STATS: '/api/v1/prompts/stats/overview'
+    LIST: '/v1/prompts',
+    DETAIL: '/v1/prompts',
+    CREATE: '/v1/prompts',
+    UPDATE: '/v1/prompts',
+    DELETE: '/v1/prompts',
+    CATEGORIES: '/v1/prompts/categories',
+    TEMPLATES: '/v1/prompts/templates',
+    SEARCH: '/v1/prompts/search',
+    VALIDATE: '/v1/prompts/validate',
+    BUILD: '/v1/prompts/build',
+    STATS: '/v1/prompts/stats/overview'
   },
 
   // 配置相关
   CONFIG: {
-    BUSINESS_TYPES: '/api/v1/config/business-types',
-    PROMPT_TYPES: '/api/v1/config/prompt-types',
-    SYSTEM_INFO: '/api/v1/config/system-info'
+    BUSINESS_TYPES: '/v1/config/business-types',
+    PROMPT_TYPES: '/v1/config/prompt-types',
+    SYSTEM_INFO: '/v1/config/system-info'
   }
 } as const;
 

@@ -9,8 +9,8 @@ COPY package*.json ./
 RUN npm cache clean --force && npm ci --legacy-peer-deps
 
 FROM base as builder
-# 硬编码相对路径 API 地址（支持外网访问）
-ENV VITE_API_BASE_URL=/api
+# 生产环境不设置 API_BASE_URL，使用相对路径
+# 在生产环境中，前端将使用 Nginx 代理，所以不需要硬编码 API 路径
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
