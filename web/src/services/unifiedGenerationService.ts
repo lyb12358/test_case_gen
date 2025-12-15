@@ -115,7 +115,7 @@ class UnifiedGenerationService {
 
       // 使用统一测试用例端点，通过stage筛选获取测试点
       const paramsWithStage = { ...validatedParams, stage: 'test_point' };
-      const response = await apiClient.get(API_ENDPOINTS.UNIFIED_TEST_CASES.LIST, { params: paramsWithStage });
+      const response = await apiClient.get(API_ENDPOINTS.UNIFIED_TEST_CASES.LIST + '/', { params: paramsWithStage });
       return this.transformTestPointResponse(response.data);
     } catch (error) {
       throw errorHandlerService.handleApiError(error, {
@@ -258,7 +258,7 @@ class UnifiedGenerationService {
     params.page = validatedFilter.page;
     params.size = validatedFilter.size;
 
-    const response = await apiClient.get(API_ENDPOINTS.UNIFIED_TEST_CASES.LIST, { params });
+    const response = await apiClient.get(API_ENDPOINTS.UNIFIED_TEST_CASES.LIST + '/', { params });
     return response.data;
   }
 
@@ -718,7 +718,7 @@ class UnifiedGenerationService {
     sort_order?: string;
     [key: string]: any;
   }): Promise<any> {
-    const response = await apiClient.get(API_ENDPOINTS.UNIFIED_TEST_CASES.LIST, { params });
+    const response = await apiClient.get(API_ENDPOINTS.UNIFIED_TEST_CASES.LIST + '/', { params });
     return response.data;
   }
 

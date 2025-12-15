@@ -188,17 +188,9 @@ const ProjectManager: React.FC = () => {
         const stats = projectStats[record.id];
         const totalItems = (stats?.test_points_count || 0) + (stats?.test_cases_count || 0);
         return (
-          <Space direction="vertical" size="small" style={{ width: '100%' }}>
-            <div>
-              <Text type="secondary">总测试项: </Text>
-              <Text strong>{totalItems}</Text>
-            </div>
-            <div style={{ fontSize: '12px', opacity: 0.8 }}>
-              <Text type="secondary">
-                (测试点: {stats?.test_points_count || 0} | 用例: {stats?.test_cases_count || 0})
-              </Text>
-            </div>
-          </Space>
+          <div>
+            <Text strong>{totalItems}</Text>
+          </div>
         );
       },
     },

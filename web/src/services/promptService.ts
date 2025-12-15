@@ -67,7 +67,7 @@ export const promptService = {
     search?: string;
     project_id?: number;
   }): Promise<PromptListResponse> => {
-    const response = await apiClient.get(API_ENDPOINTS.PROMPTS.LIST, { params });
+    const response = await apiClient.get(API_ENDPOINTS.PROMPTS.LIST + '/', { params });
     return response.data;
   },
 
