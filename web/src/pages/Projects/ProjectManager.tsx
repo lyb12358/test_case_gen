@@ -182,19 +182,21 @@ const ProjectManager: React.FC = () => {
       ),
     },
     {
-      title: '测试用例',
-      key: 'test_cases',
+      title: '总测试项',
+      key: 'total_test_items',
       render: (_: any, record: Project) => {
         const stats = projectStats[record.id];
+        const totalItems = (stats?.test_points_count || 0) + (stats?.test_cases_count || 0);
         return (
           <Space direction="vertical" size="small" style={{ width: '100%' }}>
             <div>
-              <Text type="secondary">测试点: </Text>
-              <Text strong>{stats?.test_points_count || 0}</Text>
+              <Text type="secondary">总测试项: </Text>
+              <Text strong>{totalItems}</Text>
             </div>
-            <div>
-              <Text type="secondary">用例: </Text>
-              <Text strong>{stats?.test_cases_count || 0}</Text>
+            <div style={{ fontSize: '12px', opacity: 0.8 }}>
+              <Text type="secondary">
+                (测试点: {stats?.test_points_count || 0} | 用例: {stats?.test_cases_count || 0})
+              </Text>
             </div>
           </Space>
         );
@@ -288,6 +290,7 @@ const ProjectManager: React.FC = () => {
     totalProjects: projects.length,
     activeProjects: projects.filter(p => p.is_active).length,
     totalTestCases: Object.values(projectStats).reduce((sum, stats) => sum + (stats.test_cases_count || 0), 0),
+    totalTestItems: Object.values(projectStats).reduce((sum, stats) => sum + (stats.test_points_count || 0) + (stats.test_cases_count || 0), 0),
     totalPrompts: Object.values(projectStats).reduce((sum, stats) => sum + (stats.prompts_count || 0), 0),
   };
 
@@ -350,8 +353,8 @@ const ProjectManager: React.FC = () => {
         <Col span={6}>
           <Card>
             <Statistic
-              title="测试用例总数"
-              value={totalStats.totalTestCases}
+              title="总测试项"
+              value={totalStats.totalTestItems}
               prefix={<FileTextOutlined />}
               valueStyle={{ color: '#722ed1' }}
             />
