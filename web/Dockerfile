@@ -18,4 +18,4 @@ RUN npm run build
 FROM base as runner
 RUN npm install -g serve
 COPY --from=builder /app/dist ./
-CMD ["serve", "-l", "5173"]
+CMD ["serve", "-l", "5173", "--single", "--no-cors"]
