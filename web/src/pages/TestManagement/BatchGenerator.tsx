@@ -765,8 +765,8 @@ const BatchGenerator: React.FC = () => {
         return (
           <Card title="预览确认" style={{ marginTop: 16 }}>
             <Alert
-              message="请仔细确认以下配置信息"
-              description="配置确认后将开始批量生成，请确保所有参数设置正确"
+              message="功能施工中"
+              description="批量生成中心正在进行系统升级和功能优化，暂时无法使用。请使用统一测试用例管理功能进行测试点生成。"
               type="warning"
               showIcon
               style={{ marginBottom: 24 }}
@@ -803,8 +803,8 @@ const BatchGenerator: React.FC = () => {
               <Button onClick={() => setShowPreviewModal(true)}>
                 查看详细配置
               </Button>
-              <Button type="primary" onClick={handleGenerate} loading={isGenerating}>
-                开始批量生成
+              <Button type="primary" onClick={handleGenerate} disabled loading={isGenerating}>
+                开始批量生成 (施工中)
               </Button>
             </Space>
           </Card>
@@ -861,11 +861,29 @@ const BatchGenerator: React.FC = () => {
   return (
     <div style={{ padding: '24px' }}>
       <div style={{ marginBottom: 24 }}>
-        <Title level={2}>批量生成中心</Title>
+        <Title level={2}>
+          <Badge.Ribbon text="施工中" color="orange">
+            批量生成中心
+          </Badge.Ribbon>
+        </Title>
         <Paragraph type="secondary">
           智能批量生成测试点和测试用例，支持多业务类型并行处理
         </Paragraph>
       </div>
+
+      {/* 施工中提示 */}
+      <Alert
+        message="功能施工中"
+        description="批量生成中心正在进行系统升级和功能优化，暂时无法使用。请稍后再试或使用统一测试用例管理功能。"
+        type="warning"
+        showIcon
+        style={{ marginBottom: 24 }}
+        action={
+          <Button type="primary" size="small" onClick={() => navigate('/test-management/unified')}>
+            使用统一测试用例管理
+          </Button>
+        }
+      />
 
       <Steps current={currentStep} items={steps} style={{ marginBottom: 24 }} />
 
@@ -881,13 +899,13 @@ const BatchGenerator: React.FC = () => {
             </Button>
           )}
           {currentStep === 0 && (
-            <Button type="primary" onClick={handleNext}>
-              下一步
+            <Button type="primary" onClick={handleNext} disabled>
+              下一步 (施工中)
             </Button>
           )}
           {currentStep === 1 && (
-            <Button type="primary" onClick={handleNext}>
-              下一步
+            <Button type="primary" onClick={handleNext} disabled>
+              下一步 (施工中)
             </Button>
           )}
           {currentStep === 2 && (

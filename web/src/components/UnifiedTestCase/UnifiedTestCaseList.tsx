@@ -36,13 +36,15 @@ import {
   CopyOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
-  PlayCircleOutlined
+  PlayCircleOutlined,
+  DownOutlined
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 
 import { unifiedGenerationService } from '../../services';
 import { downloadFile, generateExportFilename } from '../../utils/fileUtils';
+import { useBusinessTypeMapping } from '../../hooks/useBusinessTypeMapping';
 import {
   UnifiedTestCaseResponse,
   UnifiedTestCaseFilter,
@@ -77,6 +79,47 @@ const UnifiedTestCaseList: React.FC<UnifiedTestCaseListProps> = ({
   showActions = true,
   selectable = true
 }) => {
+  // 业务类型映射Hook
+  const { getBusinessTypeFullName, getBusinessTypeColor } = useBusinessTypeMapping();
+
+  // 响应式宽度计算 - 针对1200-1500宽度优化
+  const getResponsiveWidth = () => {
+    const currentWidth = window.innerWidth;
+
+    // 1500以下使用紧凑布局，1200以下使用超紧凑布局
+    if (currentWidth < 1200) {
+      return {
+        test_case_id: 90,
+        name: 150,
+        business_type: 110,
+        status: 70,
+        priority: 60,
+        created_at: 120,
+        action: 80
+      };
+    } else if (currentWidth < 1500) {
+      return {
+        test_case_id: 120,
+        name: 180,
+        business_type: 130,
+        status: 80,
+        priority: 70,
+        created_at: 140,
+        action: 150
+      };
+    } else {
+      return {
+        test_case_id: 180,
+        name: 200,
+        business_type: 150,
+        status: 100,
+        priority: 80,
+        created_at: 160,
+        action: 200
+      };
+    }
+  };
+
   // 预期结果渲染函数
   const renderExpectedResults = (currentItem: UnifiedTestCaseResponse) => {
     // 检查是否有任何预期结果数据
@@ -227,6 +270,7 @@ const UnifiedTestCaseList: React.FC<UnifiedTestCaseListProps> = ({
   const [selectedRowKeys, setSelectedRowKeys] = useState<number[]>([]);
   const [selectedItems, setSelectedItems] = useState<UnifiedTestCaseResponse[]>([]);
   const [isExporting, setIsExporting] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   // 搜索和过滤
   const [searchFilter, setSearchFilter] = useState<SearchFilter>({});
@@ -310,6 +354,18 @@ const UnifiedTestCaseList: React.FC<UnifiedTestCaseListProps> = ({
     loadTestCases();
     loadStatistics();
   }, [projectId, businessType, searchFilter, pageSize]);
+
+  // 响应式检测 - 调整断点为1500px以下触发紧凑布局
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 1500);
+    };
+
+    handleResize(); // 初始检测
+    window.addEventListener('resize', handleResize);
+
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // 处理搜索
   const handleSearch = (value: string) => {
@@ -399,7 +455,7 @@ const UnifiedTestCaseList: React.FC<UnifiedTestCaseListProps> = ({
       title: 'ID',
       dataIndex: 'case_id',
       key: 'case_id',
-      width: 100,
+      width: getResponsiveWidth().test_case_id,
       fixed: 'left',
       render: (text, record) => (
         <Space direction="vertical" size="small">
@@ -414,7 +470,7 @@ const UnifiedTestCaseList: React.FC<UnifiedTestCaseListProps> = ({
       title: '名称',
       dataIndex: 'name',
       key: 'name',
-      width: 200,
+      width: getResponsiveWidth().name,
       ellipsis: true,
       render: (text, record) => (
         <Tooltip title={text}>
@@ -433,14 +489,53 @@ const UnifiedTestCaseList: React.FC<UnifiedTestCaseListProps> = ({
       title: '业务类型',
       dataIndex: 'business_type',
       key: 'business_type',
-      width: 100,
-      render: (text) => <Tag>{text}</Tag>
+      width: getResponsiveWidth().business_type,
+      render: (text: string) => {
+        if (!text) return <Tag>-</Tag>;
+        const fullName = getBusinessTypeFullName(text);
+        const color = getBusinessTypeColor(text);
+        const currentWidth = window.innerWidth;
+
+        // 根据屏幕宽度显示简化的业务类型名称
+        let displayName = fullName;
+        let fontSize = '12px';
+        let maxWidth = '120px';
+
+        if (currentWidth < 1200) {
+          displayName = fullName.length > 4 ? fullName.substring(0, 4) + '...' : fullName;
+          fontSize = '9px';
+          maxWidth = '70px';
+        } else if (currentWidth < 1500) {
+          displayName = fullName.length > 6 ? fullName.substring(0, 6) + '...' : fullName;
+          fontSize = '10px';
+          maxWidth = '90px';
+        }
+
+        return (
+          <Tooltip title={`[${text}] ${fullName}`}>
+            <Tag
+              color={color}
+              style={{
+                fontSize,
+                maxWidth,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                display: 'inline-block',
+                lineHeight: '1.2'
+              }}
+            >
+              [{text}] {displayName}
+            </Tag>
+          </Tooltip>
+        );
+      }
     },
     {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      width: 100,
+      width: getResponsiveWidth().status,
       render: (status) => (
         <Tag color={service.getStatusColor(status)}>
           {service.getStatusLabel(status)}
@@ -451,7 +546,7 @@ const UnifiedTestCaseList: React.FC<UnifiedTestCaseListProps> = ({
       title: '优先级',
       dataIndex: 'priority',
       key: 'priority',
-      width: 80,
+      width: getResponsiveWidth().priority,
       render: (priority) => (
         <Tag color={service.getPriorityColor(priority)}>
           {service.getPriorityLabel(priority)}
@@ -462,75 +557,170 @@ const UnifiedTestCaseList: React.FC<UnifiedTestCaseListProps> = ({
       title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',
-      width: 150,
+      width: getResponsiveWidth().created_at,
       render: (text) => dayjs(text).format('YYYY-MM-DD HH:mm')
     },
     {
       title: '操作',
       key: 'actions',
-      width: 200,
+      width: getResponsiveWidth().action,
       fixed: 'right',
-      render: (_, record) => (
-        <Space>
-          <Tooltip title="查看详情">
-            <Button
-              type="link"
-              size="small"
-              icon={<EyeOutlined />}
-              onClick={() => handleViewDetail(record)}
-            />
-          </Tooltip>
-          <Tooltip title="编辑">
-            <Button
-              type="link"
-              size="small"
-              icon={<EditOutlined />}
-              onClick={() => handleEdit(record)}
-            />
-          </Tooltip>
-          <Dropdown
-            overlay={
-              <Menu>
-                <Menu.Item
-                  key="approve"
-                  icon={<CheckCircleOutlined />}
-                  onClick={() => handleStatusUpdate(record.id, UnifiedTestCaseStatus.APPROVED)}
-                  disabled={record.status === UnifiedTestCaseStatus.APPROVED}
-                >
-                  批准
-                </Menu.Item>
-                <Menu.Item
-                  key="complete"
-                  icon={<PlayCircleOutlined />}
-                  onClick={() => handleStatusUpdate(record.id, UnifiedTestCaseStatus.COMPLETED)}
-                  disabled={record.status === UnifiedTestCaseStatus.COMPLETED}
-                >
-                  完成
-                </Menu.Item>
-                <Menu.Divider />
-                <Menu.Item
-                  key="delete"
-                  icon={<DeleteOutlined />}
-                  danger
-                >
-                  <Popconfirm
-                    title="确定要删除这个测试用例吗？"
-                    onConfirm={() => handleDelete(record.id)}
-                  >
-                    删除
-                  </Popconfirm>
-                </Menu.Item>
-              </Menu>
+      render: (_, record) => {
+        const currentWidth = window.innerWidth;
+        const useDropdown = currentWidth < 1300; // 1300以下使用下拉菜单
+
+        if (useDropdown) {
+          // 紧凑布局使用下拉菜单
+          const menuItems = [
+            {
+              key: 'view',
+              icon: <EyeOutlined />,
+              label: '查看详情',
+              onClick: () => handleViewDetail(record)
+            },
+            {
+              key: 'edit',
+              icon: <EditOutlined />,
+              label: '编辑',
+              onClick: () => handleEdit(record)
+            },
+            {
+              type: 'divider' as const
+            },
+            {
+              key: 'approve',
+              icon: <CheckCircleOutlined />,
+              label: '批准',
+              onClick: () => handleStatusUpdate(record.id, UnifiedTestCaseStatus.APPROVED),
+              disabled: record.status === UnifiedTestCaseStatus.APPROVED
+            },
+            {
+              key: 'complete',
+              icon: <PlayCircleOutlined />,
+              label: '完成',
+              onClick: () => handleStatusUpdate(record.id, UnifiedTestCaseStatus.COMPLETED),
+              disabled: record.status === UnifiedTestCaseStatus.COMPLETED
+            },
+            {
+              type: 'divider' as const
+            },
+            {
+              key: 'delete',
+              icon: <DeleteOutlined />,
+              label: '删除',
+              danger: true,
+              onClick: () => {
+                Modal.confirm({
+                  title: '确定要删除这个测试用例吗？',
+                  content: '删除后无法恢复',
+                  okText: '确定',
+                  cancelText: '取消',
+                  okType: 'danger',
+                  onOk: () => handleDelete(record.id)
+                });
+              }
             }
-          >
-            <Button type="link" size="small">
-              更多 <CopyOutlined />
-            </Button>
-          </Dropdown>
-        </Space>
-      )
+          ];
+
+          const buttonHeight = currentWidth < 1200 ? '24px' : '28px';
+          const fontSize = currentWidth < 1200 ? '10px' : '11px';
+
+          return (
+            <Dropdown
+              menu={{ items: menuItems }}
+              trigger={['click']}
+              placement="bottomRight"
+            >
+              <Button
+                type="primary"
+                size="small"
+                icon={<DownOutlined />}
+                style={{
+                  borderRadius: '4px',
+                  fontSize,
+                  height: buttonHeight,
+                  padding: currentWidth < 1200 ? '2px 6px' : '4px 8px'
+                }}
+              >
+                {currentWidth < 1200 ? '' : '操作'}
+              </Button>
+            </Dropdown>
+          );
+        } else {
+          // 桌面端保持原有布局
+          return (
+            <Space size="small">
+              <Tooltip title="查看详情">
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<EyeOutlined />}
+                  onClick={() => handleViewDetail(record)}
+                />
+              </Tooltip>
+              <Tooltip title="编辑">
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<EditOutlined />}
+                  onClick={() => handleEdit(record)}
+                />
+              </Tooltip>
+              <Dropdown
+                overlay={
+                  <Menu>
+                    <Menu.Item
+                      key="approve"
+                      icon={<CheckCircleOutlined />}
+                      onClick={() => handleStatusUpdate(record.id, UnifiedTestCaseStatus.APPROVED)}
+                      disabled={record.status === UnifiedTestCaseStatus.APPROVED}
+                    >
+                      批准
+                    </Menu.Item>
+                    <Menu.Item
+                      key="complete"
+                      icon={<PlayCircleOutlined />}
+                      onClick={() => handleStatusUpdate(record.id, UnifiedTestCaseStatus.COMPLETED)}
+                      disabled={record.status === UnifiedTestCaseStatus.COMPLETED}
+                    >
+                      完成
+                    </Menu.Item>
+                    <Menu.Divider />
+                    <Menu.Item
+                      key="delete"
+                      icon={<DeleteOutlined />}
+                      danger
+                    >
+                      <Popconfirm
+                        title="确定要删除这个测试用例吗？"
+                        onConfirm={() => handleDelete(record.id)}
+                      >
+                        删除
+                      </Popconfirm>
+                    </Menu.Item>
+                  </Menu>
+                }
+              >
+                <Button type="link" size="small">
+                  更多 <CopyOutlined />
+                </Button>
+              </Dropdown>
+            </Space>
+          );
+        }
+      }
     }
   ];
+
+  // 根据屏幕宽度动态过滤列 - 1300以下隐藏优先级和预期结果列
+  const filteredColumns = columns.filter(column => {
+    const currentWidth = window.innerWidth;
+    if (currentWidth < 1300) {
+      const hiddenKeys = ['priority', 'expected_result'];
+      return !hiddenKeys.includes(column.key as string);
+    }
+    return true;
+  });
 
   // 批量操作菜单
   const batchActions = (
@@ -670,11 +860,14 @@ const UnifiedTestCaseList: React.FC<UnifiedTestCaseListProps> = ({
 
       {/* 表格 */}
       <Table
-        columns={columns}
+        columns={filteredColumns}
         dataSource={testCases}
         rowKey="id"
         loading={loading}
-        scroll={{ y: height, x: 1200 }}
+        scroll={{
+          y: height,
+          x: window.innerWidth < 1200 ? 900 : window.innerWidth < 1500 ? 1100 : 1200
+        }}
         rowSelection={
           selectable
             ? {
@@ -734,16 +927,36 @@ const UnifiedTestCaseList: React.FC<UnifiedTestCaseListProps> = ({
             )}
 
             {/* 前置条件 */}
-            {currentItem.preconditions && currentItem.preconditions.length > 0 && (
-              <div style={{ marginTop: 16 }}>
-                <strong>前置条件:</strong>
-                <ul style={{ marginLeft: 16, marginTop: 4 }}>
-                  {currentItem.preconditions.map((condition, index) => (
-                    <li key={index}>{condition}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            {(() => {
+              if (!currentItem.preconditions) return null;
+
+              let conditions: string[] = [];
+              try {
+                // 尝试解析为JSON数组
+                if (currentItem.preconditions.startsWith('[') && currentItem.preconditions.endsWith(']')) {
+                  conditions = JSON.parse(currentItem.preconditions);
+                } else {
+                  // 如果不是JSON，按换行符分割
+                  conditions = currentItem.preconditions.split('\n').filter(line => line.trim());
+                }
+              } catch (error) {
+                // 解析失败时，将整个字符串作为单个条件
+                conditions = [currentItem.preconditions];
+              }
+
+              if (conditions.length === 0) return null;
+
+              return (
+                <div style={{ marginTop: 16 }}>
+                  <strong>前置条件:</strong>
+                  <ul style={{ marginLeft: 16, marginTop: 4 }}>
+                    {conditions.map((condition, index) => (
+                      <li key={index}>{condition}</li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })()}
 
             {/* 备注 */}
             {currentItem.remarks && (

@@ -48,23 +48,27 @@ class JSONFieldValidator:
 
             # Enhanced format validation and conversion
             try:
-                # Try to parse as JSON array first
+                # Try to parse as JSON
                 parsed = json.loads(v)
-                if not isinstance(parsed, list):
-                    raise ValueError("前置条件必须是JSON数组格式")
 
-                # Validate each item in the array
-                validated_items = []
-                for i, item in enumerate(parsed):
-                    if not isinstance(item, str):
-                        raise ValueError(f"前置条件数组中的第{i+1}项必须是字符串")
-                    item = str(item).strip()
-                    if item and len(item) <= 500:
-                        validated_items.append(item)
-                    elif len(item) > 500:
-                        raise ValueError(f"前置条件数组中的第{i+1}项长度不能超过500字符")
-
-                return json.dumps(validated_items, ensure_ascii=False)
+                # Convert to array if it's a single value
+                if isinstance(parsed, list):
+                    validated_items = []
+                    for i, item in enumerate(parsed):
+                        if not isinstance(item, str):
+                            raise ValueError(f"前置条件数组中的第{i+1}项必须是字符串")
+                        item = str(item).strip()
+                        if item and len(item) <= 500:
+                            validated_items.append(item)
+                        elif len(item) > 500:
+                            raise ValueError(f"前置条件数组中的第{i+1}项长度不能超过500字符")
+                    return json.dumps(validated_items, ensure_ascii=False)
+                else:
+                    # Single value, convert to array
+                    item = str(parsed).strip()
+                    if len(item) > 500:
+                        raise ValueError("前置条件长度不能超过500字符")
+                    return json.dumps([item], ensure_ascii=False)
 
             except json.JSONDecodeError:
                 # Handle non-JSON formats with intelligent conversion

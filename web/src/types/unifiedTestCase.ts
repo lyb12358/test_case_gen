@@ -204,7 +204,7 @@ export interface SearchFilter {
   keyword?: string;
   business_type?: string;
   status?: UnifiedTestCaseStatus;
-  priority?: string;
+  priority?: PriorityLevel;
   stage?: UnifiedTestCaseStage;
   date_range?: [string, string];
 }

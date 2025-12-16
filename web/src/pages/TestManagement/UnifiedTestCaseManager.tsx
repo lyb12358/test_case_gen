@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   Card,
   Button,
@@ -19,7 +19,8 @@ import {
   Badge,
   Tooltip,
   Switch,
-  Alert
+  Alert,
+  Dropdown
 } from 'antd';
 import {
   PlusOutlined,
@@ -34,7 +35,8 @@ import {
   FileTextOutlined,
   ThunderboltOutlined,
   InfoCircleOutlined,
-  WarningOutlined
+  WarningOutlined,
+  MoreOutlined
 } from '@ant-design/icons';
 
 import type { ColumnsType } from 'antd/es/table';
@@ -78,6 +80,22 @@ const UnifiedTestCaseManager: React.FC = () => {
 
   // Business type mapping for display
   const { getBusinessTypeFullName, getBusinessTypeColor } = useBusinessTypeMapping();
+
+  // 响应式检测 - 针对页面布局优化
+  const [isCompact, setIsCompact] = useState(false);
+  const [isVeryCompact, setIsVeryCompact] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const width = window.innerWidth;
+      setIsVeryCompact(width < 1200);   // 超紧凑布局
+      setIsCompact(width < 1500);        // 紧凑布局
+    };
+
+    handleResize(); // 初始检测
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // 如果没有选择项目，显示提示或重定向
   if (!currentProject) {
@@ -666,37 +684,73 @@ const UnifiedTestCaseManager: React.FC = () => {
       title: '名称',
       dataIndex: 'name',
       key: 'name',
-      width: 250,
-      render: (text: string) => (
-        <Tooltip title={text}>
-          <div style={{
-            maxWidth: 230,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap'
-          }}>
-            {text}
-          </div>
-        </Tooltip>
-      )
+      width: isVeryCompact ? 150 : isCompact ? 200 : 250,
+      render: (text: string) => {
+        // 响应式名称显示
+        let maxWidth = 230;
+        let fontSize = '14px';
+
+        if (isVeryCompact) {
+          maxWidth = 130;
+          fontSize = '12px';
+        } else if (isCompact) {
+          maxWidth = 180;
+          fontSize = '13px';
+        }
+
+        return (
+          <Tooltip title={text}>
+            <div style={{
+              maxWidth,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              fontSize
+            }}>
+              {text}
+            </div>
+          </Tooltip>
+        );
+      }
     },
     {
       title: '阶段',
       dataIndex: 'stage',
       key: 'stage',
-      width: 100,
+      width: isVeryCompact ? 70 : isCompact ? 85 : 100,
       render: (stage: string) => {
+        // 响应式阶段显示
+        const isCompactStage = isVeryCompact || isCompact;
+
         if (stage === 'test_point') {
           return (
-            <Tag color="blue" icon={<ExperimentOutlined />}>
-              测试点
-            </Tag>
+            <Tooltip title="测试点">
+              <Tag
+                color="blue"
+                icon={<ExperimentOutlined />}
+                style={{
+                  fontSize: isVeryCompact ? '9px' : isCompact ? '10px' : '12px',
+                  padding: isVeryCompact ? '2px 4px' : isCompact ? '3px 6px' : '4px 8px'
+                }}
+              >
+                {isCompactStage ? '测点' : '测试点'}
+              </Tag>
+            </Tooltip>
           );
         } else {
           return (
-            <Tag color="green" icon={<FileTextOutlined />}>
-              测试用例
-            </Tag>
+            <Tooltip title="测试用例">
+              <Tag
+                color="green"
+                icon={<FileTextOutlined />}
+                style={{
+                  fontSize: isVeryCompact ? '9px' : isCompact ? '10px' : '12px',
+                  padding: isVeryCompact ? '2px 4px' : isCompact ? '3px 6px' : '4px 8px'
+                }}
+              >
+                {isCompactStage ? '用例' : '测试用例'}
+              </Tag>
+            </Tooltip>
           );
         }
       },
@@ -705,25 +759,47 @@ const UnifiedTestCaseManager: React.FC = () => {
       title: '业务类型',
       dataIndex: 'business_type',
       key: 'business_type',
-      width: 200,
+      width: isVeryCompact ? 100 : isCompact ? 150 : 200,
       render: (type: string) => {
         if (!type) return <Tag>-</Tag>;
         const fullName = getBusinessTypeFullName(type);
         const color = getBusinessTypeColor(type);
+
+        // 根据屏幕宽度显示简化的业务类型名称
+        let displayName = fullName;
+        let fontSize = '12px';
+        let maxWidth = 180;
+        let whiteSpace = 'normal';
+
+        if (isVeryCompact) {
+          displayName = fullName.length > 4 ? fullName.substring(0, 4) + '...' : fullName;
+          fontSize = '9px';
+          maxWidth = 70;
+          whiteSpace = 'nowrap';
+        } else if (isCompact) {
+          displayName = fullName.length > 6 ? fullName.substring(0, 6) + '...' : fullName;
+          fontSize = '10px';
+          maxWidth = 110;
+          whiteSpace = 'nowrap';
+        }
+
         return (
           <Tooltip title={`[${type}] ${fullName}`}>
             <Tag
               color={color}
               style={{
-                maxWidth: 180,
-                whiteSpace: 'normal',
-                wordBreak: 'break-all',
+                fontSize,
+                maxWidth,
+                whiteSpace,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
                 height: 'auto',
-                padding: '4px 8px',
-                lineHeight: '1.4'
+                padding: isVeryCompact ? '2px 4px' : '4px 8px',
+                lineHeight: '1.2',
+                display: 'inline-block'
               }}
             >
-              [{type}] {fullName}
+              [{type}] {displayName}
             </Tag>
           </Tooltip>
         );
@@ -733,7 +809,7 @@ const UnifiedTestCaseManager: React.FC = () => {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      width: 100,
+      width: isVeryCompact ? 70 : isCompact ? 80 : 100,
       render: (status: string) => {
         const statusConfig = {
           draft: { color: 'default', text: '草稿' },
@@ -741,7 +817,27 @@ const UnifiedTestCaseManager: React.FC = () => {
           rejected: { color: 'error', text: '已拒绝' }
         };
         const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.draft;
-        return <Badge status={config.color as any} text={config.text} />;
+
+        // 响应式显示
+        if (isVeryCompact) {
+          // 超紧凑布局：使用简化的文字和样式
+          const shortText = status === 'draft' ? '草' : status === 'approved' ? '准' : '拒';
+          return (
+            <Tag
+              color={config.color}
+              style={{
+                fontSize: '9px',
+                padding: '1px 4px',
+                lineHeight: '1.2',
+                margin: 0
+              }}
+            >
+              {shortText}
+            </Tag>
+          );
+        } else {
+          return <Badge status={config.color as any} text={config.text} />;
+        }
       },
     },
     {
@@ -777,53 +873,180 @@ const UnifiedTestCaseManager: React.FC = () => {
     {
       title: '操作',
       key: 'action',
-      width: 250,
-      render: (_, record) => (
-        <Space size="small">
-          <Button
-            type="link"
-            size="small"
-            icon={<EyeOutlined />}
-            onClick={() => handleView(record)}
-          >
-            查看
-          </Button>
-          <Button
-            type="link"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => handleEdit(record)}
-          >
-            编辑
-          </Button>
-          {record.stage === 'test_point' && (
-            <Button
-              type="link"
-              size="small"
-              icon={<ThunderboltOutlined />}
-              onClick={() => handleConvert(record)}
-              style={{ color: '#52c41a' }}
+      width: isVeryCompact ? 120 : isCompact ? 180 : 250,
+      render: (_, record) => {
+        // 响应式操作按钮显示
+        if (isVeryCompact) {
+          // 超紧凑布局：只显示图标，使用Dropdown
+          const items = [
+            {
+              key: 'view',
+              label: '查看',
+              icon: <EyeOutlined />,
+              onClick: () => handleView(record)
+            },
+            {
+              key: 'edit',
+              label: '编辑',
+              icon: <EditOutlined />,
+              onClick: () => handleEdit(record)
+            }
+          ];
+
+          if (record.stage === 'test_point') {
+            items.push({
+              key: 'convert',
+              label: '转换',
+              icon: <ThunderboltOutlined />,
+              onClick: () => handleConvert(record)
+            });
+          }
+
+          items.push({
+            key: 'delete',
+            label: '删除',
+            icon: <DeleteOutlined />,
+            danger: true,
+            onClick: () => {
+              Modal.confirm({
+                title: '确定删除这条记录吗？',
+                content: '删除后无法恢复',
+                okText: '确定',
+                cancelText: '取消',
+                onOk: () => handleDelete(record.id)
+              });
+            }
+          });
+
+          return (
+            <Dropdown
+              menu={{ items }}
+              trigger={['click']}
+              placement="bottomLeft"
             >
-              转换
-            </Button>
-          )}
-          <Popconfirm
-            title="确定删除这条记录吗？"
-            onConfirm={() => handleDelete(record.id)}
-            okText="确定"
-            cancelText="取消"
-          >
-            <Button
-              type="link"
-              size="small"
-              danger
-              icon={<DeleteOutlined />}
-            >
-              删除
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
+              <Button
+                type="text"
+                size="small"
+                icon={<MoreOutlined />}
+                style={{ padding: '2px 4px' }}
+              />
+            </Dropdown>
+          );
+        } else if (isCompact) {
+          // 紧凑布局：显示主要操作，次要操作放入下拉菜单
+          const secondaryItems = [];
+
+          if (record.stage === 'test_point') {
+            secondaryItems.push({
+              key: 'convert',
+              label: '转换',
+              icon: <ThunderboltOutlined />,
+              onClick: () => handleConvert(record)
+            });
+          }
+
+          secondaryItems.push({
+            key: 'delete',
+            label: '删除',
+            icon: <DeleteOutlined />,
+            danger: true,
+            onClick: () => {
+              Modal.confirm({
+                title: '确定删除这条记录吗？',
+                content: '删除后无法恢复',
+                okText: '确定',
+                cancelText: '取消',
+                onOk: () => handleDelete(record.id)
+              });
+            }
+          });
+
+          return (
+            <Space size="small">
+              <Button
+                type="link"
+                size="small"
+                icon={<EyeOutlined />}
+                onClick={() => handleView(record)}
+                style={{ padding: '0 4px' }}
+              >
+                查看
+              </Button>
+              <Button
+                type="link"
+                size="small"
+                icon={<EditOutlined />}
+                onClick={() => handleEdit(record)}
+                style={{ padding: '0 4px' }}
+              >
+                编辑
+              </Button>
+              {secondaryItems.length > 0 && (
+                <Dropdown
+                  menu={{ items: secondaryItems }}
+                  trigger={['click']}
+                  placement="bottomLeft"
+                >
+                  <Button
+                    type="link"
+                    size="small"
+                    icon={<MoreOutlined />}
+                    style={{ padding: '0 4px' }}
+                  />
+                </Dropdown>
+              )}
+            </Space>
+          );
+        } else {
+          // 正常布局：显示所有按钮
+          return (
+            <Space size="small">
+              <Button
+                type="link"
+                size="small"
+                icon={<EyeOutlined />}
+                onClick={() => handleView(record)}
+              >
+                查看
+              </Button>
+              <Button
+                type="link"
+                size="small"
+                icon={<EditOutlined />}
+                onClick={() => handleEdit(record)}
+              >
+                编辑
+              </Button>
+              {record.stage === 'test_point' && (
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<ThunderboltOutlined />}
+                  onClick={() => handleConvert(record)}
+                  style={{ color: '#52c41a' }}
+                >
+                  转换
+                </Button>
+              )}
+              <Popconfirm
+                title="确定删除这条记录吗？"
+                onConfirm={() => handleDelete(record.id)}
+                okText="确定"
+                cancelText="取消"
+              >
+                <Button
+                  type="link"
+                  size="small"
+                  danger
+                  icon={<DeleteOutlined />}
+                >
+                  删除
+                </Button>
+              </Popconfirm>
+            </Space>
+          );
+        }
+      },
     },
   ];
 

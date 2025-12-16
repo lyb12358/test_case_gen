@@ -106,22 +106,40 @@ const TestManagementHub: React.FC<TestManagementHubProps> = () => {
 
       // 从任务数据中提取最近活动
       const tasks = tasksData?.tasks || [];
-      return tasks
-        .filter(task => task.status === 'completed' || task.status === 'failed')
-        .slice(0, 10)
-        .map(task => ({
-          id: task.id,
-          action: task.generation_type === 'test_points' ? '生成了测试点' :
-                  task.generation_type === 'test_cases' ? '生成了测试用例' :
-                  task.generation_type === 'both' ? '批量生成完成' : '执行了任务',
+
+      // 过滤有效的任务并按创建时间降序排序
+      const validTasks = tasks
+        .filter(task => task.task_id && (task.status === 'completed' || task.status === 'failed' || task.status === 'running'))
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 10);
+
+      return validTasks.map(task => {
+        // 根据任务状态和业务类型确定活动类型
+        let activityType = 'task';
+        let actionText = '执行了测试任务';
+
+        if (task.status === 'completed') {
+          activityType = 'test_case';
+          actionText = '完成了测试任务';
+        } else if (task.status === 'failed') {
+          activityType = 'task';
+          actionText = '任务执行失败';
+        } else if (task.status === 'running') {
+          activityType = 'batch';
+          actionText = '正在执行测试任务';
+        }
+
+        return {
+          id: task.task_id,
+          action: actionText,
           target: task.business_type ? `${task.business_type}相关测试` : '测试任务',
-          type: task.generation_type === 'test_points' ? 'test_point' :
-                task.generation_type === 'test_cases' ? 'test_case' : 'batch',
-          time: formatTimeAgo(task.completed_at || task.created_at),
+          type: activityType,
+          time: formatTimeAgo(task.created_at),
           businessType: task.business_type || 'GEN'
-        }));
+        };
+      });
     },
-    enabled: !!currentProject?.id && !!tasksData,
+    enabled: !!currentProject?.id && !!tasksData?.tasks,
     refetchInterval: 30000 // 每30秒刷新最近活动
   });
 
