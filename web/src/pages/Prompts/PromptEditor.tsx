@@ -54,16 +54,28 @@ import PromptVariableGuide from '../../components/PromptBuilder/PromptVariableGu
 import 'highlight.js/styles/github.css';
 
 // Configure Monaco Editor to use local instance
-loader.config({
-  paths: {
-    vs: '/node_modules/monaco-editor/min/vs'
-  },
-  'vs/nls': {
-    availableLanguages: {
-      '*': 'zh-cn'
+// Only configure path in development, let Vite handle it in production
+if (import.meta.env.DEV) {
+  loader.config({
+    paths: {
+      vs: '/node_modules/monaco-editor/min/vs'
+    },
+    'vs/nls': {
+      availableLanguages: {
+        '*': 'zh-cn'
+      }
     }
-  }
-});
+  });
+} else {
+  // Production: Only configure language, no custom paths
+  loader.config({
+    'vs/nls': {
+      availableLanguages: {
+        '*': 'zh-cn'
+      }
+    }
+  });
+}
 
 // Pre-load Monaco Editor
 loader.init().then((monaco) => {
