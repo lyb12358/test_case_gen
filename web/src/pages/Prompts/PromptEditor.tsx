@@ -54,8 +54,8 @@ import PromptVariableGuide from '../../components/PromptBuilder/PromptVariableGu
 import 'highlight.js/styles/github.css';
 
 // Configure Monaco Editor to use local instance
-// Only configure path in development, let Vite handle it in production
 if (import.meta.env.DEV) {
+  // Development: Use local node_modules
   loader.config({
     paths: {
       vs: '/node_modules/monaco-editor/min/vs'
@@ -67,7 +67,35 @@ if (import.meta.env.DEV) {
     }
   });
 } else {
-  // Production: Only configure language, no custom paths
+  // Production: Configure for Vite bundled resources
+  // Set up Monaco environment to use bundled workers
+  if (typeof window !== 'undefined') {
+    window.MonacoEnvironment = {
+      getWorkerUrl: function (moduleId, label) {
+        // Return the bundled worker files
+        const workerBaseUrl = './assets';
+        switch (label) {
+          case 'json':
+            return `${workerBaseUrl}/json.worker.js`;
+          case 'css':
+          case 'scss':
+          case 'less':
+            return `${workerBaseUrl}/css.worker.js`;
+          case 'html':
+          case 'handlebars':
+          case 'razor':
+            return `${workerBaseUrl}/html.worker.js`;
+          case 'typescript':
+          case 'javascript':
+            return `${workerBaseUrl}/ts.worker.js`;
+          default:
+            return `${workerBaseUrl}/editor.worker.js`;
+        }
+      }
+    };
+  }
+
+  // Configure language settings
   loader.config({
     'vs/nls': {
       availableLanguages: {
