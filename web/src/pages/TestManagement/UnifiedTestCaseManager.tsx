@@ -879,11 +879,11 @@ const UnifiedTestCaseManager: React.FC = () => {
         }
       },
     },
-    ...(isCompact || isVeryCompact ? [] : [{
+    ...(isVeryCompact ? [] : [{
       title: '优先级',
       dataIndex: 'priority',
       key: 'priority',
-      width: 100,
+      width: isCompact ? 80 : 100,
       render: (priority: string) => {
         const colorMap = {
           high: 'red',
@@ -895,9 +895,24 @@ const UnifiedTestCaseManager: React.FC = () => {
           medium: '中',
           low: '低'
         };
+
+        // 紧凑模式下使用更短的文字
+        const displayText = isVeryCompact ?
+          (priority === 'high' ? 'H' : priority === 'medium' ? 'M' : 'L') :
+          (isCompact ?
+            (priority === 'high' ? '高' : priority === 'medium' ? '中' : '低') :
+            textMap[priority as keyof typeof textMap]
+          );
+
         return (
-          <Tag color={colorMap[priority as keyof typeof colorMap]}>
-            {textMap[priority as keyof typeof textMap]}
+          <Tag
+            color={colorMap[priority as keyof typeof colorMap]}
+            style={{
+              fontSize: isCompact ? '10px' : '12px',
+              padding: isCompact ? '2px 6px' : '4px 8px'
+            }}
+          >
+            {displayText}
           </Tag>
         );
       },
