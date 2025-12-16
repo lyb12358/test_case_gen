@@ -150,14 +150,14 @@ class ConfigurationService {
     }
 
     try {
-      const response = await apiClient.get<Record<string, ConfigurationItem>>(
-        API_ENDPOINTS.CONFIG.PROMPT_TYPES,
+      const response = await apiClient.get<AllConfigurationResponse>(
+        API_ENDPOINTS.CONFIG.SYSTEM_INFO,
         { params: { refresh: refresh || false } }
       );
 
-      this.cache.promptStatuses = response.data;
+      this.cache.promptStatuses = response.data.prompt_statuses;
       this.cache.lastFetch = Date.now();
-      return response.data;
+      return response.data.prompt_statuses;
     } catch (error) {
       console.error('Failed to fetch prompt statuses:', error);
       throw error;
@@ -188,14 +188,14 @@ class ConfigurationService {
     }
 
     try {
-      const response = await apiClient.get<Record<string, ConfigurationItem>>(
+      const response = await apiClient.get<AllConfigurationResponse>(
         API_ENDPOINTS.CONFIG.SYSTEM_INFO, // 使用SYSTEM_INFO端点，直接映射到/config/all
         { params: { refresh: refresh || false } }
       );
 
-      this.cache.generationStages = response.data;
+      this.cache.generationStages = response.data.generation_stages;
       this.cache.lastFetch = Date.now();
-      return response.data;
+      return response.data.generation_stages;
     } catch (error) {
       console.error('Failed to fetch generation stages:', error);
       throw error;
