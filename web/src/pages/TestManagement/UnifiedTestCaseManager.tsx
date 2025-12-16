@@ -666,19 +666,35 @@ const UnifiedTestCaseManager: React.FC = () => {
       title: '测试用例ID',
       dataIndex: 'test_case_id',
       key: 'test_case_id',
-      width: 200,
-      render: (text: string) => (
-        <Tooltip title={text}>
-          <div style={{
-            maxWidth: 180,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap'
-          }}>
-            {text}
-          </div>
-        </Tooltip>
-      )
+      width: isVeryCompact ? 100 : isCompact ? 140 : 200,
+      render: (text: string) => {
+        // 响应式ID显示
+        let maxWidth = 180;
+        let fontSize = '12px';
+
+        if (isVeryCompact) {
+          maxWidth = 80;
+          fontSize = '10px';
+        } else if (isCompact) {
+          maxWidth = 120;
+          fontSize = '11px';
+        }
+
+        return (
+          <Tooltip title={text}>
+            <div style={{
+              maxWidth,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              fontSize,
+              fontFamily: 'Monaco, Consolas, monospace'
+            }}>
+              {text}
+            </div>
+          </Tooltip>
+        );
+      }
     },
     {
       title: '名称',
@@ -809,38 +825,61 @@ const UnifiedTestCaseManager: React.FC = () => {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      width: isVeryCompact ? 70 : isCompact ? 80 : 100,
+      width: isVeryCompact ? 60 : isCompact ? 70 : 100,
       render: (status: string) => {
         const statusConfig = {
-          draft: { color: 'default', text: '草稿' },
-          approved: { color: 'success', text: '已批准' },
-          rejected: { color: 'error', text: '已拒绝' }
+          draft: { color: 'default', text: '草稿', shortText: '草' },
+          approved: { color: 'success', text: '已批准', shortText: '准' },
+          rejected: { color: 'error', text: '已拒绝', shortText: '拒' }
         };
         const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.draft;
 
-        // 响应式显示
+        // 响应式显示 - 统一使用Tag组件避免竖排问题
         if (isVeryCompact) {
-          // 超紧凑布局：使用简化的文字和样式
-          const shortText = status === 'draft' ? '草' : status === 'approved' ? '准' : '拒';
+          // 超紧凑布局：使用单字符和极小样式
           return (
-            <Tag
-              color={config.color}
-              style={{
-                fontSize: '9px',
-                padding: '1px 4px',
-                lineHeight: '1.2',
-                margin: 0
-              }}
-            >
-              {shortText}
-            </Tag>
+            <Tooltip title={config.text}>
+              <Tag
+                color={config.color}
+                style={{
+                  fontSize: '8px',
+                  padding: '1px 3px',
+                  lineHeight: '1.1',
+                  margin: 0,
+                  minWidth: '16px',
+                  textAlign: 'center',
+                  display: 'inline-block'
+                }}
+              >
+                {config.shortText}
+              </Tag>
+            </Tooltip>
+          );
+        } else if (isCompact) {
+          // 紧凑布局：使用简化文字和较小样式
+          return (
+            <Tooltip title={config.text}>
+              <Tag
+                color={config.color}
+                style={{
+                  fontSize: '9px',
+                  padding: '2px 4px',
+                  lineHeight: '1.2',
+                  margin: 0,
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {config.shortText}
+              </Tag>
+            </Tooltip>
           );
         } else {
+          // 正常布局：使用Badge组件
           return <Badge status={config.color as any} text={config.text} />;
         }
       },
     },
-    {
+    ...(isCompact || isVeryCompact ? [] : [{
       title: '优先级',
       dataIndex: 'priority',
       key: 'priority',
@@ -862,14 +901,37 @@ const UnifiedTestCaseManager: React.FC = () => {
           </Tag>
         );
       },
-    },
-    {
+    }]),
+    ...(isVeryCompact ? [] : [{
       title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',
-      width: 180,
-      render: (date: string) => new Date(date).toLocaleString(),
-    },
+      width: isCompact ? 140 : 180,
+      render: (date: string) => {
+        const dateObj = new Date(date);
+
+        // 响应式时间显示
+        if (isCompact) {
+          // 紧凑布局：显示简短日期时间
+          return (
+            <Tooltip title={dateObj.toLocaleString()}>
+              <span style={{ fontSize: '11px' }}>
+                {dateObj.toLocaleDateString('zh-CN', {
+                  month: 'short',
+                  day: '2-digit'
+                })} {dateObj.toLocaleTimeString('zh-CN', {
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
+              </span>
+            </Tooltip>
+          );
+        } else {
+          // 正常布局：显示完整日期时间
+          return dateObj.toLocaleString();
+        }
+      },
+    }]),
     {
       title: '操作',
       key: 'action',
@@ -1259,6 +1321,10 @@ const UnifiedTestCaseManager: React.FC = () => {
             selectedRowKeys,
             onChange: setSelectedRowKeys,
           }}
+          scroll={{
+            x: isVeryCompact ? 800 : isCompact ? 1000 : undefined,
+            y: 'calc(100vh - 300px)'
+          }}
           pagination={{
             current: currentPage,
             pageSize: pageSize,
@@ -1271,7 +1337,12 @@ const UnifiedTestCaseManager: React.FC = () => {
               setCurrentPage(page);
               setPageSize(size || 20);
             },
+            ...(isVeryCompact && {
+              pageSizeOptions: ['10', '20'],
+              simple: true
+            })
           }}
+          size={isVeryCompact ? 'small' : 'middle'}
         />
       </Card>
 
