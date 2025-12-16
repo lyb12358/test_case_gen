@@ -20,7 +20,8 @@ import {
   Badge,
   Progress,
   Empty,
-  Alert
+  Alert,
+  Dropdown
 } from 'antd';
 import {
   PlusOutlined,
@@ -32,7 +33,8 @@ import {
   ExclamationCircleOutlined,
   CloseCircleOutlined,
   EyeOutlined,
-  SettingOutlined
+  SettingOutlined,
+  MoreOutlined
 } from '@ant-design/icons';
 import {
   getConfigurationStatusTag,
@@ -59,6 +61,24 @@ const BusinessList: React.FC = () => {
   const [editingBusiness, setEditingBusiness] = useState<BusinessType | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
+
+  // 响应式状态管理
+  const [screenWidth, setScreenWidth] = useState(window.innerWidth);
+  const [isCompact, setIsCompact] = useState(screenWidth < 1500);
+  const [isVeryCompact, setIsVeryCompact] = useState(screenWidth < 1200);
+
+  // 监听窗口大小变化
+  useEffect(() => {
+    const handleResize = () => {
+      const width = window.innerWidth;
+      setScreenWidth(width);
+      setIsCompact(width < 1500);
+      setIsVeryCompact(width < 1200);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // 当当前项目变更时，自动更新选中的项目
   useEffect(() => {
@@ -282,59 +302,191 @@ const BusinessList: React.FC = () => {
     {
       title: '操作',
       key: 'actions',
-      width: 200,
-      render: (_: any, record: BusinessType) => (
-        <Space size="small">
-          <Tooltip title="编辑业务类型">
-            <Button
-              type="text"
-              size="small"
-              icon={<EditOutlined />}
-              onClick={() => handleEditBusiness(record)}
-            />
-          </Tooltip>
+      width: isVeryCompact ? 60 : isCompact ? 120 : 200,
+      render: (_: any, record: BusinessType) => {
+        // 响应式操作按钮显示
+        if (isVeryCompact) {
+          // 超紧凑布局：使用下拉菜单
+          const items = [
+            {
+              key: 'edit',
+              label: '编辑业务类型',
+              icon: <EditOutlined />,
+              onClick: () => handleEditBusiness(record)
+            },
+            {
+              key: 'config',
+              label: record.configuration_status === 'complete' ? "查看提示词配置" : "配置两阶段提示词",
+              icon: <SettingOutlined />,
+              onClick: () => handleViewPromptCombination(record)
+            },
+            {
+              key: 'toggle',
+              label: record.is_active ? "停用" : "激活",
+              icon: record.is_active ? <CloseCircleOutlined /> : <CheckCircleOutlined />,
+              onClick: () => handleToggleActivation(record),
+              disabled: record.configuration_status !== 'complete' && !record.is_active
+            },
+            {
+              key: 'delete',
+              label: '删除',
+              icon: <DeleteOutlined />,
+              danger: true,
+              disabled: record.is_active,
+              onClick: () => {
+                Modal.confirm({
+                  title: '确定删除吗？',
+                  content: '删除后无法恢复',
+                  okText: '确定',
+                  cancelText: '取消',
+                  onOk: () => handleDeleteBusiness(record.id)
+                });
+              }
+            }
+          ];
 
-          <Tooltip title={record.configuration_status === 'complete' ? "查看提示词配置" : "配置两阶段提示词"}>
-            <Button
-              type="text"
-              size="small"
-              icon={<SettingOutlined />}
-              onClick={() => handleViewPromptCombination(record)}
-              style={{
-                color: record.configuration_status === 'complete' ? '#52c41a' : '#fa8c16'
-              }}
-            />
-          </Tooltip>
-
-          <Tooltip title={record.is_active ? "停用" : "激活"}>
-            <Switch
-              size="small"
-              checked={record.is_active}
-              onChange={() => handleToggleActivation(record)}
-              disabled={record.configuration_status !== 'complete' && !record.is_active}
-            />
-          </Tooltip>
-
-          <Tooltip title="删除">
-            <Popconfirm
-              title="确定删除吗？"
-              description="删除后无法恢复"
-              onConfirm={() => handleDeleteBusiness(record.id)}
-              okText="确定"
-              cancelText="取消"
+          return (
+            <Dropdown
+              menu={{ items }}
+              trigger={['click']}
+              placement="bottomLeft"
             >
               <Button
                 type="text"
                 size="small"
-                danger
-                icon={<DeleteOutlined />}
-                loading={deleteMutation.isPending}
-                disabled={record.is_active}
+                icon={<MoreOutlined />}
+                style={{ padding: '2px 4px' }}
               />
-            </Popconfirm>
-          </Tooltip>
-        </Space>
-      ),
+            </Dropdown>
+          );
+        } else if (isCompact) {
+          // 紧凑布局：显示主要操作，次要操作放入下拉菜单
+          const secondaryItems = [];
+
+          if (record.configuration_status === 'complete') {
+            secondaryItems.push({
+              key: 'config',
+              label: "查看提示词配置",
+              icon: <SettingOutlined />,
+              onClick: () => handleViewPromptCombination(record)
+            });
+          } else {
+            secondaryItems.push({
+              key: 'config',
+              label: "配置两阶段提示词",
+              icon: <SettingOutlined />,
+              onClick: () => handleViewPromptCombination(record)
+            });
+          }
+
+          secondaryItems.push({
+            key: 'delete',
+            label: '删除',
+            icon: <DeleteOutlined />,
+            danger: true,
+            disabled: record.is_active,
+            onClick: () => {
+              Modal.confirm({
+                title: '确定删除吗？',
+                content: '删除后无法恢复',
+                okText: '确定',
+                cancelText: '取消',
+                onOk: () => handleDeleteBusiness(record.id)
+              });
+            }
+          });
+
+          return (
+            <Space size="small">
+              <Tooltip title="编辑业务类型">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<EditOutlined />}
+                  onClick={() => handleEditBusiness(record)}
+                  style={{ padding: '2px 4px' }}
+                />
+              </Tooltip>
+
+              <Tooltip title={record.is_active ? "停用" : "激活"}>
+                <Switch
+                  size="small"
+                  checked={record.is_active}
+                  onChange={() => handleToggleActivation(record)}
+                  disabled={record.configuration_status !== 'complete' && !record.is_active}
+                />
+              </Tooltip>
+
+              <Dropdown
+                menu={{ items: secondaryItems }}
+                trigger={['click']}
+                placement="bottomLeft"
+              >
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<MoreOutlined />}
+                  style={{ padding: '2px 4px' }}
+                />
+              </Dropdown>
+            </Space>
+          );
+        } else {
+          // 正常布局：显示所有操作
+          return (
+            <Space size="small">
+              <Tooltip title="编辑业务类型">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<EditOutlined />}
+                  onClick={() => handleEditBusiness(record)}
+                />
+              </Tooltip>
+
+              <Tooltip title={record.configuration_status === 'complete' ? "查看提示词配置" : "配置两阶段提示词"}>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<SettingOutlined />}
+                  onClick={() => handleViewPromptCombination(record)}
+                  style={{
+                    color: record.configuration_status === 'complete' ? '#52c41a' : '#fa8c16'
+                  }}
+                />
+              </Tooltip>
+
+              <Tooltip title={record.is_active ? "停用" : "激活"}>
+                <Switch
+                  size="small"
+                  checked={record.is_active}
+                  onChange={() => handleToggleActivation(record)}
+                  disabled={record.configuration_status !== 'complete' && !record.is_active}
+                />
+              </Tooltip>
+
+              <Tooltip title="删除">
+                <Popconfirm
+                  title="确定删除吗？"
+                  description="删除后无法恢复"
+                  onConfirm={() => handleDeleteBusiness(record.id)}
+                  okText="确定"
+                  cancelText="取消"
+                >
+                  <Button
+                    type="text"
+                    size="small"
+                    danger
+                    icon={<DeleteOutlined />}
+                    loading={deleteMutation.isPending}
+                    disabled={record.is_active}
+                  />
+                </Popconfirm>
+              </Tooltip>
+            </Space>
+          );
+        }
+      },
     },
   ];
 
@@ -490,16 +642,27 @@ const BusinessList: React.FC = () => {
           dataSource={businessTypesData?.items || []}
           rowKey="id"
           loading={isLoading}
+          scroll={{
+            x: isVeryCompact ? 800 : isCompact ? 1000 : 1200,
+            y: 'calc(100vh - 400px)'
+          }}
+          size={isVeryCompact ? 'small' : 'middle'}
           pagination={{
             current: currentPage,
             total: businessTypesData?.total || 0,
             pageSize,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total) => `共 ${total} 条记录`,
+            showSizeChanger: !isVeryCompact,
+            showQuickJumper: !isVeryCompact,
+            showTotal: (total, range) =>
+              isVeryCompact ?
+              `${range[0]}-${range[1]}/${total}` :
+              `第 ${range[0]}-${range[1]} 条，共 ${total} 条记录`,
             onChange: (page) => setCurrentPage(page),
+            ...(isVeryCompact && {
+              simple: true,
+              pageSizeOptions: ['10', '20']
+            })
           }}
-          scroll={{ x: 1200 }}
         />
       </Card>
 
