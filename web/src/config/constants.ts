@@ -112,6 +112,8 @@ export const API_ENDPOINTS = {
   CONFIG: {
     BUSINESS_TYPES: '/v1/config/business-types',
     PROMPT_TYPES: '/v1/config/prompt-types',
+    PROMPT_STATUSES: '/v1/config/prompt-statuses',
+    GENERATION_STAGES: '/v1/config/generation-stages',
     SYSTEM_INFO: '/v1/config/all',  // 指向后端/all端点，获取所有配置数据
     TEMPLATE_VARIABLES: '/v1/config/template-variables',
     VALIDATE: {  // 验证相关端点

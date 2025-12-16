@@ -150,14 +150,14 @@ class ConfigurationService {
     }
 
     try {
-      const response = await apiClient.get<AllConfigurationResponse>(
-        API_ENDPOINTS.CONFIG.SYSTEM_INFO,
+      const response = await apiClient.get<Record<string, ConfigurationItem>>(
+        API_ENDPOINTS.CONFIG.PROMPT_STATUSES,
         { params: { refresh: refresh || false } }
       );
 
-      this.cache.promptStatuses = response.data.prompt_statuses;
+      this.cache.promptStatuses = response.data;
       this.cache.lastFetch = Date.now();
-      return response.data.prompt_statuses;
+      return response.data;
     } catch (error) {
       console.error('Failed to fetch prompt statuses:', error);
       throw error;
@@ -170,7 +170,7 @@ class ConfigurationService {
   async getPromptStatus(promptStatus: string): Promise<ConfigurationItem> {
     try {
       const response = await apiClient.get<ConfigurationItem>(
-        `${API_ENDPOINTS.CONFIG.PROMPT_TYPES}/${promptStatus}`
+        `${API_ENDPOINTS.CONFIG.PROMPT_STATUSES}/${promptStatus}`
       );
       return response.data;
     } catch (error) {
@@ -188,14 +188,14 @@ class ConfigurationService {
     }
 
     try {
-      const response = await apiClient.get<AllConfigurationResponse>(
-        API_ENDPOINTS.CONFIG.SYSTEM_INFO, // 使用SYSTEM_INFO端点，直接映射到/config/all
+      const response = await apiClient.get<Record<string, ConfigurationItem>>(
+        API_ENDPOINTS.CONFIG.GENERATION_STAGES,
         { params: { refresh: refresh || false } }
       );
 
-      this.cache.generationStages = response.data.generation_stages;
+      this.cache.generationStages = response.data;
       this.cache.lastFetch = Date.now();
-      return response.data.generation_stages;
+      return response.data;
     } catch (error) {
       console.error('Failed to fetch generation stages:', error);
       throw error;
@@ -208,7 +208,7 @@ class ConfigurationService {
   async getGenerationStage(generationStage: string): Promise<ConfigurationItem> {
     try {
       const response = await apiClient.get<ConfigurationItem>(
-        `${API_ENDPOINTS.CONFIG.SYSTEM_INFO}/generation-stages/${generationStage}` // 映射到system-info下的generation-stages端点
+        `${API_ENDPOINTS.CONFIG.GENERATION_STAGES}/${generationStage}`
       );
       return response.data;
     } catch (error) {
