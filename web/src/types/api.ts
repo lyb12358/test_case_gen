@@ -5695,12 +5695,7 @@ export interface components {
             project_name?: string | null;
             /** Prompt Combination Name */
             prompt_combination_name?: string | null;
-            /**
-             * Has Valid Prompt Combination
-             * @default false
-             */
-            has_valid_prompt_combination: boolean;
-            /** Test Point Combination Name */
+              /** Test Point Combination Name */
             test_point_combination_name?: string | null;
             /** Test Case Combination Name */
             test_case_combination_name?: string | null;

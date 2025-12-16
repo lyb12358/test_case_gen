@@ -257,7 +257,7 @@ const BusinessTypeConfig: React.FC = () => {
         };
       }
     } else {
-      if (businessType.has_valid_prompt_combination) {
+      if (businessType.has_valid_test_point_combination && businessType.has_valid_test_case_combination) {
         return {
           status: 'success',
           text: '配置完整',

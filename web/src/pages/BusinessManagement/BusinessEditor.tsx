@@ -365,7 +365,7 @@ const BusinessEditor: React.FC<BusinessEditorProps> = ({ business, onSuccess, on
               </Col>
               <Col span={8}>
                 <Text strong>提示词组合：</Text>
-                {business.has_valid_prompt_combination ? (
+                {business.has_valid_test_point_combination && business.has_valid_test_case_combination ? (
                   <Tag color="green" icon={<CheckCircleOutlined />}>已配置</Tag>
                 ) : (
                   <Tag color="red" icon={<BuildOutlined />}>未配置</Tag>
