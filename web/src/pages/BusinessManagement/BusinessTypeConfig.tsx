@@ -19,7 +19,8 @@ import {
   Badge,
   Alert,
   Divider,
-  Empty
+  Empty,
+  Dropdown
 } from 'antd';
 import {
   SettingOutlined,
@@ -29,7 +30,8 @@ import {
   CheckCircleOutlined,
   ExclamationCircleOutlined,
   InfoCircleOutlined,
-  BuildOutlined
+  BuildOutlined,
+  MoreOutlined
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { businessService, BusinessType, GenerationModeRequest, GenerationModeResponse } from '../../services/businessService';
@@ -78,6 +80,24 @@ const BusinessTypeConfig: React.FC = () => {
   const [configModalVisible, setConfigModalVisible] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
+
+  // 响应式状态管理
+  const [screenWidth, setScreenWidth] = useState(window.innerWidth);
+  const [isCompact, setIsCompact] = useState(screenWidth < 1500);
+  const [isVeryCompact, setIsVeryCompact] = useState(screenWidth < 1200);
+
+  // 监听窗口大小变化
+  useEffect(() => {
+    const handleResize = () => {
+      const width = window.innerWidth;
+      setScreenWidth(width);
+      setIsCompact(width < 1500);
+      setIsVeryCompact(width < 1200);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // 获取业务类型列表
   const { data: businessTypesData, isLoading, error, refetch } = useQuery({
@@ -296,87 +316,192 @@ const BusinessTypeConfig: React.FC = () => {
       title: '业务编码',
       dataIndex: 'code',
       key: 'code',
-      width: 120,
-      render: (code: string) => <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{code}</span>
+      width: isVeryCompact ? 80 : isCompact ? 100 : 120,
+      render: (code: string) => (
+        <span style={{
+          fontFamily: 'monospace',
+          fontWeight: 'bold',
+          fontSize: isVeryCompact ? '10px' : isCompact ? '11px' : '12px'
+        }}>
+          {code}
+        </span>
+      )
     },
     {
       title: '业务名称',
       dataIndex: 'name',
       key: 'name',
-      width: 220,
+      width: isVeryCompact ? 150 : isCompact ? 180 : 220,
       render: (name: string, record: BusinessType) => {
         const recommendedTemplate = getRecommendedTemplate(record.code);
-        return (
-          <div>
-            <div style={{ fontWeight: 500 }}>{name}</div>
-            {record.description && (
-              <div style={{ fontSize: '12px', color: '#666', marginTop: '2px' }}>
-                {record.description}
+
+        // 响应式业务名称显示
+        if (isVeryCompact) {
+          // 超紧凑布局：只显示名称
+          return (
+            <Tooltip title={record.description || name}>
+              <div>
+                <div style={{
+                  fontWeight: 500,
+                  fontSize: '11px',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
+                }}>
+                  {name}
+                </div>
+                {recommendedTemplate && (
+                  <div style={{ marginTop: '2px' }}>
+                    <Tooltip title={`推荐：${recommendedTemplate.description}`}>
+                      <Tag
+                        color="blue"
+                        style={{ fontSize: '8px', lineHeight: '10px', padding: '1px 3px' }}
+                      >
+                        {recommendedTemplate.icon}
+                      </Tag>
+                    </Tooltip>
+                  </div>
+                )}
               </div>
-            )}
-            {recommendedTemplate && (
-              <div style={{ marginTop: '4px' }}>
-                <Tooltip title={`推荐使用：${recommendedTemplate.description}`}>
-                  <Tag
-                    color="blue"
-                    style={{ fontSize: '11px', lineHeight: '12px' }}
-                  >
-                    {recommendedTemplate.icon} {recommendedTemplate.name}
-                  </Tag>
-                </Tooltip>
+            </Tooltip>
+          );
+        } else if (isCompact) {
+          // 紧凑布局：显示名称和简化描述
+          return (
+            <div>
+              <div style={{
+                fontWeight: 500,
+                fontSize: '12px',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }}>
+                {name}
               </div>
-            )}
-          </div>
-        );
+              {recommendedTemplate && (
+                <div style={{ marginTop: '2px' }}>
+                  <Tooltip title={`推荐：${recommendedTemplate.description}`}>
+                    <Tag
+                      color="blue"
+                      style={{ fontSize: '9px', lineHeight: '11px', padding: '1px 4px' }}
+                    >
+                      {recommendedTemplate.icon} {recommendedTemplate.name}
+                    </Tag>
+                  </Tooltip>
+                </div>
+              )}
+            </div>
+          );
+        } else {
+          // 正常布局：显示完整信息
+          return (
+            <div>
+              <div style={{ fontWeight: 500 }}>{name}</div>
+              {record.description && (
+                <div style={{ fontSize: '12px', color: '#666', marginTop: '2px' }}>
+                  {record.description}
+                </div>
+              )}
+              {recommendedTemplate && (
+                <div style={{ marginTop: '4px' }}>
+                  <Tooltip title={`推荐使用：${recommendedTemplate.description}`}>
+                    <Tag
+                      color="blue"
+                      style={{ fontSize: '11px', lineHeight: '12px' }}
+                    >
+                      {recommendedTemplate.icon} {recommendedTemplate.name}
+                    </Tag>
+                  </Tooltip>
+                </div>
+              )}
+            </div>
+          );
+        }
       },
     },
     {
       title: '状态',
       key: 'status',
-      width: 100,
+      width: isVeryCompact ? 60 : isCompact ? 80 : 100,
       render: (_: any, record: BusinessType) => (
         <Switch
-          size="small"
+          size={isVeryCompact ? 'small' : 'default'}
           checked={record.is_active}
           disabled
         />
       ),
     },
-    {
+    ...(isVeryCompact ? [] : [{
       title: '生成模式',
       key: 'generation_mode',
-      width: 120,
+      width: isCompact ? 100 : 120,
       render: (_: any, record: BusinessType) => getGenerationModeTag(record),
-    },
-    {
+    }]),
+    ...(isVeryCompact ? [] : [{
       title: '配置状态',
       key: 'config_status',
-      width: 140,
+      width: isCompact ? 120 : 140,
       render: (_: any, record: BusinessType) => {
         const status = getConfigurationStatus(record);
         return (
-          <Tag color={status.status} icon={status.icon}>
+          <Tag
+            color={status.status}
+            icon={status.icon}
+            style={{ fontSize: isCompact ? '10px' : '11px' }}
+          >
             {status.text}
           </Tag>
         );
       },
-    },
+    }]),
     {
       title: '操作',
       key: 'actions',
-      width: 120,
-      render: (_: any, record: BusinessType) => (
-        <Space size="small">
-          <Tooltip title="配置生成模式和提示词">
-            <Button
-              type="text"
-              size="small"
-              icon={<SettingOutlined />}
-              onClick={() => handleConfigBusiness(record)}
-            />
-          </Tooltip>
-        </Space>
-      ),
+      width: isVeryCompact ? 60 : isCompact ? 80 : 120,
+      render: (_: any, record: BusinessType) => {
+        // 响应式操作按钮显示
+        if (isVeryCompact) {
+          // 超紧凑布局：使用下拉菜单
+          const items = [
+            {
+              key: 'config',
+              label: '配置生成模式和提示词',
+              icon: <SettingOutlined />,
+              onClick: () => handleConfigBusiness(record)
+            }
+          ];
+
+          return (
+            <Dropdown
+              menu={{ items }}
+              trigger={['click']}
+              placement="bottomLeft"
+            >
+              <Button
+                type="text"
+                size="small"
+                icon={<MoreOutlined />}
+                style={{ padding: '2px 4px' }}
+              />
+            </Dropdown>
+          );
+        } else {
+          // 紧凑和正常布局：显示配置按钮
+          return (
+            <Space size="small">
+              <Tooltip title="配置生成模式和提示词">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<SettingOutlined />}
+                  onClick={() => handleConfigBusiness(record)}
+                  style={{ padding: isCompact ? '2px 4px' : '4px 8px' }}
+                />
+              </Tooltip>
+            </Space>
+          );
+        }
+      },
     },
   ];
 
@@ -533,14 +658,26 @@ const BusinessTypeConfig: React.FC = () => {
           dataSource={businessTypesData?.items || []}
           rowKey="id"
           loading={isLoading}
+          scroll={{
+            x: isVeryCompact ? 600 : isCompact ? 800 : undefined,
+            y: 'calc(100vh - 400px)'
+          }}
+          size={isVeryCompact ? 'small' : 'middle'}
           pagination={{
             current: currentPage,
             total: businessTypesData?.total || 0,
             pageSize,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total) => `共 ${total} 条记录`,
+            showSizeChanger: !isVeryCompact,
+            showQuickJumper: !isVeryCompact,
+            showTotal: (total, range) =>
+              isVeryCompact ?
+              `${range[0]}-${range[1]}/${total}` :
+              `第 ${range[0]}-${range[1]} 条，共 ${total} 条记录`,
             onChange: (page) => setCurrentPage(page),
+            ...(isVeryCompact && {
+              simple: true,
+              pageSizeOptions: ['10', '20']
+            })
           }}
           locale={{
             emptyText: <Empty description="暂无业务类型数据" />
