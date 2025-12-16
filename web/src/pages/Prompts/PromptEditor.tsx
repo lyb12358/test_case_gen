@@ -34,6 +34,7 @@ import {
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Editor, { loader } from '@monaco-editor/react';
+import * as monaco from 'monaco-editor';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -59,11 +60,6 @@ if (import.meta.env.DEV) {
   loader.config({
     paths: {
       vs: '/node_modules/monaco-editor/min/vs'
-    },
-    'vs/nls': {
-      availableLanguages: {
-        '*': 'zh-cn'
-      }
     }
   });
 } else {
@@ -94,20 +90,14 @@ if (import.meta.env.DEV) {
       }
     };
   }
-
-  // Configure language settings
-  loader.config({
-    'vs/nls': {
-      availableLanguages: {
-        '*': 'zh-cn'
-      }
-    }
-  });
 }
 
 // Pre-load Monaco Editor
 loader.init().then((monaco) => {
   console.log('Monaco Editor pre-loaded successfully');
+
+  // Force English locale to prevent CDN localization loading
+  monaco.editor.setLocale('en');
 
 }).catch((error) => {
   console.error('Failed to pre-load Monaco Editor:', error);
