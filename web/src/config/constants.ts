@@ -97,7 +97,7 @@ export const API_ENDPOINTS = {
   PROMPTS: {
     LIST: '/v1/prompts',
     DETAIL: '/v1/prompts',
-    CREATE: '/v1/prompts',
+    CREATE: '/v1/prompts/',
     UPDATE: '/v1/prompts',
     DELETE: '/v1/prompts',
     CATEGORIES: '/v1/prompts/categories/',

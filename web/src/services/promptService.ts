@@ -79,7 +79,7 @@ export const promptService = {
 
   // Create prompt
   createPrompt: async (prompt: PromptCreate): Promise<Prompt> => {
-    const response = await apiClient.post(API_ENDPOINTS.PROMPTS.LIST, prompt);
+    const response = await apiClient.post(API_ENDPOINTS.PROMPTS.CREATE, prompt);
     return response.data;
   },
 
