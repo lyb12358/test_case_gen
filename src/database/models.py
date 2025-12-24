@@ -170,7 +170,7 @@ class UnifiedTestCase(Base):
     # === Core identification fields (simplified) ===
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
-    business_type = Column(Enum(BusinessType), nullable=False, index=True)
+    business_type = Column(String(20), nullable=False, index=True)
     test_case_id = Column(String(50), nullable=False, index=True)  # Use existing field name
     name = Column(String(200), nullable=False, index=True)
     description = Column(Text, nullable=True)
@@ -224,7 +224,7 @@ class GenerationJob(Base):
 
     id = Column(String(36), primary_key=True, index=True)  # UUID string
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
-    business_type = Column(Enum(BusinessType), nullable=False, index=True)
+    business_type = Column(String(20), nullable=False, index=True)
     status = Column(Enum(JobStatus), default=JobStatus.PENDING, nullable=False, index=True)
     # 添加generation_mode字段来区分生成模式
     generation_mode = Column(String(20), nullable=True, index=True, comment="生成模式: test_points_only/test_cases_only")
@@ -275,7 +275,7 @@ class KnowledgeEntity(Base):
     name = Column(String(100), nullable=False, index=True)
     type = Column(Enum(EntityType), nullable=False, index=True)
     description = Column(Text, nullable=True)
-    business_type = Column(Enum(BusinessType), nullable=True, index=True)  # 关联的业务类型
+    business_type = Column(String(20), nullable=True, index=True)  # 关联的业务类型
     parent_id = Column(Integer, ForeignKey("knowledge_entities.id"), nullable=True, index=True)  # 父实体ID
     extra_data = Column(Text, nullable=True)  # JSON string for additional data
     entity_order = Column(Float, nullable=True, index=True)  # 实体排序
@@ -305,7 +305,7 @@ class KnowledgeRelation(Base):
     subject_id = Column(Integer, ForeignKey("knowledge_entities.id"), nullable=False, index=True)
     predicate = Column(String(50), nullable=False, index=True)  # has, calls, contains, etc.
     object_id = Column(Integer, ForeignKey("knowledge_entities.id"), nullable=False, index=True)
-    business_type = Column(Enum(BusinessType), nullable=True, index=True)  # 关联的业务类型
+    business_type = Column(String(20), nullable=True, index=True)  # 关联的业务类型
     created_at = Column(DateTime, default=datetime.now, nullable=False)
 
     # Relationships
@@ -418,7 +418,7 @@ class Prompt(Base):
     name = Column(String(200), nullable=False, index=True)
     content = Column(Text, nullable=False)
     type = Column(Enum(PromptType), nullable=False, index=True)
-    business_type = Column(Enum(BusinessType), nullable=True, index=True)  # Associated business type if applicable
+    business_type = Column(String(20), nullable=True, index=True)  # Associated business type if applicable
     status = Column(Enum(PromptStatus), default=PromptStatus.DRAFT, nullable=False, index=True)
     generation_stage = Column(Enum(GenerationStage), nullable=True, index=True, default=GenerationStage.general)  # Generation stage type: test_point, test_case, general
 
@@ -496,7 +496,7 @@ class PromptCombination(Base):
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     name = Column(String(200), nullable=False, index=True)
     description = Column(Text, nullable=True)
-    business_type = Column(Enum(BusinessType), nullable=True, index=True)
+    business_type = Column(String(20), nullable=True, index=True)
     is_active = Column(Boolean, default=True, nullable=False)
     is_valid = Column(Boolean, default=False, nullable=False)  # Whether the combination is valid/complete
     validation_errors = Column(Text, nullable=True)  # JSON string for validation errors

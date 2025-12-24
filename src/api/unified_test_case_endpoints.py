@@ -28,6 +28,7 @@ from ..models.unified_test_case import (
 )
 
 from .dependencies import get_db
+from ..utils.business_type_validator import validate_business_type_or_400
 # TestPointGenerator removed - using unified generation system
 from ..core.test_case_generator import TestCaseGenerator
 from ..services.sync_transaction_manager import SyncTransactionManager
@@ -60,13 +61,9 @@ logger = logging.getLogger(__name__)
 
 def _get_business_type_value(business_type):
     """
-    安全地获取business_type的值，处理枚举和字符串类型
+    安全地获取business_type的值（现在只处理字符串类型）
     """
-    if business_type is None:
-        return None
-    if hasattr(business_type, 'value'):
-        return business_type.value
-    return business_type
+    return business_type  # business_type 现在直接是字符串
 
 
 
@@ -474,18 +471,16 @@ async def create_unified_test_case(
         has_preconditions = test_case_data.preconditions and len(test_case_data.preconditions) > 0
         stage = DatabaseUnifiedTestCaseStage.test_case if (has_steps or has_preconditions) else DatabaseUnifiedTestCaseStage.test_point
 
-        # Convert business_type string to BusinessType enum
-        try:
-            business_type_enum = BusinessType(test_case_data.business_type)
-        except ValueError as e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid business_type '{test_case_data.business_type}'. Must be one of: {[bt.value for bt in BusinessType]}"
-            )
+        # Validate business type using database-driven validation
+        validate_business_type_or_400(
+            db=db,
+            business_type=test_case_data.business_type,
+            project_id=test_case_data.project_id
+        )
 
         db_test_case = UnifiedTestCase(
             project_id=test_case_data.project_id,
-            business_type=business_type_enum,
+            business_type=test_case_data.business_type.upper(),  # Store as uppercase string
             test_case_id=test_case_data.test_case_id,
             name=test_case_data.name,
             description=test_case_data.description,
@@ -599,19 +594,17 @@ async def update_unified_test_case(
             else:
                 logger.warning(f"Unknown stage value: {update_data['stage']}")
 
-        # 添加缺失的business_type枚举转换
+        # Validate business_type if present in update data
         if 'business_type' in update_data:
-            try:
-                logger.info(f"Converting business_type from string '{update_data['business_type']}' to enum")
-                business_type_enum = BusinessType(update_data['business_type'])
-                update_data['business_type'] = business_type_enum
-                logger.info(f"Successfully converted business_type to enum: {business_type_enum}")
-            except ValueError as e:
-                logger.error(f"Failed to convert business_type '{update_data['business_type']}' to enum: {str(e)}")
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid business_type '{update_data['business_type']}'. Must be one of: {[bt.value for bt in BusinessType]}"
-                )
+            logger.info(f"Validating business_type: '{update_data['business_type']}'")
+            validate_business_type_or_400(
+                db=db,
+                business_type=update_data['business_type'],
+                project_id=db_test_case.project_id
+            )
+            # Store as uppercase string
+            update_data['business_type'] = update_data['business_type'].upper()
+            logger.info(f"Validated business_type: {update_data['business_type']}")
 
         # 处理JSON字段 - 简化处理
         json_fields = ['steps', 'expected_result']  # 移除preconditions，因为现在是简单的字符串字段
@@ -1355,17 +1348,17 @@ def _save_test_points_to_db(
                 id_conflict_count += 1
                 logger.info(f"测试点ID冲突处理: {original_id} -> {unique_id}")
 
-            # Convert business_type string to BusinessType enum
-            try:
-                business_type_enum = BusinessType(business_type)
-            except ValueError as e:
-                logger.error(f"Invalid business_type '{business_type}': {str(e)}")
-                raise
+            # Validate business type using database-driven validation
+            validate_business_type_or_400(
+                db=db,
+                business_type=business_type,
+                project_id=project_id
+            )
 
             # Create test point record with clean data
             test_point = UnifiedTestCase(
                 project_id=project_id,
-                business_type=business_type_enum,
+                business_type=business_type.upper(),  # Store as uppercase string
                 test_case_id=unique_id,
                 name=title,
                 description=description,

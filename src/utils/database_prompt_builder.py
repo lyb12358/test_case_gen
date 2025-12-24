@@ -216,12 +216,12 @@ class DatabasePromptBuilder:
                 query = query.filter(Prompt.type == prompt_type)
             return query.first()
 
-    def get_active_prompt_by_business_type(self, business_type: BusinessType) -> Optional[Prompt]:
+    def get_active_prompt_by_business_type(self, business_type: str) -> Optional[Prompt]:
         """
         Get an active prompt by business type.
 
         Args:
-            business_type (BusinessType): Business type enum
+            business_type (str): Business type string
 
         Returns:
             Optional[Prompt]: Found prompt or None

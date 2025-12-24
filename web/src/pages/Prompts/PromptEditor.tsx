@@ -97,7 +97,7 @@ loader.init().then((monaco) => {
   console.log('Monaco Editor pre-loaded successfully');
 
   // Force English locale to prevent CDN localization loading
-  monaco.editor.setLocale('en');
+  // monaco.editor.setLocale('en');
 
 }).catch((error) => {
   console.error('Failed to pre-load Monaco Editor:', error);

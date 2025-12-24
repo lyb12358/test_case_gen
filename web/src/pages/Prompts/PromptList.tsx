@@ -62,7 +62,6 @@ import { statsService } from '../../services/promptService';
 import { useProject } from '../../contexts/ProjectContext';
 import { projectService } from '../../services/projectService';
 import PromptDeletePreview from './PromptDeletePreview';
-import useDataConsistencyCheck from '../../hooks/useDataConsistencyCheck';
 
 const { Search } = Input;
 const { Option } = Select;
@@ -161,7 +160,7 @@ const PromptList: React.FC = () => {
     error,
     refetch
   } = useQuery({
-    queryKey: ['prompts', currentPage, pageSize, searchText, typeFilter, statusFilter, generationStageFilters, businessTypeFilter, currentProject?.id],
+    queryKey: ['prompts', currentPage, pageSize, searchText, typeFilter, statusFilter, generationStageFilters, businessTypeFilter],
     queryFn: () => promptService.prompt.getPrompts({
       page: currentPage,
       size: pageSize,
@@ -169,44 +168,26 @@ const PromptList: React.FC = () => {
       type: typeFilter,
       status: statusFilter,
       generation_stage: generationStageFilters.length > 0 ? generationStageFilters.join(',') : undefined,
-      business_type: businessTypeFilter,
-      project_id: currentProject?.id
+      business_type: businessTypeFilter
+      // 不传递 project_id，显示所有项目的提示词
     }),
     placeholderData: (previousData) => previousData,
-    enabled: !!currentProject // 只有选择了项目才启用查询
+    enabled: true // 始终启用查询，不受项目选择限制
   });
 
   // Fetch statistics data
   const {
     data: statsData
   } = useQuery({
-    queryKey: ['prompt-stats', currentProject?.id],
-    queryFn: () => statsService.getOverviewStats(currentProject?.id),
+    queryKey: ['prompt-stats'],
+    queryFn: () => statsService.getOverviewStats(undefined), // 不传递项目ID，获取全局统计
     staleTime: 30 * 1000, // 30 seconds cache (reduced from 5 minutes for better consistency)
-    enabled: !!currentProject, // Only enable when project is selected
+    enabled: true, // 始终启用，不受项目选择限制
     // Depend on prompts data to ensure stats are updated after list changes
     refetchOnMount: true,
     refetchOnWindowFocus: false,
     refetchOnReconnect: true
   });
-
-  // Ensure stats data is refreshed when prompts data changes
-  useEffect(() => {
-    if (promptsData && statsData) {
-      // Check if there's a consistency issue
-      if (promptsData.total < (statsData.active_prompts || 0)) {
-        // Force refresh stats data if inconsistent
-        queryClient.invalidateQueries({ queryKey: ['prompt-stats'] });
-      }
-    }
-  }, [promptsData, statsData, queryClient]);
-
-  // Data consistency check
-  const {
-    isConsistent,
-    hasErrors,
-    hasWarnings
-  } = useDataConsistencyCheck(promptsData, statsData);
 
   // Delete prompt mutation
   const deletePromptMutation = useMutation({
@@ -564,47 +545,8 @@ const PromptList: React.FC = () => {
     );
   }
 
-  // 如果没有选择项目，显示提示信息
-  if (!currentProject) {
-    return (
-      <div style={{ padding: '24px' }}>
-        <Card>
-          <Empty
-            description={
-              <div>
-                <h3>请先选择一个项目</h3>
-                <p>请在顶部导航栏选择一个项目后，即可查看该项目的提示词列表。</p>
-              </div>
-            }
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-          />
-        </Card>
-      </div>
-    );
-  }
-
   return (
     <div style={{ padding: '24px' }}>
-      {/* Data Consistency Warning */}
-      {!isConsistent && (
-        <Row style={{ marginBottom: '16px' }}>
-          <Col span={24}>
-            <Alert
-              message="数据不一致警告"
-              description="检测到统计数据可能不一致，正在自动刷新..."
-              type="warning"
-              showIcon
-              action={
-                <Button size="small" onClick={() => {
-                  queryClient.invalidateQueries({ queryKey: ['prompt-stats'] });
-                }}>
-                  立即刷新
-                </Button>
-              }
-            />
-          </Col>
-        </Row>
-      )}
 
       {/* Statistics Cards */}
       <Row gutter={16} style={{ marginBottom: '16px' }}>
@@ -633,14 +575,9 @@ const PromptList: React.FC = () => {
               }
               value={statsData?.active_prompts || 0}
               valueStyle={{
-                color: promptsData && statsData && promptsData.total < statsData.active_prompts ? '#ff4d4f' : '#1890ff'
+                color: '#1890ff'
               }}
             />
-            {promptsData && statsData && promptsData.total < statsData.active_prompts && (
-              <div style={{ fontSize: '12px', color: '#ff4d4f', marginTop: '4px' }}>
-                数据不一致
-              </div>
-            )}
           </Card>
         </Col>
         <Col span={6}>

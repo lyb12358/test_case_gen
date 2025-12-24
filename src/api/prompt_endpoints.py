@@ -187,21 +187,16 @@ async def delete_prompt_category(category_id: int, db: Session = Depends(get_db)
 async def get_prompts(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
-    type: Optional[PromptType] = Query(None),
-    business_type: Optional[BusinessType] = Query(None),
-    status: Optional[PromptStatus] = Query(None),
-    generation_stage: Optional[GenerationStage] = Query(None, description="Filter by generation stage"),
+    type: Optional[str] = Query(None, description="Filter by prompt type"),
+    business_type: Optional[str] = Query(None, description="Filter by business type"),
+    status: Optional[str] = Query(None, description="Filter by status"),
+    generation_stage: Optional[str] = Query(None, description="Filter by generation stage"),
     category_id: Optional[int] = Query(None),
     search: Optional[str] = Query(None),
     project_id: Optional[int] = Query(None, description="Filter by project ID"),
     db: Session = Depends(get_db)
 ):
     """Get prompts with pagination and filtering."""
-    # Helper function to safely get enum value
-    def get_enum_value(enum_item):
-        if hasattr(enum_item, 'value'):
-            return enum_item.value
-        return str(enum_item)
 
     query = db.query(Prompt)
 
@@ -251,10 +246,10 @@ async def get_prompts(
             id=prompt.id,
             project_id=prompt.project_id or 1,  # Default to project 1 for backward compatibility
             name=prompt.name,
-            type=get_enum_value(prompt.type),
-            business_type=get_enum_value(prompt.business_type) if prompt.business_type else None,
-            status=get_enum_value(prompt.status),
-            generation_stage=get_enum_value(prompt.generation_stage) if prompt.generation_stage else None,
+            type=prompt.type,  # Already string, no need for get_enum_value
+            business_type=prompt.business_type,  # Already string or None
+            status=prompt.status,  # Already string
+            generation_stage=prompt.generation_stage,  # Already string or None
             author=prompt.author,
             version=prompt.version,
             created_at=prompt.created_at,
@@ -523,7 +518,7 @@ async def clone_prompt(
         content=original.content,
         type=original.type,
         business_type=original.business_type,
-        status=PromptStatus.DRAFT,
+        status="draft",
         author=original.author,
         version="1.0.0",
         tags=original.tags,
@@ -569,7 +564,7 @@ async def search_prompts(
         query = db.query(Prompt).filter(Prompt.project_id == default_project.id)
 
     # Apply status filter
-    query = query.filter(Prompt.status == PromptStatus.ACTIVE)
+    query = query.filter(Prompt.status == "active")
 
     # Apply filters
     if search_request.query:
@@ -710,7 +705,7 @@ async def validate_prompt(prompt_id: int, db: Session = Depends(get_db)):
         suggestions.append("Consider adding a main heading at the beginning")
 
     # Business type specific validation
-    if prompt.type == PromptType.BUSINESS_DESCRIPTION:
+    if prompt.type == "business_description":
         if "serviceId" not in prompt.content:
             warnings.append("Business description should mention serviceId")
 
@@ -759,9 +754,9 @@ async def get_prompt_statistics(
     query = db.query(Prompt).filter(Prompt.project_id == project.id)
 
     total_prompts = query.count()
-    active_prompts = query.filter(Prompt.status == PromptStatus.ACTIVE).count()
-    draft_prompts = query.filter(Prompt.status == PromptStatus.DRAFT).count()
-    archived_prompts = query.filter(Prompt.status == PromptStatus.ARCHIVED).count()
+    active_prompts = query.filter(Prompt.status == "active").count()
+    draft_prompts = query.filter(Prompt.status == "draft").count()
+    archived_prompts = query.filter(Prompt.status == "archived").count()
 
     prompts_by_type = query.with_entities(
         Prompt.type, func.count(Prompt.id)
@@ -779,7 +774,7 @@ async def get_prompt_statistics(
 
     # Recent activity
     recent_prompts = query.filter(
-        Prompt.status == PromptStatus.ACTIVE
+        Prompt.status == "active"
     ).order_by(desc(Prompt.updated_at)).limit(5).all()
 
     recent_activity = []
@@ -800,7 +795,7 @@ async def get_prompt_statistics(
 
     # Recently updated
     most_recent = query.filter(
-        Prompt.status == PromptStatus.ACTIVE
+        Prompt.status == "active"
     ).order_by(desc(Prompt.updated_at)).limit(5).all()
 
     most_recent_prompts = []

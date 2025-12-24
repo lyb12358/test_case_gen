@@ -52,7 +52,7 @@ class BusinessDataExtractor:
 
             # Extract data for each business type
             for business_type in BusinessType:
-                success = self.extract_business_data(business_type)
+                success = self.extract_business_data(business_type.value)
                 if not success:
                     print(f"Failed to extract data for {business_type.value}")
                     return False
@@ -75,29 +75,29 @@ class BusinessDataExtractor:
         filename = get_business_file_mapping(business_type)
         return os.path.join(self.business_descriptions_dir, filename)
 
-    def extract_business_data(self, business_type: BusinessType) -> bool:
+    def extract_business_data(self, business_type: str) -> bool:
         """
         Extract data for a specific business type.
 
         Args:
-            business_type (BusinessType): Business type to extract
+            business_type (str): Business type to extract
 
         Returns:
             bool: True if successful, False otherwise
         """
         try:
             # Get business description file path
-            file_path = self.get_business_file_path(business_type.value)
+            file_path = self.get_business_file_path(business_type)
             description = load_text_file(file_path)
 
             if description is None:
-                print(f"Could not load business description for {business_type.value}")
+                print(f"Could not load business description for {business_type}")
                 return False
 
-            print(f"Extracting data for {business_type.value}")
+            print(f"Extracting data for {business_type}")
 
             # Create business entity
-            business_name = business_type.value
+            business_name = business_type
             business_desc = self._extract_business_description(description)
 
             # Get business display name from centralized configuration
@@ -122,7 +122,7 @@ class BusinessDataExtractor:
                 business_type=business_type,
                 parent_id=parent_id,
                 extra_data=extra_data,
-                entity_order=float(list(BusinessType).index(business_type) + 1)
+                entity_order=0.0  # Use default order since we don't have enum index
             )
 
             # Create relation: TSP scenario -> contains -> business
@@ -144,7 +144,7 @@ class BusinessDataExtractor:
                 business_type=business_type
             )
 
-            print(f"Successfully extracted data for {business_type.value}")
+            print(f"Successfully extracted data for {business_type}")
             return True
 
         except Exception as e:

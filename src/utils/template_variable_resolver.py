@@ -251,19 +251,12 @@ class TemplateVariableResolver:
 
         try:
             with self.db_manager.get_session() as db:
-                # Convert string to enum if needed
-                if isinstance(business_type, str):
-                    try:
-                        business_type_enum = BusinessType(business_type)
-                    except ValueError:
-                        logger.warning(f"Invalid business type: {business_type}")
-                        return []
-                else:
-                    business_type_enum = business_type
+                # Normalize business_type to uppercase string
+                business_type_str = business_type.upper() if isinstance(business_type, str) else str(business_type)
 
                 # Get test cases for this business type and project
                 test_cases = db.query(UnifiedTestCase).filter(
-                    UnifiedTestCase.business_type == business_type_enum,
+                    UnifiedTestCase.business_type == business_type_str,
                     UnifiedTestCase.project_id == project_id,
                     UnifiedTestCase.steps.isnot(None)  # Test cases have steps, test points don't
                 ).all()
@@ -313,20 +306,13 @@ class TemplateVariableResolver:
 
         try:
             with self.db_manager.get_session() as db:
-                # Convert string to enum if needed
-                if isinstance(business_type, str):
-                    try:
-                        business_type_enum = BusinessType(business_type)
-                    except ValueError:
-                        logger.warning(f"Invalid business type: {business_type}")
-                        return []
-                else:
-                    business_type_enum = business_type
+                # Normalize business_type to uppercase string
+                business_type_str = business_type.upper() if isinstance(business_type, str) else str(business_type)
 
                 # Get test points by IDs and business type
                 test_points = db.query(UnifiedTestCase).filter(
                     UnifiedTestCase.id.in_(test_point_ids),
-                    UnifiedTestCase.business_type == business_type_enum,
+                    UnifiedTestCase.business_type == business_type_str,
                     UnifiedTestCase.steps.is_(None)  # Test points don't have steps
                 ).all()
 
@@ -369,18 +355,12 @@ class TemplateVariableResolver:
         try:
             with self.db_manager.get_session() as db:
                 # Convert string to enum if needed
-                if isinstance(business_type, str):
-                    try:
-                        business_type_enum = BusinessType(business_type)
-                    except ValueError:
-                        logger.warning(f"Invalid business type: {business_type}")
-                        return []
-                else:
-                    business_type_enum = business_type
+                # Normalize business_type to uppercase string
+                business_type_str = business_type.upper() if isinstance(business_type, str) else str(business_type)
 
                 # Get test points for this business type and project
                 test_points = db.query(UnifiedTestCase).filter(
-                    UnifiedTestCase.business_type == business_type_enum,
+                    UnifiedTestCase.business_type == business_type_str,
                     UnifiedTestCase.project_id == project_id,
                     UnifiedTestCase.steps.is_(None)  # Test points don't have steps
                 ).all()

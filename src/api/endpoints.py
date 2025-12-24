@@ -30,6 +30,7 @@ from ..utils.config import Config
 from ..database.database import DatabaseManager
 from ..database.operations import DatabaseOperations
 from ..database.models import BusinessType, JobStatus, EntityType, BusinessTypeConfig, Project, GenerationJob, UnifiedTestCaseStatus, UnifiedTestCase
+from ..utils.business_type_validator import validate_business_type_or_400
 from ..core.excel_converter import ExcelConverter
 from ..models.test_case import TestCase
 from ..models.project import ProjectCreate, ProjectUpdate, ProjectResponse, ProjectListResponse, ProjectStats, ProjectStatsResponse
@@ -669,7 +670,7 @@ async def get_task_status(task_id: str):
             progress=progress_info.get("progress"),
             project_id=job.project_id,
             project_name=project_name,
-            business_type=job.business_type.value,
+            business_type=job.business_type,
             generation_mode=job.generation_mode,
             task_type_display=task_type_display,
             error=job.error_message,
@@ -825,26 +826,22 @@ async def export_test_cases_to_excel(
         StreamingResponse: Excel file download
     """
     try:
-        # Parse business type if provided
-        business_enum = None
+        # Validate business type using database-driven validation
         if business_type:
-            try:
-                business_enum = BusinessType(business_type.upper())
-            except ValueError:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid business type '{business_type}'. "
-                           f"Supported types: {[bt.value for bt in BusinessType]}"
+            # Get database session for validation
+            with db_manager.get_session() as db:
+                validate_business_type_or_400(
+                    db=db,
+                    business_type=business_type,
+                    project_id=None  # No project filter for export
                 )
 
         # Get test case data from database
         with db_manager.get_session() as db:
             from ..database.models import Project, UnifiedTestCase
 
-            # Build query with business type and project filtering
+            # Build query with project filtering
             query = db.query(Project)
-            if business_enum:
-                query = query.filter(Project.business_type == business_enum)
             if project_id:
                 query = query.filter(Project.id == project_id)
 
@@ -853,7 +850,7 @@ async def export_test_cases_to_excel(
             if not groups:
                 raise HTTPException(
                     status_code=404,
-                    detail=f"No test cases found" + (f" for business type {business_enum.value}" if business_enum else "")
+                    detail=f"No test cases found"
                 )
 
             # Convert test case items to TestCase objects
@@ -923,7 +920,7 @@ async def export_test_cases_to_excel(
         if not test_cases:
             raise HTTPException(
                 status_code=404,
-                detail=f"No test case items found" + (f" for business type {business_enum.value}" if business_enum else "")
+                detail=f"No test case items found"
             )
 
         # 直接创建Excel数据，不依赖ExcelConverter
@@ -979,7 +976,7 @@ async def export_test_cases_to_excel(
 
         # Generate filename with timestamp and business type
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        business_suffix = f"_{business_enum.value}" if business_enum else ""
+        business_suffix = f"_{business_type.upper()}" if business_type else ""
         filename = f"test_cases{business_suffix}_{timestamp}.xlsx"
 
         # Return file as streaming response
@@ -1012,15 +1009,12 @@ async def get_test_cases_by_business_type(
     Returns:
         TestCasesListResponse: List of test case groups for the business type
     """
-    # Validate business type
-    try:
-        business_enum = BusinessType(business_type.upper())
-    except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid business type '{business_type}'. "
-                   f"Supported types: {[bt.value for bt in BusinessType]}"
-        )
+    # Validate business type using database-driven validation
+    validate_business_type_or_400(
+        db=db,
+        business_type=business_type,
+        project_id=project_id
+    )
 
     # Validate project ID with backward compatibility
     project = validate_project_id(project_id, db, use_default=True)
@@ -1033,7 +1027,7 @@ async def get_test_cases_by_business_type(
     # Query test cases for the given business type and project
     items = db.query(UnifiedTestCase).filter(
         UnifiedTestCase.project_id == effective_project_id,
-        UnifiedTestCase.business_type == business_enum.value
+        UnifiedTestCase.business_type == business_type.upper()
     ).order_by(UnifiedTestCase.created_at.desc()).all()
 
     # Convert items to response format
@@ -1063,7 +1057,7 @@ async def get_test_cases_by_business_type(
         ))
 
     return TestCasesListResponse(
-        business_type=business_enum.value,
+        business_type=business_type.upper(),
         count=len(item_responses),
         test_cases=item_responses
     )
@@ -1147,15 +1141,12 @@ async def delete_test_cases_by_business_type(
     Returns:
         Dict: Deletion result
     """
-    # Validate business type
-    try:
-        business_enum = BusinessType(business_type.upper())
-    except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid business type '{business_type}'. "
-                   f"Supported types: {[bt.value for bt in BusinessType]}"
-        )
+    # Validate business type using database-driven validation
+    validate_business_type_or_400(
+        db=db,
+        business_type=business_type,
+        project_id=project_id
+    )
 
     # Delete test case groups and related data using database operations
     with db_manager.get_session() as db:
@@ -1166,14 +1157,15 @@ async def delete_test_cases_by_business_type(
                                      KnowledgeEntity, KnowledgeRelation, EntityType)
 
         # Build query with business type and project filtering
-        query = db.query(Project).filter(Project.business_type == business_enum)
+        business_type_str = business_type.upper()
+        query = db.query(Project).filter(Project.business_type == business_type_str)
         if project_id:
             query = query.filter(Project.project_id == project_id)
         groups = query.all()
 
         if not groups:
             return {
-                "message": f"No test case groups found for {business_enum.value}",
+                "message": f"No test case groups found for {business_type_str}",
                 "deleted_count": 0
             }
 
@@ -1203,7 +1195,7 @@ async def delete_test_cases_by_business_type(
                 # Look for TEST_CASE type entities that have this item_id in their extra_data
                 knowledge_entities = db.query(KnowledgeEntity).filter(
                     KnowledgeEntity.type == EntityType.TEST_CASE,
-                    KnowledgeEntity.business_type == business_enum,
+                    KnowledgeEntity.business_type == business_type_str,
                     KnowledgeEntity.extra_data.like(f'%"test_case_item_id": {item.id}%')
                 ).all()
 
@@ -1232,7 +1224,7 @@ async def delete_test_cases_by_business_type(
         db.commit()
 
     return {
-        "message": f"Test case groups, items, and knowledge graph entities for {business_enum.value} deleted successfully",
+        "message": f"Test case groups, items, and knowledge graph entities for {business_type_str} deleted successfully",
         "deleted_groups_count": deleted_groups_count,
         "deleted_items_count": deleted_items_count,
         "deleted_knowledge_entities_count": deleted_knowledge_entities_count,
@@ -1280,7 +1272,7 @@ async def list_tasks(project_id: Optional[int] = None, db = Depends(get_db)):
             "task_id": job.id,
             "status": job.status.value,
             "progress": progress_info.get("progress"),
-            "business_type": job.business_type.value,
+            "business_type": job.business_type,
             "generation_mode": job.generation_mode,
             "task_type_display": task_type_display,
             "error": job.error_message,
@@ -1358,20 +1350,18 @@ async def get_knowledge_graph_data(
 
         db_operations = DatabaseOperations(db)
 
-        # Parse business type if provided
-        business_enum = None
+        # Validate and parse business type if provided
+        business_type_str = None
         if business_type:
-            try:
-                business_enum = BusinessType(business_type.upper())
-            except ValueError:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid business type '{business_type}'. "
-                           f"Supported types: {[bt.value for bt in BusinessType]}"
-                )
+            validate_business_type_or_400(
+                db=db,
+                business_type=business_type,
+                project_id=effective_project_id
+            )
+            business_type_str = business_type.upper()
 
         # Get graph data with project filtering
-        graph_data = db_operations.get_knowledge_graph_data(business_enum, effective_project_id)
+        graph_data = db_operations.get_knowledge_graph_data(business_type_str, effective_project_id)
 
         # Convert to response format
         nodes = [GraphNode(**node) for node in graph_data["nodes"]]
@@ -1416,16 +1406,15 @@ async def get_knowledge_entities(
                                f"Supported types: {[et.value for et in EntityType]}"
                     )
 
-            business_enum = None
+            # Validate business type using database-driven validation
+            business_type_str = None
             if business_type:
-                try:
-                    business_enum = BusinessType(business_type.upper())
-                except ValueError:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Invalid business type '{business_type}'. "
-                               f"Supported types: {[bt.value for bt in BusinessType]}"
-                    )
+                validate_business_type_or_400(
+                    db=db,
+                    business_type=business_type,
+                    project_id=project_id
+                )
+                business_type_str = business_type.upper()
 
             # Get entities with project filtering
             if project_id:
@@ -1433,21 +1422,21 @@ async def get_knowledge_entities(
                 entities = db_operations.get_knowledge_entities_by_project(project_id)
 
                 # Apply additional filters
-                if entity_enum and business_enum:
-                    entities = [e for e in entities if e.type == entity_enum and e.business_type == business_enum]
+                if entity_enum and business_type_str:
+                    entities = [e for e in entities if e.type == entity_enum and e.business_type == business_type_str]
                 elif entity_enum:
                     entities = [e for e in entities if e.type == entity_enum]
-                elif business_enum:
-                    entities = [e for e in entities if e.business_type == business_enum]
+                elif business_type_str:
+                    entities = [e for e in entities if e.business_type == business_type_str]
             else:
                 # No project filtering - use existing logic
-                if entity_enum and business_enum:
+                if entity_enum and business_type_str:
                     entities = db_operations.get_knowledge_entities_by_type(entity_enum)
-                    entities = [e for e in entities if e.business_type == business_enum]
+                    entities = [e for e in entities if e.business_type == business_type_str]
                 elif entity_enum:
                     entities = db_operations.get_knowledge_entities_by_type(entity_enum)
-                elif business_enum:
-                    entities = db_operations.get_knowledge_entities_by_business_type(business_enum)
+                elif business_type_str:
+                    entities = db_operations.get_knowledge_entities_by_business_type_str(business_type_str)
                 else:
                     entities = db_operations.get_all_knowledge_entities()
 
@@ -1467,7 +1456,7 @@ async def get_knowledge_entities(
                     name=entity.name,
                     type=entity.type.value,
                     description=entity.description,
-                    business_type=entity.business_type.value if entity.business_type else None,
+                    business_type=entity.business_type if entity.business_type else None,
                     metadata=metadata_dict,
                     created_at=entity.created_at.isoformat()
                 ))
@@ -1497,17 +1486,15 @@ async def get_knowledge_relations(
         with db_manager.get_session() as db:
             db_operations = DatabaseOperations(db)
 
-            # Parse business type
-            business_enum = None
+            # Validate business type using database-driven validation
+            business_type_str = None
             if business_type:
-                try:
-                    business_enum = BusinessType(business_type.upper())
-                except ValueError:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Invalid business type '{business_type}'. "
-                               f"Supported types: {[bt.value for bt in BusinessType]}"
-                    )
+                validate_business_type_or_400(
+                    db=db,
+                    business_type=business_type,
+                    project_id=project_id
+                )
+                business_type_str = business_type.upper()
 
             # Get relations with project filtering
             if project_id:
@@ -1515,12 +1502,12 @@ async def get_knowledge_relations(
                 relations = db_operations.get_knowledge_relations_by_project(project_id)
 
                 # Apply business type filter if specified
-                if business_enum:
-                    relations = [r for r in relations if r.business_type == business_enum]
+                if business_type_str:
+                    relations = [r for r in relations if r.business_type == business_type_str]
             else:
                 # No project filtering - use existing logic
-                if business_enum:
-                    relations = db_operations.get_knowledge_relations_by_business_type(business_enum)
+                if business_type_str:
+                    relations = db_operations.get_knowledge_relations_by_business_type_str(business_type_str)
                 else:
                     relations = db_operations.get_all_knowledge_relations()
 
@@ -1532,7 +1519,7 @@ async def get_knowledge_relations(
                     subject=relation.subject.name,
                     predicate=relation.predicate,
                     object=relation.object.name,
-                    business_type=relation.business_type.value if relation.business_type else None,
+                    business_type=relation.business_type if relation.business_type else None,
                     created_at=relation.created_at.isoformat()
                 ))
 
@@ -1655,7 +1642,7 @@ async def get_entity_details(entity_id: int):
                     "name": child.name,
                     "type": child.type.value,
                     "description": child.description,
-                    "business_type": child.business_type.value if child.business_type else None,
+                    "business_type": child.business_type if child.business_type else None,
                     "parent_id": child.parent_id,
                     "entity_order": child.entity_order,
                     "extra_data": child.extra_data,
@@ -1674,7 +1661,7 @@ async def get_entity_details(entity_id: int):
                     "name": related_entity.name,
                     "type": related_entity.type.value,
                     "description": related_entity.description,
-                    "business_type": related_entity.business_type.value if related_entity.business_type else None,
+                    "business_type": related_entity.business_type if related_entity.business_type else None,
                     "metadata": json.loads(related_entity.extra_data) if related_entity.extra_data else {}
                 })
 
@@ -1688,7 +1675,7 @@ async def get_entity_details(entity_id: int):
                     "object": relation.object_id,
                     "subject_name": relation.subject.name if relation.subject else f"Entity {relation.subject_id}",
                     "object_name": relation.object.name if relation.object else f"Entity {relation.object_id}",
-                    "business_type": relation.business_type.value if relation.business_type else None
+                    "business_type": relation.business_type if relation.business_type else None
                 })
 
             return EntityDetailsResponse(
@@ -1696,7 +1683,7 @@ async def get_entity_details(entity_id: int):
                 name=entity.name,
                 type=entity.type.value,
                 description=entity.description,
-                business_type=entity.business_type.value if entity.business_type else None,
+                business_type=entity.business_type if entity.business_type else None,
                 parent_id=entity.parent_id,
                 entity_order=entity.entity_order,
                 extra_data=entity.extra_data,

@@ -641,8 +641,9 @@ class TestCaseGenerator:
                 db_operations = DatabaseOperations(db)
 
                 if business_type:
-                    business_enum = BusinessType(business_type.upper())
-                    test_cases = db_operations.get_test_cases_by_business_type(business_enum)
+                    # Use string directly instead of enum
+                    business_type_str = business_type.upper()
+                    test_cases = db_operations.get_test_cases_by_business_type_str(business_type_str)
                 else:
                     test_cases = db_operations.get_all_test_cases()
 
@@ -651,7 +652,7 @@ class TestCaseGenerator:
                 for tc in test_cases:
                     result.append({
                         "id": tc.id,
-                        "business_type": tc.business_type.value,
+                        "business_type": tc.business_type,  # Already a string, not an enum
                         "test_data": json.loads(tc.test_data),
                         "created_at": tc.created_at.isoformat(),
                         "updated_at": tc.updated_at.isoformat()
@@ -673,13 +674,14 @@ class TestCaseGenerator:
             bool: True if successful, False otherwise
         """
         try:
-            business_enum = BusinessType(business_type.upper())
+            # Use string directly instead of enum
+            business_type_str = business_type.upper()
 
             with self.db_manager.get_session() as db:
                 db_operations = DatabaseOperations(db)
-                deleted_count = db_operations.delete_test_cases_by_business_type(business_enum)
-                deleted_entities_count = db_operations.delete_knowledge_entities_by_business_type(business_enum)
-                print(f"Deleted {deleted_count} test cases and {deleted_entities_count} knowledge entities for {business_enum.value}")
+                deleted_count = db_operations.delete_test_cases_by_business_type_str(business_type_str)
+                deleted_entities_count = db_operations.delete_knowledge_entities_by_business_type_str(business_type_str)
+                print(f"Deleted {deleted_count} test cases and {deleted_entities_count} knowledge entities for {business_type_str}")
                 return True
 
         except Exception as e:

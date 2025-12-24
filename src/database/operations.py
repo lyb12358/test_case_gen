@@ -30,13 +30,13 @@ class DatabaseOperations:
 
     
     # Generation Job Operations
-    def create_generation_job(self, job_id: str, business_type: BusinessType, project_id: Optional[int] = None) -> GenerationJob:
+    def create_generation_job(self, job_id: str, business_type: str, project_id: Optional[int] = None) -> GenerationJob:
         """
         Create a new generation job.
 
         Args:
             job_id (str): Job ID
-            business_type (BusinessType): Business type
+            business_type (str): Business type
             project_id (int): Project ID (defaults to getting or creating default project)
 
         Returns:
@@ -102,12 +102,12 @@ class DatabaseOperations:
         """
         return self.db.query(GenerationJob).all()
 
-    def get_jobs_by_business_type(self, business_type: BusinessType) -> List[GenerationJob]:
+    def get_jobs_by_business_type(self, business_type: str) -> List[GenerationJob]:
         """
         Get jobs by business type.
 
         Args:
-            business_type (BusinessType): Business type
+            business_type (str): Business type
 
         Returns:
             List[GenerationJob]: List of jobs
@@ -154,7 +154,7 @@ class DatabaseOperations:
         name: str,
         entity_type: EntityType,
         description: Optional[str] = None,
-        business_type: Optional[BusinessType] = None,
+        business_type: Optional[str] = None,
         parent_id: Optional[int] = None,
         entity_order: Optional[float] = None,
         extra_data: Optional[str] = None
@@ -166,7 +166,7 @@ class DatabaseOperations:
             name (str): Entity name
             entity_type (EntityType): Entity type
             description (Optional[str]): Entity description
-            business_type (Optional[BusinessType]): Associated business type
+            business_type (Optional[str]): Associated business type
             parent_id (Optional[int]): Parent entity ID for hierarchy
             entity_order (Optional[float]): Order for sorting entities
             extra_data (Optional[str]): Extra data as JSON string
@@ -193,7 +193,7 @@ class DatabaseOperations:
         subject_name: str,
         predicate: str,
         object_name: str,
-        business_type: Optional[BusinessType] = None
+        business_type: Optional[str] = None
     ) -> Optional[KnowledgeRelation]:
         """
         Create a new knowledge relation (triple).
@@ -202,7 +202,7 @@ class DatabaseOperations:
             subject_name (str): Subject entity name
             predicate (str): Predicate (relationship type)
             object_name (str): Object entity name
-            business_type (Optional[BusinessType]): Associated business type
+            business_type (Optional[str]): Associated business type
 
         Returns:
             Optional[KnowledgeRelation]: Created relation or None if entities not found
@@ -246,12 +246,12 @@ class DatabaseOperations:
         """
         return self.db.query(KnowledgeEntity).filter(KnowledgeEntity.type == entity_type).all()
 
-    def get_knowledge_entities_by_business_type(self, business_type: BusinessType) -> List[KnowledgeEntity]:
+    def get_knowledge_entities_by_business_type(self, business_type: str) -> List[KnowledgeEntity]:
         """
         Get knowledge entities by business type.
 
         Args:
-            business_type (BusinessType): Business type
+            business_type (str): Business type
 
         Returns:
             List[KnowledgeEntity]: List of entities for the specified business type
@@ -267,12 +267,12 @@ class DatabaseOperations:
         """
         return self.db.query(KnowledgeRelation).all()
 
-    def get_knowledge_relations_by_business_type(self, business_type: BusinessType) -> List[KnowledgeRelation]:
+    def get_knowledge_relations_by_business_type(self, business_type: str) -> List[KnowledgeRelation]:
         """
         Get knowledge relations by business type.
 
         Args:
-            business_type (BusinessType): Business type
+            business_type (str): Business type
 
         Returns:
             List[KnowledgeRelation]: List of relations for the specified business type
@@ -303,12 +303,12 @@ class DatabaseOperations:
         """
         return self.db.query(KnowledgeRelation).filter(KnowledgeRelation.project_id == project_id).all()
 
-    def get_knowledge_graph_data(self, business_type: Optional[BusinessType] = None, project_id: Optional[int] = None) -> Dict[str, Any]:
+    def get_knowledge_graph_data(self, business_type: Optional[str] = None, project_id: Optional[int] = None) -> Dict[str, Any]:
         """
         Get knowledge graph data in G6 format based on real project, business types, and test cases.
 
         Args:
-            business_type (Optional[BusinessType]): Filter by business type
+            business_type (Optional[str]): Filter by business type
             project_id (Optional[int]): Filter by project ID
 
         Returns:
@@ -394,24 +394,27 @@ class DatabaseOperations:
                 # Get unified test cases for this business type and project
                 # Apply business type filter at test case level, not business config level
                 try:
-                    # Convert business_code string to BusinessType enum
-                    business_enum = BusinessType(business_code)
+                    # Normalize business_code to uppercase string
+                    business_type_str = business_code.upper()
 
                     if business_type:
                         # If a specific business type is selected, only get test cases for that type
-                        if business_enum != business_type:
+                        # Normalize business_type filter to uppercase string for comparison
+                        business_type_filter = business_type.upper() if isinstance(business_type, str) else str(business_type)
+
+                        if business_type_str != business_type_filter:
                             # Skip test cases for this business type, but keep the business node
                             test_cases = []
                         else:
                             test_cases = self.db.query(UnifiedTestCase).filter(
                                 UnifiedTestCase.project_id == project.id,
-                                UnifiedTestCase.business_type == business_enum
+                                UnifiedTestCase.business_type == business_type_str
                             ).all()
                     else:
                         # No business type filter, get all test cases for this business type
                         test_cases = self.db.query(UnifiedTestCase).filter(
                             UnifiedTestCase.project_id == project.id,
-                            UnifiedTestCase.business_type == business_enum
+                            UnifiedTestCase.business_type == business_type_str
                         ).all()
                 except ValueError:
                     # If business_code is not a valid BusinessType, skip this business config
@@ -749,12 +752,12 @@ class DatabaseOperations:
         return items
 
     
-    def get_unified_test_cases_by_business_type(self, business_type: BusinessType, project_id: Optional[int] = None) -> List[UnifiedTestCase]:
+    def get_unified_test_cases_by_business_type(self, business_type: str, project_id: Optional[int] = None) -> List[UnifiedTestCase]:
         """
         Get unified test cases by business type.
 
         Args:
-            business_type (BusinessType): Business type
+            business_type (str): Business type
             project_id (Optional[int]): Project ID for filtering
 
         Returns:
@@ -789,12 +792,12 @@ class DatabaseOperations:
         """
         return self.db.query(UnifiedTestCase).filter(UnifiedTestCase.id == item_id).first()
 
-    def delete_unified_test_cases_by_business_type(self, business_type: BusinessType, project_id: Optional[int] = None) -> int:
+    def delete_unified_test_cases_by_business_type(self, business_type: str, project_id: Optional[int] = None) -> int:
         """
         Delete unified test cases by business type, including knowledge graph entities.
 
         Args:
-            business_type (BusinessType): Business type
+            business_type (str): Business type
             project_id (Optional[int]): Project ID for filtering
 
         Returns:
@@ -817,13 +820,13 @@ class DatabaseOperations:
         self.db.commit()
         return len(test_cases)
 
-    def delete_test_case_knowledge_entities_for_item(self, test_case_item_id: int, business_type: BusinessType):
+    def delete_test_case_knowledge_entities_for_item(self, test_case_item_id: int, business_type: str):
         """
         Delete knowledge graph entities and relations for a specific test case item.
 
         Args:
             test_case_item_id (int): Test case item ID
-            business_type (BusinessType): Business type
+            business_type (str): Business type
         """
         # Find TEST_CASE type entities that have this item_id in their extra_data
         knowledge_entities = self.db.query(KnowledgeEntity).filter(
@@ -857,12 +860,12 @@ class DatabaseOperations:
         if entity:
             self.db.delete(entity)
 
-    def delete_test_case_knowledge_entities_by_business_type(self, business_type: BusinessType) -> tuple[int, int]:
+    def delete_test_case_knowledge_entities_by_business_type(self, business_type: str) -> tuple[int, int]:
         """
         Delete all test case knowledge entities and their relations for a business type.
 
         Args:
-            business_type (BusinessType): Business type
+            business_type (str): Business type
 
         Returns:
             tuple[int, int]: (deleted_entities_count, deleted_relations_count)
@@ -1285,3 +1288,137 @@ class DatabaseOperations:
             ]
 
         return result
+    # ===== String-based methods for dynamic business type support =====
+    # These methods accept string business_type instead of BusinessType enum
+    
+    def get_test_cases_by_business_type_str(self, business_type_str: str) -> List[UnifiedTestCase]:
+        """
+        Get test cases by business type (string version for dynamic types).
+        
+        Args:
+            business_type_str (str): Business type code (e.g., 'RCC', 'ACCOUNT_LOGOUT')
+        
+        Returns:
+            List[UnifiedTestCase]: List of test cases for the specified business type
+        """
+        return self.db.query(UnifiedTestCase).filter(
+            UnifiedTestCase.business_type == business_type_str.upper()
+        ).all()
+    
+    def delete_test_cases_by_business_type_str(self, business_type_str: str) -> int:
+        """
+        Delete test cases by business type (string version for dynamic types).
+        
+        Args:
+            business_type_str (str): Business type code
+        
+        Returns:
+            int: Number of deleted test cases
+        """
+        deleted = self.db.query(UnifiedTestCase).filter(
+            UnifiedTestCase.business_type == business_type_str.upper()
+        ).delete()
+        self.db.commit()
+        return deleted
+    
+    def delete_knowledge_entities_by_business_type_str(self, business_type_str: str) -> int:
+        """
+        Delete knowledge entities by business type (string version for dynamic types).
+        
+        Args:
+            business_type_str (str): Business type code
+        
+        Returns:
+            int: Number of deleted entities
+        """
+        deleted = self.db.query(KnowledgeEntity).filter(
+            KnowledgeEntity.business_type == business_type_str.upper()
+        ).delete()
+        self.db.commit()
+        return deleted
+    
+    def get_knowledge_entities_by_business_type_str(self, business_type_str: str) -> List[KnowledgeEntity]:
+        """
+        Get knowledge entities by business type (string version for dynamic types).
+        
+        Args:
+            business_type_str (str): Business type code
+        
+        Returns:
+            List[KnowledgeEntity]: List of entities for the specified business type
+        """
+        return self.db.query(KnowledgeEntity).filter(
+            KnowledgeEntity.business_type == business_type_str.upper()
+        ).all()
+    
+    def get_knowledge_relations_by_business_type_str(self, business_type_str: str) -> List[KnowledgeRelation]:
+        """
+        Get knowledge relations by business type (string version for dynamic types).
+        
+        Args:
+            business_type_str (str): Business type code
+        
+        Returns:
+            List[KnowledgeRelation]: List of relations for the specified business type
+        """
+        return self.db.query(KnowledgeRelation).filter(
+            KnowledgeRelation.business_type == business_type_str.upper()
+        ).all()
+    
+    def get_knowledge_graph_data_str(self, business_type_str: Optional[str], project_id: int) -> Dict[str, Any]:
+        """
+        Get knowledge graph data with optional business type filter (string version).
+        
+        Args:
+            business_type_str (Optional[str]): Business type code (uppercase string)
+            project_id (int): Project ID
+        
+        Returns:
+            Dict with 'nodes' and 'edges' lists
+        """
+        from sqlalchemy import and_
+        
+        # Query all entities for the project
+        entities_query = self.db.query(KnowledgeEntity).filter(
+            KnowledgeEntity.project_id == project_id
+        )
+        
+        # Apply business type filter if specified
+        if business_type_str:
+            entities_query = entities_query.filter(
+                KnowledgeEntity.business_type == business_type_str.upper()
+            )
+        
+        entities = entities_query.all()
+        
+        # Query all relations for these entities
+        entity_ids = [e.id for e in entities]
+        relations = self.db.query(KnowledgeRelation).filter(
+            KnowledgeRelation.source_id.in_(entity_ids)
+        ).all()
+        
+        # Convert to graph format
+        nodes = [
+            {
+                "id": f"entity-{entity.id}",
+                "label": entity.name,
+                "type": entity.type,
+                "business_type": entity.business_type
+            }
+            for entity in entities
+        ]
+        
+        edges = [
+            {
+                "source": f"entity-{relation.source_id}",
+                "target": f"entity-{relation.target_id}",
+                "label": relation.relation_type,
+                "type": relation.relation_type
+            }
+            for relation in relations
+        ]
+        
+        return {
+            "nodes": nodes,
+            "edges": edges
+        }
