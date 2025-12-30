@@ -22,6 +22,7 @@ import {
   Dropdown,
   Menu
 } from 'antd';
+import { formatDateTime } from '@/utils/timeFormatter';
 import {
   PlusOutlined,
   EditOutlined,
@@ -558,7 +559,7 @@ const UnifiedTestCaseList: React.FC<UnifiedTestCaseListProps> = ({
       dataIndex: 'created_at',
       key: 'created_at',
       width: getResponsiveWidth().created_at,
-      render: (text) => dayjs(text).format('YYYY-MM-DD HH:mm')
+      render: (text) => formatDateTime(text, 'YYYY-MM-DD HH:mm')
     },
     {
       title: '操作',

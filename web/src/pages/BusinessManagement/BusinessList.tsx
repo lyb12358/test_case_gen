@@ -23,6 +23,7 @@ import {
   Alert,
   Dropdown
 } from 'antd';
+import { formatDateTime } from '@/utils/timeFormatter';
 import {
   PlusOutlined,
   EditOutlined,
@@ -297,7 +298,7 @@ const BusinessList: React.FC = () => {
       dataIndex: 'created_at',
       key: 'created_at',
       width: 180,
-      render: (time: string) => new Date(time).toLocaleString(),
+      render: (time: string) => formatDateTime(time),
     },
     {
       title: '操作',

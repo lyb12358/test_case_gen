@@ -14,6 +14,7 @@ import {
   Alert,
   Progress,
 } from 'antd';
+import { formatDateTime } from '@/utils/timeFormatter';
 import {
   FileTextOutlined,
   RocketOutlined,
@@ -154,7 +155,7 @@ const Dashboard: React.FC = () => {
 
   const formatTime = (dateString?: string) => {
     if (!dateString) return '从未';
-    return new Date(dateString).toLocaleString();
+    return formatDateTime(dateString);
   };
 
   const businessTypeColumns = [
