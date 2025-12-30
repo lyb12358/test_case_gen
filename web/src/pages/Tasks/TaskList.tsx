@@ -17,6 +17,7 @@ import {
   Alert,
   Empty
 } from 'antd';
+import { formatDateTime } from '@/utils/timeFormatter';
 import {
   ReloadOutlined,
   EyeOutlined,
@@ -215,7 +216,7 @@ const TaskList: React.FC = () => {
       dataIndex: 'created_at',
       key: 'created_at',
       width: 180,
-      render: (time: string) => dayjs(time).format('YYYY-MM-DD HH:mm:ss'),
+      render: (time: string) => formatDateTime(time),
       sorter: (a: Task, b: Task) => dayjs(a.created_at).unix() - dayjs(b.created_at).unix(),
     },
     {
@@ -225,7 +226,7 @@ const TaskList: React.FC = () => {
       width: 180,
       render: (time: string, record: Task) => {
         const updateTime = time || record.created_at;
-        return updateTime ? dayjs(updateTime).format('YYYY-MM-DD HH:mm:ss') : '-';
+        return updateTime ? formatDateTime(updateTime) : '-';
       },
     },
     {
@@ -427,11 +428,11 @@ const TaskList: React.FC = () => {
                 {getStatusTag(selectedTask.status)}
               </Descriptions.Item>
               <Descriptions.Item label="创建时间">
-                {dayjs(selectedTask.created_at).format('YYYY-MM-DD HH:mm:ss')}
+                {formatDateTime(selectedTask.created_at)}
               </Descriptions.Item>
               <Descriptions.Item label="最后更新">
                 {(selectedTask.completed_at || selectedTask.created_at) ?
-                  dayjs(selectedTask.completed_at || selectedTask.created_at).format('YYYY-MM-DD HH:mm:ss') : '-'
+                  formatDateTime(selectedTask.completed_at || selectedTask.created_at) : '-'
                 }
               </Descriptions.Item>
               {selectedTask.progress !== undefined && (

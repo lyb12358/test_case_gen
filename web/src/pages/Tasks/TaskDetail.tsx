@@ -13,6 +13,7 @@ import {
   Timeline,
   Divider
 } from 'antd';
+import { formatDateTime } from '@/utils/timeFormatter';
 import {
   ArrowLeftOutlined,
   ClockCircleOutlined,
@@ -293,10 +294,10 @@ const TaskDetail: React.FC = () => {
             {getStatusTag(task.status)}
           </Descriptions.Item>
           <Descriptions.Item label="创建时间">
-            {dayjs(task.created_at).format('YYYY-MM-DD HH:mm:ss')}
+            {formatDateTime(task.created_at)}
           </Descriptions.Item>
           <Descriptions.Item label="最后更新">
-            {task.updated_at ? dayjs(task.updated_at).format('YYYY-MM-DD HH:mm:ss') : '-'}
+            {task.updated_at ? formatDateTime(task.updated_at) : '-'}
           </Descriptions.Item>
           <Descriptions.Item label="进度" span={2}>
             <Progress
@@ -337,7 +338,7 @@ const TaskDetail: React.FC = () => {
             >
               <div>
                 <Text style={{ fontSize: '12px', color: '#666' }}>
-                  {dayjs(log.timestamp).format('HH:mm:ss')}
+                  {formatDateTime(log.timestamp, 'HH:mm:ss')}
                 </Text>
                 <div style={{ marginTop: 4 }}>
                   <Text>{log.message}</Text>

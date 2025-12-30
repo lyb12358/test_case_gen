@@ -2,6 +2,7 @@
  * Prompt List Page - Advanced table with filtering and search functionality.
  */
 
+import { formatDateTime } from '@/utils/timeFormatter';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Table,
@@ -473,7 +474,7 @@ const PromptList: React.FC = () => {
       width: 150,
       render: (date: string) => (
         <Tooltip title={promptUtils.formatDate(date)}>
-          <span>{new Date(date).toLocaleDateString()}</span>
+          <span>{formatDateTime(date, "YYYY-MM-DD")}</span>
         </Tooltip>
       ),
       sorter: (a: Prompt, b: Prompt) =>

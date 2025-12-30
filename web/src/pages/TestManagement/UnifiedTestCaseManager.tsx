@@ -22,6 +22,7 @@ import {
   Alert,
   Dropdown
 } from 'antd';
+import { formatDateTime, formatFriendlyDateTime } from '@/utils/timeFormatter';
 import {
   PlusOutlined,
   EditOutlined,
@@ -923,27 +924,23 @@ const UnifiedTestCaseManager: React.FC = () => {
       key: 'created_at',
       width: isCompact ? 140 : 180,
       render: (date: string) => {
-        const dateObj = new Date(date);
+        // 使用统一的时间格式化工具
+        const formattedTime = formatDateTime(date, 'YYYY-MM-DD HH:mm:ss');
+        const friendlyTime = formatFriendlyDateTime(date);
 
         // 响应式时间显示
         if (isCompact) {
           // 紧凑布局：显示简短日期时间
           return (
-            <Tooltip title={dateObj.toLocaleString()}>
+            <Tooltip title={formattedTime}>
               <span style={{ fontSize: '11px' }}>
-                {dateObj.toLocaleDateString('zh-CN', {
-                  month: 'short',
-                  day: '2-digit'
-                })} {dateObj.toLocaleTimeString('zh-CN', {
-                  hour: '2-digit',
-                  minute: '2-digit'
-                })}
+                {friendlyTime}
               </span>
             </Tooltip>
           );
         } else {
           // 正常布局：显示完整日期时间
-          return dateObj.toLocaleString();
+          return formattedTime;
         }
       },
     }]),
