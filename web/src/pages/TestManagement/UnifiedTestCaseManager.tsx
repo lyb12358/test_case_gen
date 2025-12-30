@@ -919,9 +919,9 @@ const UnifiedTestCaseManager: React.FC = () => {
       },
     }]),
     ...(isVeryCompact ? [] : [{
-      title: '创建时间',
-      dataIndex: 'created_at',
-      key: 'created_at',
+      title: '更新时间',
+      dataIndex: 'updated_at',
+      key: 'updated_at',
       width: isCompact ? 140 : 180,
       render: (date: string) => {
         // 使用统一的时间格式化工具
