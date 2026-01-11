@@ -165,7 +165,7 @@ const UnifiedTestCaseManager: React.FC = () => {
 
   const { data: businessTypes } = useQuery({
     queryKey: ['businessTypes', currentProject?.id],
-    queryFn: () => businessService.getBusinessTypes({ project_id: currentProject.id }),
+    queryFn: () => businessService.getBusinessTypes({ project_id: currentProject.id, is_active: true }),
     enabled: !!currentProject?.id
   });
 
