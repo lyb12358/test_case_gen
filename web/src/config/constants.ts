@@ -41,7 +41,7 @@ export const API_ENDPOINTS = {
   UNIFIED_TEST_CASES: {
     LIST: '/v1/unified-test-cases',
     DETAIL: '/v1/unified-test-cases',
-    CREATE: '/v1/unified-test-cases',
+    CREATE: '/v1/unified-test-cases/',
     UPDATE: '/v1/unified-test-cases',
     DELETE: '/v1/unified-test-cases',
     BATCH: '/v1/unified-test-cases/batch/',
