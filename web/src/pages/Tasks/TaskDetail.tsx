@@ -11,7 +11,8 @@ import {
   Spin,
   Empty,
   Timeline,
-  Divider
+  Divider,
+  Tooltip
 } from 'antd';
 import { formatDateTime } from '@/utils/timeFormatter';
 import {
@@ -20,7 +21,8 @@ import {
   CheckCircleOutlined,
   ExclamationCircleOutlined,
   LoadingOutlined,
-  ReloadOutlined
+  ReloadOutlined,
+  PlusOutlined
 } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -375,13 +377,16 @@ const TaskDetail: React.FC = () => {
               <div>
                 <div>{task.error_details || task.message || '任务执行过程中遇到错误'}</div>
                 {task.status === 'failed' && (
-                  <Button
-                    type="link"
-                    onClick={() => navigate('/test-cases/generate')}
-                    style={{ padding: 0, marginTop: 8 }}
-                  >
-                    重新创建任务
-                  </Button>
+                  <Tooltip title="请前往「测试管理中心」">
+                    <Button
+                      type="link"
+                      onClick={() => navigate('/test-management/generate')}
+                      style={{ padding: 0, marginTop: 8 }}
+                      icon={<PlusOutlined />}
+                    >
+                      重新创建任务
+                    </Button>
+                  </Tooltip>
                 )}
               </div>
             }

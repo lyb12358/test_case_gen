@@ -374,7 +374,7 @@ const Dashboard: React.FC = () => {
               type="primary"
               size="large"
               icon={<PlusOutlined />}
-              onClick={() => navigate('/test-cases/generate')}
+              onClick={() => navigate('/test-management/generate')}
               style={{ width: '100%' }}
             >
               生成测试用例
@@ -428,7 +428,7 @@ const Dashboard: React.FC = () => {
                   <Button
                     type="primary"
                     size="small"
-                    onClick={() => navigate('/test-cases/generate')}
+                    onClick={() => navigate('/test-management/generate')}
                   >
                     生成测试用例
                   </Button>

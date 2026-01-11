@@ -17,6 +17,7 @@ import {
   Alert,
   Empty
 } from 'antd';
+const { Text } = Typography;
 import { formatDateTime } from '@/utils/timeFormatter';
 import {
   ReloadOutlined,
@@ -25,7 +26,8 @@ import {
   ClockCircleOutlined,
   CheckCircleOutlined,
   ExclamationCircleOutlined,
-  LoadingOutlined
+  LoadingOutlined,
+  PlusOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
@@ -301,13 +303,15 @@ const TaskList: React.FC = () => {
             </div>
           </div>
           <Space>
-            <Button
-              type="primary"
-              onClick={() => navigate('/test-cases/generate')}
-              disabled={!currentProject}
-            >
-              创建新任务
-            </Button>
+            <Tooltip title="请前往「测试管理中心」创建新任务">
+              <Button
+                type="primary"
+                disabled={true}
+                icon={<PlusOutlined />}
+              >
+                创建新任务
+              </Button>
+            </Tooltip>
             <Button
               icon={<ReloadOutlined />}
               onClick={() => refetch()}
@@ -385,13 +389,19 @@ const TaskList: React.FC = () => {
             }
             style={{ marginTop: 32, marginBottom: 32 }}
           >
-            <Button
-              type="primary"
-              onClick={() => navigate('/test-cases/generate')}
-              disabled={!currentProject}
-            >
-              创建新任务
-            </Button>
+            <Space direction="vertical" size="middle">
+              <Button
+                type="primary"
+                disabled={true}
+                size="large"
+                icon={<PlusOutlined />}
+              >
+                创建新任务（已禁用）
+              </Button>
+              <Text type="secondary">
+                请前往 <a onClick={() => navigate('/test-management/generate')}>测试管理中心</a> 创建新任务
+              </Text>
+            </Space>
           </Empty>
         )}
       </Card>
