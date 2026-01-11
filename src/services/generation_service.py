@@ -558,7 +558,7 @@ class UnifiedGenerationService:
                     return False
 
                 job.status = JobStatus.CANCELLED
-                job.completed_at = datetime.utcnow()
+                job.completed_at = datetime.now()
                 db.commit()
 
                 # 从活跃任务列表中移除
@@ -633,7 +633,7 @@ class UnifiedGenerationService:
             if job:
                 job.status = JobStatus.COMPLETED
                 job.progress = 100.0
-                job.completed_at = datetime.utcnow()
+                job.completed_at = datetime.now()
 
                 # 保存结果数据
                 import json
@@ -661,7 +661,7 @@ class UnifiedGenerationService:
                 job = db.query(GenerationJob).filter(GenerationJob.id == task_id).first()
                 if job:
                     job.status = JobStatus.FAILED
-                    job.completed_at = datetime.utcnow()
+                    job.completed_at = datetime.now()
 
                     # 保存错误信息
                     import json

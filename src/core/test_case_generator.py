@@ -487,7 +487,7 @@ class TestCaseGenerator:
 
                             # Critical: Update stage from test_point to test_case
                             test_point.stage = UnifiedTestCaseStage.TEST_CASE
-                            test_point.updated_at = datetime.utcnow()
+                            test_point.updated_at = datetime.now()
 
                             # 记录映射后的数据对比
                             mapping_detail = {

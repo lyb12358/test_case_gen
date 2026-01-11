@@ -73,7 +73,7 @@ class DatabaseManager:
                 "autocommit": False,        # Use manual commit for better control
                 "connect_timeout": 10,      # Connection timeout
                 "read_timeout": 30,         # Read timeout
-                "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",  # Strict SQL mode
+                "init_command": "SET sql_mode='STRICT_TRANS_TABLES', time_zone='+08:00'",  # Strict SQL mode & China timezone
             }
         )
 
