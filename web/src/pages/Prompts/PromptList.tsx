@@ -128,11 +128,12 @@ const PromptList: React.FC = () => {
         try {
           const projectBusinessTypes = await projectService.getProjectBusinessTypes(currentProject.id);
           businessTypes = projectBusinessTypes
-            .filter(bt => bt.is_active) // Only include active business types
+            // 移除激活状态筛选，允许查看和筛选所有业务类型的提示词
             .map(bt => ({
               value: bt.code,
               label: bt.name
-            }));
+            }))
+            .sort((a, b) => a.value.localeCompare(b.value)); // 按业务类型代码排序
         } catch (btError) {
           console.warn('Failed to load project business types, falling back to default:', btError);
           // Fallback to default options

@@ -99,7 +99,8 @@ class ProjectService {
     const response = await apiClient.get<{items: BusinessTypeConfig[]}>(API_ENDPOINTS.BUSINESS_TYPES.LIST, {
       params: {
         project_id: projectId,
-        is_active: true,
+        // 移除 is_active 限制，允许获取所有业务类型（包括未激活的）
+        // 这样可以为未激活的业务类型预先配置提示词
         size: 100 // Get all business types for the project
       }
     });
