@@ -560,7 +560,7 @@ class TestCaseGenerator:
         ).first()
 
         if not business_entity:
-            print(f"No business entity found for {business_type.value}")
+            print(f"No business entity found for {business_type}")
             return
 
         for item in unified_test_cases_data:
@@ -624,7 +624,7 @@ class TestCaseGenerator:
             extractor = BusinessDataExtractor(db_operations)
             extractor.extract_business_data(business_type)
         else:
-            print(f"Business entity exists for {business_type.value}: {business_entity.name}")
+            print(f"Business entity exists for {business_type}: {business_entity.name}")
 
     def get_test_cases_from_database(self, business_type: Optional[str] = None) -> Optional[list]:
         """
