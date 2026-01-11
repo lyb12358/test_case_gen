@@ -93,6 +93,8 @@ export interface Task {
   status: string;
   progress?: number;
   business_type?: string;
+  generation_mode?: string;      // 生成模式：test_points_only/test_cases_only
+  task_type_display?: string;      // 任务类型显示文本
   task_type?: string;
   error?: string;
   error_details?: string;
@@ -101,6 +103,7 @@ export interface Task {
   test_case_id?: number;
   created_at?: string;
   updated_at?: string;
+  completed_at?: string;           // 任务完成时间
 }
 
 export interface TestCasesListResponse {
@@ -160,8 +163,11 @@ export interface TaskListResponse {
     status: string;
     progress?: number;
     business_type?: string;
+    generation_mode?: string;      // 生成模式：test_points_only/test_cases_only
+    task_type_display?: string;      // 任务类型显示文本
     error?: string;
     created_at?: string;
+    completed_at?: string;           // 任务完成时间
   }>;
 }
 

@@ -136,18 +136,8 @@ const TaskList: React.FC = () => {
     );
   };
 
-  const getTaskTypeText = (businessType?: string) => {
-    const taskTypes = {
-      'test_case_generation': '测试用例生成',
-      'interface_test_generation': '接口测试生成',
-      'data_processing': '数据处理',
-      'system_maintenance': '系统维护'
-    };
-
-    if (businessType) {
-      return taskTypes['test_case_generation'];
-    }
-    return taskTypes['test_case_generation'];
+  const getTaskTypeText = (taskTypeDisplay?: string) => {
+    return taskTypeDisplay || '测试用例生成';
   };
 
   const getBusinessTypeFullName = (type?: string) => {
@@ -171,10 +161,10 @@ const TaskList: React.FC = () => {
     },
     {
       title: '任务类型',
-      dataIndex: 'business_type',
+      dataIndex: 'task_type_display',
       key: 'task_type',
       width: 150,
-      render: (businessType: string) => getTaskTypeText(businessType),
+      render: (taskTypeDisplay: string) => getTaskTypeText(taskTypeDisplay),
     },
     {
       title: '业务类型',
@@ -429,7 +419,7 @@ const TaskList: React.FC = () => {
                 <span style={{ fontFamily: 'monospace' }}>#{selectedTask.task_id}</span>
               </Descriptions.Item>
               <Descriptions.Item label="任务类型">
-                {getTaskTypeText(selectedTask.business_type)}
+                {getTaskTypeText(selectedTask.task_type_display)}
               </Descriptions.Item>
               <Descriptions.Item label="业务类型">
                 {selectedTask.business_type ? getBusinessTypeFullName(selectedTask.business_type) : '-'}
