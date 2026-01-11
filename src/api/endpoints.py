@@ -330,7 +330,8 @@ app = FastAPI(
     version="2.1.0",
     docs_url="/docs",
     redoc_url="/redoc",
-    openapi_tags=tags_metadata
+    openapi_tags=tags_metadata,
+    redirect_slashes=False  # 禁用自动斜杠重定向，避免307错误
 )
 
 # Add CORS middleware
@@ -1874,7 +1875,7 @@ app.include_router(prompt_router)
 app.include_router(config_router)
 app.include_router(business_router)
 # test_point_router removed - using unified_test_case_router
-app.include_router(unified_test_case_router)
+app.include_router(unified_test_case_router, prefix="/api/v1")
 # generation_router removed - old redundant generation endpoints deleted
 # unified_generation_router removed - old redundant unified generation endpoints deleted
 app.include_router(websocket_router)

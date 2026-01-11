@@ -55,7 +55,7 @@ except ImportError:
     from data_validator_repairer import DataValidatorRepairer
     from json_extractor import JSONExtractor
 
-router = APIRouter(prefix="/api/v1/unified-test-cases", tags=["unified-test-cases"])
+router = APIRouter(prefix="/unified-test-cases", tags=["unified-test-cases"])
 
 logger = logging.getLogger(__name__)
 
