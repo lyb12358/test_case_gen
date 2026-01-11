@@ -165,9 +165,27 @@ class ConfigurationService:
         return self._generation_stages_cache
 
     def validate_business_type(self, business_type: str) -> bool:
-        """Validate if a business type exists in the database."""
-        business_types = self.get_business_types()
-        return business_type in business_types
+        """
+        Validate if a business type exists in the database.
+
+        Direct database query to avoid cache staleness issues.
+
+        Args:
+            business_type: Business type code to validate
+
+        Returns:
+            bool: True if business type exists and is active
+        """
+        with self._get_db_session() as db:
+            count = db.query(BusinessTypeConfig).filter(
+                BusinessTypeConfig.code == business_type,
+                BusinessTypeConfig.is_active == True
+            ).count()
+
+            # Debug logging
+            print(f"[DEBUG] Validating business_type '{business_type}': found {count} matching active records")
+
+            return count > 0
 
     def validate_prompt_type(self, prompt_type: str) -> bool:
         """Validate if a prompt type exists."""
