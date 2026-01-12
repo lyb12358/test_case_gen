@@ -1852,7 +1852,12 @@ async def _generate_test_cases_background_unified(
                 # Find matching test point
                 test_point = next((tp for tp in test_points if tp.id == test_point_id), None)
 
-                if test_point:
+                # Fallback: If no test_point_id provided, match by index order
+                # This handles cases where AI doesn't return test_point_id field
+                if not test_point and i < len(test_points):
+                    test_point = test_points[i]
+                    test_point_id = test_point.id
+                    logger.info(f"⚠️  Fallback: 用例索引 {i} 没有test_point_id，按顺序匹配到测试点ID {test_point_id} ({test_point.test_case_id})")
                     # Check if this test point was already matched (detect duplicates)
                     if test_point.id in matched_test_point_ids:
                         logger.warning(f"发现重复匹配: 测试点ID {test_point_id} 已被匹配，跳过此用例")
