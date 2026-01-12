@@ -83,7 +83,9 @@ class TemplateVariableResolver:
                         f"You MUST generate EXACTLY {test_points_count} test cases.\n"
                         f"Each test point MUST generate EXACTLY ONE test case.\n"
                         f"DO NOT generate additional test cases beyond the provided test points.\n\n"
-                        f"Strict 1:1 mapping required: {test_points_count} test points → {test_points_count} test cases.\n"
+                        f"Strict 1:1 mapping required: {test_points_count} test points → {test_points_count} test cases.\n\n"
+                        f"IMPORTANT: Each test case MUST include a 'test_point_id' field matching the 'id' field "
+                        f"from the corresponding test point. This is REQUIRED for proper mapping.\n"
                         f"按照如下的测试点数据扩充内容，生成用例，务必一一对应。"
                     ),
                     "test_points_count": test_points_count,
