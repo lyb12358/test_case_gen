@@ -1832,6 +1832,12 @@ async def _generate_test_cases_background_unified(
             # Use validated test cases instead of raw data
             test_cases_list = validated_test_cases
 
+            # Debug: Log the raw test case data from AI
+            logger.info(f"=== AI返回的原始测试用例数据 ===")
+            for i, case_data in enumerate(test_cases_list):
+                logger.info(f"用例 {i}: keys={list(case_data.keys())}, test_point_id={case_data.get('test_point_id')}, id={case_data.get('id')}, name={case_data.get('name')}")
+            logger.info(f"=== 原始数据日志结束 ===")
+
             # Smart matching: First pass - identify successfully matched test cases
             # This ensures 1:1 mapping even if AI returns incorrect number of test cases
             matched_cases = []

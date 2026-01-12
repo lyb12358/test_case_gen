@@ -84,8 +84,21 @@ class TemplateVariableResolver:
                         f"Each test point MUST generate EXACTLY ONE test case.\n"
                         f"DO NOT generate additional test cases beyond the provided test points.\n\n"
                         f"Strict 1:1 mapping required: {test_points_count} test points → {test_points_count} test cases.\n\n"
-                        f"IMPORTANT: Each test case MUST include a 'test_point_id' field matching the 'id' field "
-                        f"from the corresponding test point. This is REQUIRED for proper mapping.\n"
+                        f"MOST IMPORTANT: Each test case MUST include a 'test_point_id' field that matches "
+                        f"the 'id' field from the corresponding test point. For example, if a test point has "
+                        f"'id': 123, then the generated test case must have 'test_point_id': 123.\n\n"
+                        f"REQUIRED JSON FORMAT:\n"
+                        f'{{\n'
+                        f'  "test_cases": [\n'
+                        f'    {{\n'
+                        f'      "test_point_id": <id from test point>,  // REQUIRED: Must match test point id\n'
+                        f'      "test_case_id": "TC001",\n'
+                        f'      "name": "测试用例名称",\n'
+                        f'      "description": "测试描述",\n'
+                        f'      ...other fields...\n'
+                        f'    }}\n'
+                        f'  ]\n'
+                        f'}}\n\n'
                         f"按照如下的测试点数据扩充内容，生成用例，务必一一对应。"
                     ),
                     "test_points_count": test_points_count,
