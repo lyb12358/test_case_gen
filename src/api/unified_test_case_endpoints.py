@@ -1832,6 +1832,22 @@ async def _generate_test_cases_background_unified(
             # Use validated test cases instead of raw data
             test_cases_list = validated_test_cases
 
+            # 🔧 智能修复：确保每个测试用例都有test_point_id
+            if test_point_ids and len(test_cases_list) <= len(test_point_ids):
+                logger.info(f"🔧 智能修复：检查 {len(test_cases_list)} 个测试用例的test_point_id")
+                repaired_count = 0
+                for i, case_data in enumerate(test_cases_list):
+                    if not case_data.get('test_point_id') and not case_data.get('id'):
+                        if i < len(test_point_ids):
+                            case_data['test_point_id'] = test_point_ids[i]
+                            repaired_count += 1
+                            logger.info(f"✅ 修复用例 {i}：添加test_point_id={test_point_ids[i]}")
+                        else:
+                            logger.warning(f"⚠️ 用例 {i} 超出范围，无法添加test_point_id")
+                    elif case_data.get('test_point_id'):
+                        logger.info(f"✓ 用例 {i} 已有test_point_id={case_data.get('test_point_id')}")
+                logger.info(f"🔧 智能修复完成：修复了 {repaired_count}/{len(test_cases_list)} 个用例")
+
             # Debug: Log the raw test case data from AI
             logger.info(f"=== AI返回的原始测试用例数据 ===")
             for i, case_data in enumerate(test_cases_list):
@@ -1849,41 +1865,50 @@ async def _generate_test_cases_background_unified(
             for i, case_data in enumerate(test_cases_list):
                 test_point_id = case_data.get('test_point_id') or case_data.get('id')
 
+                # Debug: Log matching attempt
+                logger.info(f"🔍 匹配尝试 | 用例索引={i} | test_point_id={test_point_id} | test_points长度={len(test_points)}")
+
                 # Find matching test point
                 test_point = next((tp for tp in test_points if tp.id == test_point_id), None)
 
-                # Fallback: If no test_point_id provided, match by index order
+                # Fallback: If no test_point_id provided or no match, match by index order
                 # This handles cases where AI doesn't return test_point_id field
-                if not test_point and i < len(test_points):
-                    test_point = test_points[i]
-                    test_point_id = test_point.id
-                    logger.info(f"⚠️  Fallback: 用例索引 {i} 没有test_point_id，按顺序匹配到测试点ID {test_point_id} ({test_point.test_case_id})")
-                    # Check if this test point was already matched (detect duplicates)
-                    if test_point.id in matched_test_point_ids:
-                        logger.warning(f"发现重复匹配: 测试点ID {test_point_id} 已被匹配，跳过此用例")
+                if not test_point:
+                    if i < len(test_points):
+                        # Fallback到按顺序匹配
+                        test_point = test_points[i]
+                        test_point_id = test_point.id
+                        # 🔧 重要：更新case_data中的test_point_id，确保后续逻辑能使用
+                        case_data['test_point_id'] = test_point_id
+                        logger.info(f"⚠️  Fallback: 用例索引 {i} 按顺序匹配到测试点ID {test_point_id} ({test_point.test_case_id})")
+                    else:
+                        # 真正的未匹配情况：超出索引范围
+                        logger.warning(f"❌ 匹配失败: 用例索引 {i} 超出测试点范围 (共{len(test_points)}个)")
                         unmatched_test_cases.append({
                             'index': i,
                             'test_point_id': test_point_id,
-                            'reason': 'duplicate_test_point'
+                            'reason': 'index_out_of_range'
                         })
-                        continue
+                        continue  # 跳过这个用例
 
-                    # Successful match
-                    matched_cases.append({
-                        'test_point': test_point,
-                        'case_data': case_data,
-                        'test_point_id': test_point_id
-                    })
-                    matched_test_point_ids.add(test_point.id)
-                    logger.info(f"✅ 成功匹配: 用例索引 {i} → 测试点ID {test_point_id} ({test_point.test_case_id})")
-                else:
-                    # No matching test point found
-                    logger.warning(f"❌ 匹配失败: 用例索引 {i} 引用测试点ID {test_point_id}，但该测试点不在提供的列表中")
+                # Check if this test point was already matched (detect duplicates)
+                if test_point.id in matched_test_point_ids:
+                    logger.warning(f"发现重复匹配: 测试点ID {test_point.id} 已被匹配，跳过此用例")
                     unmatched_test_cases.append({
                         'index': i,
-                        'test_point_id': test_point_id,
-                        'reason': 'test_point_not_found'
+                        'test_point_id': test_point.id,
+                        'reason': 'duplicate_test_point'
                     })
+                    continue
+
+                # Successful match
+                matched_cases.append({
+                    'test_point': test_point,
+                    'case_data': case_data,
+                    'test_point_id': test_point.id
+                })
+                matched_test_point_ids.add(test_point.id)
+                logger.info(f"✅ 成功匹配: 用例索引 {i} → 测试点ID {test_point.id} ({test_point.test_case_id})")
 
             # Log matching summary
             logger.info(f"=== 智能匹配完成 ===")
