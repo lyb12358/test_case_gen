@@ -75,13 +75,22 @@ class TemplateVariableResolver:
                 variables['test_points'] = json.dumps(test_points_with_warning, ensure_ascii=False, indent=2)
                 logger.debug("测试点生成阶段：添加防重复警告")
             elif generation_stage == 'test_case':
-                # For test case generation: add correspondence requirement
+                # For test case generation: add explicit count constraint and correspondence requirement
+                test_points_count = len(test_points_data)
                 test_points_with_correspondence = {
-                    "instruction": "按照如下的测试点数据扩充内容，生成用例，务必一一对应。",
+                    "instruction": (
+                        f"CRITICAL REQUIREMENT:\n"
+                        f"You MUST generate EXACTLY {test_points_count} test cases.\n"
+                        f"Each test point MUST generate EXACTLY ONE test case.\n"
+                        f"DO NOT generate additional test cases beyond the provided test points.\n\n"
+                        f"Strict 1:1 mapping required: {test_points_count} test points → {test_points_count} test cases.\n"
+                        f"按照如下的测试点数据扩充内容，生成用例，务必一一对应。"
+                    ),
+                    "test_points_count": test_points_count,
                     "test_points": test_points_data
                 }
                 variables['test_points'] = json.dumps(test_points_with_correspondence, ensure_ascii=False, indent=2)
-                logger.debug("测试用例生成阶段：添加对应关系要求")
+                logger.debug(f"测试用例生成阶段：添加对应关系要求 (预期生成{test_points_count}个测试用例)")
             else:
                 variables['test_points'] = json.dumps(test_points_data, ensure_ascii=False, indent=2)
                 logger.debug("通用处理：原始测试点数据")

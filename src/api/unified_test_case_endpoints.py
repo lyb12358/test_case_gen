@@ -1832,83 +1832,104 @@ async def _generate_test_cases_background_unified(
             # Use validated test cases instead of raw data
             test_cases_list = validated_test_cases
 
+            # Smart matching: First pass - identify successfully matched test cases
+            # This ensures 1:1 mapping even if AI returns incorrect number of test cases
+            matched_cases = []
+            matched_test_point_ids = set()
+            unmatched_test_cases = []
+
+            logger.info(f"=== 智能匹配开始 | 测试点数量: {len(test_points)} | AI返回用例数量: {len(test_cases_list)} ===")
+
             for i, case_data in enumerate(test_cases_list):
+                test_point_id = case_data.get('test_point_id') or case_data.get('id')
+
+                # Find matching test point
+                test_point = next((tp for tp in test_points if tp.id == test_point_id), None)
+
+                if test_point:
+                    # Check if this test point was already matched (detect duplicates)
+                    if test_point.id in matched_test_point_ids:
+                        logger.warning(f"发现重复匹配: 测试点ID {test_point_id} 已被匹配，跳过此用例")
+                        unmatched_test_cases.append({
+                            'index': i,
+                            'test_point_id': test_point_id,
+                            'reason': 'duplicate_test_point'
+                        })
+                        continue
+
+                    # Successful match
+                    matched_cases.append({
+                        'test_point': test_point,
+                        'case_data': case_data,
+                        'test_point_id': test_point_id
+                    })
+                    matched_test_point_ids.add(test_point.id)
+                    logger.info(f"✅ 成功匹配: 用例索引 {i} → 测试点ID {test_point_id} ({test_point.test_case_id})")
+                else:
+                    # No matching test point found
+                    logger.warning(f"❌ 匹配失败: 用例索引 {i} 引用测试点ID {test_point_id}，但该测试点不在提供的列表中")
+                    unmatched_test_cases.append({
+                        'index': i,
+                        'test_point_id': test_point_id,
+                        'reason': 'test_point_not_found'
+                    })
+
+            # Log matching summary
+            logger.info(f"=== 智能匹配完成 ===")
+            logger.info(f"✅ 成功匹配: {len(matched_cases)} 个测试用例")
+            logger.info(f"❌ 未匹配: {len(unmatched_test_cases)} 个测试用例")
+            logger.info(f"📊 匹配率: {len(matched_cases)}/{len(test_points)} 个测试点")
+
+            if unmatched_test_cases:
+                logger.warning(f"未匹配的测试用例详情:")
+                for unmatched in unmatched_test_cases:
+                    logger.warning(f"  - 索引 {unmatched['index']}: 测试点ID {unmatched['test_point_id']}, 原因: {unmatched['reason']}")
+
+            # Check for test points that didn't get matched
+            unmatched_test_points = [tp for tp in test_points if tp.id not in matched_test_point_ids]
+            if unmatched_test_points:
+                logger.warning(f"⚠️  {len(unmatched_test_points)} 个测试点未被任何测试用例匹配:")
+                for tp in unmatched_test_points:
+                    logger.warning(f"  - 测试点ID {tp.id} ({tp.test_case_id}): {tp.name}")
+
+            # Second pass: Only process successfully matched test cases
+            logger.info(f"开始处理已匹配的 {len(matched_cases)} 个测试用例...")
+
+            for match in matched_cases:
                 try:
-                    # Find corresponding test point by database ID (fix: use tp.id instead of tp.test_case_id)
-                    test_point_id = case_data.get('test_point_id') or case_data.get('id')
-                    logger.info(f"Looking for test point with ID: {test_point_id}")
-                    logger.info(f"Available test points: {[tp.id for tp in test_points]}")
-                    test_point = next((tp for tp in test_points if tp.id == test_point_id), None)
+                    test_point = match['test_point']
+                    case_data = match['case_data']
 
-                    if test_point:
-                        # Convert test point to test case by adding execution details
-                        # Use validated and repaired data
-                        test_point.steps = _serialize_json_field(case_data.get('steps', []))
-                        test_point.preconditions = _serialize_json_field(case_data.get('preconditions', []))
-                        test_point.module = case_data.get('module', '')
-                        test_point.functional_module = case_data.get('functional_module', '')
-                        test_point.functional_domain = case_data.get('functional_domain', '')
+                    # Convert test point to test case by adding execution details
+                    # Use validated and repaired data
+                    test_point.steps = _serialize_json_field(case_data.get('steps', []))
+                    test_point.preconditions = _serialize_json_field(case_data.get('preconditions', []))
+                    test_point.module = case_data.get('module', '')
+                    test_point.functional_module = case_data.get('functional_module', '')
+                    test_point.functional_domain = case_data.get('functional_domain', '')
 
-                        # Enhanced remarks handling - preserve validation info
-                        existing_remarks = test_point.remarks or ''
-                        validation_remarks = case_data.get('remarks', '')
-                        if validation_remarks and '[自动修复]' in validation_remarks:
-                            # Add validation info to remarks
-                            combined_remarks = f"{existing_remarks} | {validation_remarks}" if existing_remarks else validation_remarks
-                            test_point.remarks = combined_remarks
-                        else:
-                            test_point.remarks = existing_remarks or validation_remarks or ''
-
-                        test_case_count += 1
-                        logger.info(f"Successfully converted test point to test case: {test_point.test_case_id}")
+                    # Enhanced remarks handling - preserve validation info
+                    existing_remarks = test_point.remarks or ''
+                    validation_remarks = case_data.get('remarks', '')
+                    if validation_remarks and '[自动修复]' in validation_remarks:
+                        # Add validation info to remarks
+                        combined_remarks = f"{existing_remarks} | {validation_remarks}" if existing_remarks else validation_remarks
+                        test_point.remarks = combined_remarks
                     else:
-                        failed_cases += 1
-                        logger.warning(f"未找到对应的测试点，跳过测试用例生成: {test_point_id}")
-                        # Create new test case if test point not found (fallback mechanism)
-                        try:
-                            case_name = case_data.get('name', f'新生成的测试用例 {i+1}')
+                        test_point.remarks = existing_remarks or validation_remarks or ''
 
-                            # Check for duplicate test case by business_type and name
-                            existing_test_case = db.query(UnifiedTestCase).filter(
-                                UnifiedTestCase.business_type == business_type,
-                                UnifiedTestCase.name == case_name
-                            ).first()
-
-                            if existing_test_case:
-                                logger.info(f"跳过重复的测试用例: {case_name} (ID: {existing_test_case.id})")
-                                failed_cases += 1
-                                continue  # Skip to next test case
-
-                            unique_id = _ensure_unique_test_case_id(case_data.get('test_case_id', f'NEW_TC{str(i+1).zfill(3)}'), business_type, project_id, db)
-                            new_test_case = UnifiedTestCase(
-                                project_id=project_id,
-                                business_type=business_type,
-                                test_case_id=unique_id,
-                                name=case_name,
-                                description=case_data.get('description', ''),
-                                status=UnifiedTestCaseStatus.DRAFT,
-                                priority=case_data.get('priority', 'medium'),
-                                steps=_serialize_json_field(case_data.get('steps', [])),
-                                preconditions=_serialize_json_field(case_data.get('preconditions', [])),
-                                module=case_data.get('module', ''),
-                                functional_module=case_data.get('functional_module', ''),
-                                functional_domain=case_data.get('functional_domain', ''),
-                                remarks=case_data.get('remarks', '[自动创建] 未找到对应的测试点'),
-                                entity_order=float(i + 1),
-                                generation_job_id=task_id,
-                                stage=DatabaseUnifiedTestCaseStage.test_case
-                            )
-                            db.add(new_test_case)
-                            test_case_count += 1
-                            logger.info(f"Created new test case as fallback: {unique_id}")
-                        except Exception as create_error:
-                            logger.error(f"Failed to create fallback test case: {str(create_error)}")
-                            failed_cases += 1
+                    test_case_count += 1
+                    logger.info(f"✅ 成功转换测试点为测试用例: {test_point.test_case_id}")
 
                 except Exception as e:
                     failed_cases += 1
-                    logger.error(f"处理测试用例时出错 (索引 {i}): {str(e)}")
+                    logger.error(f"❌ 处理测试用例时出错 (测试点ID {match['test_point_id']}): {str(e)}")
                     continue
+
+            # Log warnings for unmatched cases
+            if unmatched_test_cases:
+                failed_cases += len(unmatched_test_cases)
+                logger.warning(f"⚠️  跳过 {len(unmatched_test_cases)} 个未匹配的测试用例，不会创建新的测试用例记录")
 
             db.commit()
 
