@@ -1826,7 +1826,7 @@ async def _generate_test_cases_background_unified(
                 UnifiedTestCase.id.in_(test_point_ids) if test_point_ids else True,
                 UnifiedTestCase.business_type == business_type,
                 UnifiedTestCase.project_id == project_id,
-                or_(UnifiedTestCase.steps.is_(None), UnifiedTestCase.stage == DatabaseUnifiedTestCaseStage.TEST_POINT))
+                or_(UnifiedTestCase.steps.is_(None), UnifiedTestCase.stage == DatabaseUnifiedTestCaseStage.TEST_POINT)
             ).all()
 
             # Use validated test cases instead of raw data
