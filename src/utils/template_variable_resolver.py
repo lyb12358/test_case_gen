@@ -277,7 +277,7 @@ class TemplateVariableResolver:
                         'expected_result': tc.expected_result,
                         'remarks': tc.remarks,
                         'priority': tc.priority,
-                        'business_type': tc.business_type.value if tc.business_type else None,
+                        'business_type': tc.business_type if tc.business_type else None,
                         'project_id': tc.project_id,
                         'created_at': tc.created_at.isoformat() if tc.created_at else None,
                         'updated_at': tc.updated_at.isoformat() if tc.updated_at else None
@@ -328,7 +328,7 @@ class TemplateVariableResolver:
                         'functional_module': tp.functional_module,
                         'functional_domain': tp.functional_domain,
                         'priority': tp.priority,
-                        'business_type': tp.business_type.value if tp.business_type else None,
+                        'business_type': tp.business_type if tp.business_type else None,
                         'project_id': tp.project_id,
                         'created_at': tp.created_at.isoformat() if tp.created_at else None,
                         'updated_at': tp.updated_at.isoformat() if tp.updated_at else None
@@ -377,7 +377,7 @@ class TemplateVariableResolver:
                         'functional_module': tp.functional_module,
                         'functional_domain': tp.functional_domain,
                         'priority': tp.priority,
-                        'business_type': tp.business_type.value if tp.business_type else None,
+                        'business_type': tp.business_type if tp.business_type else None,
                         'project_id': tp.project_id,
                         'created_at': tp.created_at.isoformat() if tp.created_at else None,
                         'updated_at': tp.updated_at.isoformat() if tp.updated_at else None

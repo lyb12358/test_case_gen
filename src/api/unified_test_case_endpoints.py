@@ -1821,6 +1821,14 @@ async def _generate_test_cases_background_unified(
         failed_cases = 0
 
         with db_manager.get_session() as db:
+            # Re-fetch test_points in this session to avoid detached instance issues
+            test_points = db.query(UnifiedTestCase).filter(
+                UnifiedTestCase.id.in_(test_point_ids) if test_point_ids else True,
+                UnifiedTestCase.business_type == business_type,
+                UnifiedTestCase.project_id == project_id,
+                or_(UnifiedTestCase.steps.is_(None), UnifiedTestCase.stage == DatabaseUnifiedTestCaseStage.TEST_POINT))
+            ).all()
+
             # Use validated test cases instead of raw data
             test_cases_list = validated_test_cases
 
