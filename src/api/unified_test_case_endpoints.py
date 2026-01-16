@@ -600,7 +600,7 @@ async def update_unified_test_case(
             validate_business_type_or_400(
                 db=db,
                 business_type=update_data['business_type'],
-                project_id=db_test_case.project_id
+                project_id=test_case.project_id
             )
             # Store as uppercase string
             update_data['business_type'] = update_data['business_type'].upper()
